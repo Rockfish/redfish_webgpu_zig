@@ -16,6 +16,11 @@ pub const Quat = quat_.Quat;
 
 pub const epsilon: f32 = 1.19209290e-07;
 
+/// World-space direction of the ray through a mouse position, for a perspective camera.
+/// Mouse coordinates are window pixels with a top-left origin; NDC y is up, as in WebGPU
+/// and GL alike. Unprojected x and y don't depend on NDC z, so the ray is the same for any
+/// depth convention. Not valid for orthographic projections, where every ray has the
+/// camera's forward direction and only the origin moves.
 pub fn getWorldRayFromMouse(
     viewport_width: f32,
     viewport_height: f32,
@@ -28,7 +33,7 @@ pub fn getWorldRayFromMouse(
     // normalize device coordinates
     const ndc_x = (2.0 * mouse_x) / viewport_width - 1.0;
     const ndc_y = 1.0 - (2.0 * mouse_y) / viewport_height;
-    const ndc_z = -1.0; // face the same direction as the opengl camera
+    const ndc_z = 0.0; // near plane in WebGPU's 0..1 depth
     const ndc = Vec4.init(ndc_x, ndc_y, ndc_z, 1.0);
 
     const projection_inverse = projection.getInverse();
@@ -64,34 +69,30 @@ pub fn getRayPlaneIntersection(
     return null;
 }
 
-test "utils.get_world_ray_from_mouse" {
-    const mouse_x = 1117.3203;
-    const mouse_y = 323.6797;
-    const width = 1500.0;
-    const height = 1000.0;
+test "getWorldRayFromMouse: center is forward, corners follow the field of view" {
+    const width = 1600.0;
+    const height = 900.0;
+    const aspect = width / height;
+    const fov = std.math.pi / 2.0; // tan(fov / 2) = 1
 
-    const view_matrix = Mat4.fromColumns(
-        vec4(0.345086, 0.64576554, -0.68110394, 0.0),
-        vec4(0.3210102, 0.6007121, 0.7321868, 0.0),
-        vec4(0.8819683, -0.47130874, -0.0, 0.0),
-        vec4(1.1920929e-7, -0.0, -5.872819, 1.0),
-    );
+    const eye = vec3(3.0, 2.0, 5.0);
+    const target = vec3(3.0, 2.0, 0.0); // looking down -Z, up +Y
+    const view = Mat4.lookAtRhGl(eye, target, vec3(0.0, 1.0, 0.0));
+    const projection = Mat4.perspectiveRhZo(fov, aspect, 0.1, 100.0);
 
-    const projection = Mat4.fromColumns(
-        vec4(1.6094756, 0.0, 0.0, 0.0),
-        vec4(0.0, 2.4142134, 0.0, 0.0),
-        vec4(0.0, 0.0, -1.002002, -1.0),
-        vec4(0.0, 0.0, -0.2002002, 0.0),
-    );
+    const center = getWorldRayFromMouse(width, height, &projection, &view, width / 2.0, height / 2.0);
+    try expectVec3ApproxEq(vec3(0.0, 0.0, -1.0), center);
 
-    const ray = getWorldRayFromMouse(
-        width,
-        height,
-        &projection,
-        &view_matrix,
-        mouse_x,
-        mouse_y,
-    );
+    // Top-left pixel: left (-x) and up (+y) at the edges of the view frustum
+    const top_left = getWorldRayFromMouse(width, height, &projection, &view, 0.0, 0.0);
+    try expectVec3ApproxEq(vec3(-aspect, 1.0, -1.0).toNormalized(), top_left);
 
-    std.debug.print("ray = {any}", .{ray});
+    const bottom_right = getWorldRayFromMouse(width, height, &projection, &view, width, height);
+    try expectVec3ApproxEq(vec3(aspect, -1.0, -1.0).toNormalized(), bottom_right);
+}
+
+fn expectVec3ApproxEq(expected: Vec3, actual: Vec3) !void {
+    try std.testing.expectApproxEqAbs(expected.x, actual.x, 1e-5);
+    try std.testing.expectApproxEqAbs(expected.y, actual.y, 1e-5);
+    try std.testing.expectApproxEqAbs(expected.z, actual.z, 1e-5);
 }

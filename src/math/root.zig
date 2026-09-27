@@ -3,6 +3,7 @@ const vec = @import("vec.zig");
 const mat3_ = @import("mat3.zig");
 const mat4_ = @import("mat4.zig");
 const quat_ = @import("quat.zig");
+const ray_ = @import("ray.zig");
 const utils = @import("utils.zig");
 
 pub const Versor = [4]f32;
@@ -25,6 +26,8 @@ pub const mat4 = mat4_.mat4;
 
 pub const getWorldRayFromMouse = utils.getWorldRayFromMouse;
 pub const getRayPlaneIntersection = utils.getRayPlaneIntersection;
+pub const getRayTriangleIntersection = ray_.getRayTriangleIntersection;
+pub const getRaySphereIntersection = ray_.getRaySphereIntersection;
 
 // @abs
 pub const inf = std.math.inf;

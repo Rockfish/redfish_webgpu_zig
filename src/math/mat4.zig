@@ -425,21 +425,24 @@ pub const Mat4 = extern struct {
         };
     }
 
-    pub fn perspectiveRhGl(fov: f32, aspect: f32, near: f32, far: f32) Self {
-        // Right-handed perspective projection matrix for OpenGL (Z from -1 to 1)
+    /// Right-handed perspective projection with WebGPU's 0..1 clip depth: the near plane
+    /// maps to depth 0, the far plane to 1. Camera looks down -Z. Same matrix as glam's
+    /// `Mat4::perspective_rh`.
+    pub fn perspectiveRhZo(fov: f32, aspect: f32, near: f32, far: f32) Self {
         const f = 1.0 / std.math.tan(fov * 0.5);
         const range_inv = 1.0 / (near - far);
 
         return Mat4{ .data = .{
             .{ f / aspect, 0.0, 0.0, 0.0 },
             .{ 0.0, f, 0.0, 0.0 },
-            .{ 0.0, 0.0, (far + near) * range_inv, -1.0 },
-            .{ 0.0, 0.0, 2.0 * far * near * range_inv, 0.0 },
+            .{ 0.0, 0.0, far * range_inv, -1.0 },
+            .{ 0.0, 0.0, near * far * range_inv, 0.0 },
         } };
     }
 
-    pub fn orthographicRhGl(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) Self {
-        // Right-handed orthographic projection matrix for OpenGL (Z from -1 to 1)
+    /// Right-handed orthographic projection with WebGPU's 0..1 clip depth. Same matrix as
+    /// glam's `Mat4::orthographic_rh`.
+    pub fn orthographicRhZo(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) Self {
         const width_inv = 1.0 / (right - left);
         const height_inv = 1.0 / (top - bottom);
         const depth_inv = 1.0 / (near - far);
@@ -447,11 +450,13 @@ pub const Mat4 = extern struct {
         return Mat4{ .data = .{
             .{ 2.0 * width_inv, 0.0, 0.0, 0.0 },
             .{ 0.0, 2.0 * height_inv, 0.0, 0.0 },
-            .{ 0.0, 0.0, 2.0 * depth_inv, 0.0 },
-            .{ -(right + left) * width_inv, -(top + bottom) * height_inv, (far + near) * depth_inv, 1.0 },
+            .{ 0.0, 0.0, depth_inv, 0.0 },
+            .{ -(right + left) * width_inv, -(top + bottom) * height_inv, near * depth_inv, 1.0 },
         } };
     }
 
+    /// Right-handed view matrix. The "Gl" is historical: a view matrix doesn't depend on
+    /// the clip-space depth range, so this is correct for WebGPU as is.
     pub fn lookAtRhGl(eye: Vec3, center: Vec3, up: Vec3) Self {
         // CGLM-compatible right-handed look-at implementation
         // Forward vector: center - eye (direction from eye TO center)
@@ -474,6 +479,8 @@ pub const Mat4 = extern struct {
         };
     }
 
+    /// Right-handed view matrix from a look direction. Depth-range independent, like
+    /// `lookAtRhGl`.
     pub fn lookToRhGl(eye: Vec3, direction: Vec3, up: Vec3) Self {
         // CGLM-compatible: target = eye + direction, then use lookAt
         const target = eye.add(direction);
@@ -519,3 +526,53 @@ pub const Mat4 = extern struct {
         ) catch |err| std.debug.panic("{any}", .{err});
     }
 };
+
+fn expectMat4ApproxEq(expected: Mat4, actual: Mat4) !void {
+    for (0..4) |col| {
+        for (0..4) |row| {
+            try std.testing.expectApproxEqAbs(expected.data[col][row], actual.data[col][row], 1e-6);
+        }
+    }
+}
+
+/// Clip-space depth (z / w) of an eye-space point on the view axis at distance `distance`.
+fn clipDepth(projection: Mat4, distance: f32) f32 {
+    const clip = projection.mulVec4(Vec4.init(0.0, 0.0, -distance, 1.0));
+    return clip.z / clip.w;
+}
+
+test "perspectiveRhZo matches a hand-computed matrix" {
+    // fov 90° gives f = 1; near 1, far 3 gives far/(near-far) = near*far/(near-far) = -1.5
+    const expected = Mat4.fromColumns(
+        Vec4.init(0.5, 0.0, 0.0, 0.0),
+        Vec4.init(0.0, 1.0, 0.0, 0.0),
+        Vec4.init(0.0, 0.0, -1.5, -1.0),
+        Vec4.init(0.0, 0.0, -1.5, 0.0),
+    );
+    try expectMat4ApproxEq(expected, Mat4.perspectiveRhZo(std.math.pi / 2.0, 2.0, 1.0, 3.0));
+}
+
+test "orthographicRhZo matches a hand-computed matrix" {
+    // near 1, far 5 gives 1/(near-far) = near/(near-far) = -0.25
+    const expected = Mat4.fromColumns(
+        Vec4.init(0.5, 0.0, 0.0, 0.0),
+        Vec4.init(0.0, 1.0, 0.0, 0.0),
+        Vec4.init(0.0, 0.0, -0.25, 0.0),
+        Vec4.init(0.0, 0.0, -0.25, 1.0),
+    );
+    try expectMat4ApproxEq(expected, Mat4.orthographicRhZo(-2.0, 2.0, -1.0, 1.0, 1.0, 5.0));
+}
+
+test "Zo projections map near to depth 0 and far to depth 1" {
+    const near = 0.1;
+    const far = 100.0;
+
+    const perspective = Mat4.perspectiveRhZo(std.math.pi / 4.0, 16.0 / 9.0, near, far);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), clipDepth(perspective, near), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), clipDepth(perspective, far), 1e-5);
+
+    const orthographic = Mat4.orthographicRhZo(-10.0, 10.0, -10.0, 10.0, near, far);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), clipDepth(orthographic, near), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), clipDepth(orthographic, far), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), clipDepth(orthographic, (near + far) / 2.0), 1e-6);
+}

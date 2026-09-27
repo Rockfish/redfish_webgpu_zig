@@ -192,15 +192,21 @@ Then:
 screen), zgui panel draws with correct colors, resizing works without validation
 errors, closing shuts down cleanly.
 
-### Step 2 - Math: Zero-to-One Depth
+### Step 2 - Math: Zero-to-One Depth ✅ 2026-09-27
 
-- `Mat4.perspectiveRhZo`, `Mat4.orthographicRhZo` alongside the GL versions
-- `Camera` uses the Zo versions; review `getWorldRayFromMouse` NDC z
-- Audit screen-Y assumptions (mouse → NDC, picking, anything that flipped Y for GL's
-  bottom-left origin) now that nothing is V-flipped
-- Tests comparing against known matrices
+- `Mat4.perspectiveRhZo`, `Mat4.orthographicRhZo` (same matrices as glam's `perspective_rh` /
+  `orthographic_rh`) replace the GL versions, which have no WebGPU use. `lookAtRhGl` /
+  `lookToRhGl` keep their names: view matrices don't depend on the depth range
+- `Camera` and `CameraGimbal` use the Zo versions
+- `getWorldRayFromMouse`: unprojected x/y don't depend on NDC z, so results are unchanged;
+  NDC z set to 0 (the near plane) and the function documented as perspective-only
+- Screen-Y audit: WebGPU NDC is y-up like GL, so mouse → NDC is unchanged. The GL flips that
+  matter are in files not yet ported; each is listed in its step (3b/4 texture `flip_v`,
+  8 screenshot readback, 9 shadow UV)
+- Tests: hand-computed known matrices, near → 0 / far → 1 depth, mouse rays at the center
+  and corners; `ray.zig` restored with tests for later picking
 
-**Done:** `zig build test` passes; GL versions remain only where explicitly wanted.
+**Done:** `zig build test` passes; no GL projections remain.
 
 ### Step 3 - Rendering Foundation: Shaders, Bindings, Pipelines, Shapes
 
@@ -215,6 +221,9 @@ The step that fixes the core patterns. Split in two.
   of toggling state
 
 **3b - textures and all shapes**
+- `texture.zig`: `flip_v` / `zstbi.setFlipVerticallyOnLoad` existed for GL's bottom-left
+  texture origin; with WebGPU's top-left origin, glTF and image files load unflipped.
+  Keep the option only if an asset proves it needs it
 - `texture.zig`: `initFromFile`, RGB → RGBA expansion, sRGB/linear choice, render-pass
   mipmap generator (any size, non-square, sRGB and linear formats), sampler cache keyed by
   filter/wrap
@@ -283,7 +292,8 @@ Where new work happens, so it moves ahead of level_01.
 
 - Screenshots: render the scene (no zgui) into an offscreen `rgba8unorm-srgb` texture,
   `wgpuCommandEncoderCopyTextureToBuffer` (256-byte row alignment), map, write PNG with no
-  vertical flip. Also the exact check of the Step 1 clear color
+  vertical flip (redfish's `readPixels` + `setFlipVerticallyOnWrite(true)` goes away).
+  Also the exact check of the Step 1 clear color
 - Uniform dump for screenshots from the frame/draw uniform structs
 - All zgui panels
 
@@ -294,7 +304,9 @@ Where new work happens, so it moves ahead of level_01.
 - Offscreen targets: shadow depth texture (comparison sampler, PCF), emission, scene
   (`rgba16float` for bloom headroom), blur ping-pong, composite to the surface, all as
   render passes
-- Correct shadow NDC → UV mapping (Y flip, raw z)
+- Correct shadow NDC → UV mapping: the five `player_shader` / `floor_shader` fragments use
+  GL's `proj * 0.5 + 0.5` for x, y, and z. WebGPU needs `uv = (x * 0.5 + 0.5, 0.5 - y * 0.5)`
+  and raw z (already 0..1); the light projection is `orthographicRhZo`
 - Port `examples/skybox`
 
 **Done:** angrybot plays as in GL, including shadows and bloom. It is then the regression

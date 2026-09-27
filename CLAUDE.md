@@ -20,8 +20,8 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 ## Status
 
-Step 1 done: window, device, sRGB clear, and zgui on wgpu-native (`gpu_caps`); carry-over
-modules in. See `docs/plans/active-plans.md`.
+Steps 1-2 done: window, device, sRGB clear, and zgui on wgpu-native (`gpu_caps`); carry-over
+modules in; 0..1 depth projections. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

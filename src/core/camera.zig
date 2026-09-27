@@ -82,7 +82,7 @@ pub const Camera = struct {
     pub fn getProjectionWithType(self: *Camera, projection_type: ProjectionType) Mat4 {
         switch (projection_type) {
             .Perspective => {
-                return Mat4.perspectiveRhGl(
+                return Mat4.perspectiveRhZo(
                     math.degreesToRadians(self.fov),
                     self.aspect,
                     self.near,
@@ -92,7 +92,7 @@ pub const Camera = struct {
             .Orthographic => {
                 const ortho_width = self.aspect * self.ortho_scale;
                 const ortho_height = self.ortho_scale;
-                return Mat4.orthographicRhGl(
+                return Mat4.orthographicRhZo(
                     -ortho_width,
                     ortho_width,
                     -ortho_height,
