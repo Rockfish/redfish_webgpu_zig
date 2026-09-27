@@ -43,7 +43,7 @@ Copied as-is (then conformed to STYLE.md when touched):
 - `src/core/`: `context.zig`, `arenas.zig`, `gltf/` (parser, report), `animator.zig` (CPU side),
   `animation_fsm.zig`, `movement.zig`, `transform.zig`, `aabb.zig`, `camera.zig` (logic),
   `frame_counter.zig`, `random.zig`, `colors.zig`, `string.zig`, `utils/`
-- `sound_engine.zig` keeps its API but moves onto `zaudio`
+- `sound_engine.zig` keeps its API but moves onto `zaudio` (Step 6, first app with sound)
 
 ## What Gets Rewritten
 
@@ -52,18 +52,18 @@ GL-specific files. Same file name unless the name itself says GL:
 | redfish_gl_zig | redfish_webgpu_zig | Notes |
 |---|---|---|
 | `gl_debug.zig` | `gpu_debug.zig` | Dawn device error/lost callbacks, error scopes |
-| (none) | `gpu_context.zig` | Creates the zgpu GraphicsContext, depth texture, per-frame begin/end |
+| (none) | `gpu_context.zig` | Creates the zgpu GraphicsContext, scene color and depth textures, present pass, per-frame begin/end |
 | (none) | `bindings.zig` | Bind group slot numbers, shared layouts, shared WGSL constants |
 | `shader.zig` | `shader.zig` | WGSL loader, prepends generated constants + `common.wgsl` |
 | (none) | `pipeline.zig` | Pipeline config (blend, depth, cull, topology) → cached pipeline |
-| `texture.zig` | `texture.zig` | RGBA upload, sRGB vs linear, mipmaps, sampler cache |
+| `texture.zig` | `texture.zig` | RGBA upload, sRGB vs linear, render-pass mipmap generator, sampler cache |
 | `texture_buffer.zig` | `storage_buffer.zig` | Storage buffers replace TBOs |
 | `mesh.zig` | `mesh.zig` | Per-attribute vertex buffers, format conversion, placeholder buffers |
 | `model.zig`, `model_instance.zig` | same | Draw path through bind groups and per-draw uniforms |
 | `baked_animator.zig` | same | Storage buffer instead of TBO |
 | `render_context.zig` | same | Also produces the frame uniforms for group 0 |
 | `lights.zig` | same | Uniform struct in group 0 instead of named uniforms |
-| `input.zig` | same | Resize reconfigures surface/depth instead of `gl.viewport` |
+| `input.zig` | same | Resize recreates swapchain and scene color/depth textures instead of `gl.viewport` |
 | `shapes/*` | same | Vertex buffers + pipeline variants instead of GL state toggles |
 | all `.vert`/`.frag` | `.wgsl` | One WGSL file per shader pair |
 
@@ -76,7 +76,8 @@ GL-specific files. Same file name unless the name itself says GL:
 - **zgpu `GraphicsContext`** owns device, queue, swapchain, resource pools. Raw `wgpu.*`
   calls stay inside `src/core`.
 - **Bind groups** (defined in `bindings.zig`, same numbers in WGSL):
-  - group 0: frame — camera matrices, view position, time, lights
+  - group 0: frame — camera matrices, view position, time, lights. One persistent uniform
+    buffer written once per frame with `queue.writeBuffer`; no dynamic offset
   - group 1: material — textures, samplers, material factors
   - group 2: object / draw — model transform, node transform, flags, joint matrices
   - group 3: pass-specific — shadow map, etc.
@@ -86,23 +87,40 @@ GL-specific files. Same file name unless the name itself says GL:
 - **Shaders**: hand-written WGSL, loaded from files at runtime. A generated header of shared
   constants (`MAX_JOINTS`, ...) and `common.wgsl` are prepended.
 - **Depth**: 0..1 clip space, `Depth32Float`, `*Zo` projections.
-- **Color**: sRGB surface; base color and emissive textures `rgba8unorm-srgb`; normal,
-  metallic-roughness, occlusion `rgba8unorm`. Shaders output linear color, no manual gamma.
+- **Scene target**: zgpu hardcodes the swapchain to `bgra8_unorm` (not sRGB) through Dawn's
+  old SwapChain API, so the surface can't be sRGB. Instead the scene renders into a
+  `GpuContext`-owned `rgba16float` color texture plus `Depth32Float` depth texture, both
+  recreated on resize. A present pass then draws one full-screen triangle that samples the
+  scene texture, encodes linear → sRGB, and writes the swapchain; zgui draws after it in the
+  same pass. The float target gives bloom (Step 9) headroom and is what screenshots (Step 8)
+  copy from.
+- **Color**: base color and emissive textures `rgba8unorm-srgb`; normal,
+  metallic-roughness, occlusion `rgba8unorm`. Scene shaders output linear color and do no
+  manual gamma; the present pass is the one place the sRGB encode happens.
+- **Mipmaps**: our own generator in `texture.zig`, not `gctx.generateMipmaps`. zgpu's version
+  asserts square, power-of-two, ≤ 2048 textures and writes through storage textures, which
+  `rgba8unorm-srgb` can't be. Ours renders each mip level from the one above with a
+  full-screen triangle and a linear sampler, one pipeline per format.
+- **zgpu pool sizes**: the defaults (`bind_group_pool_size = 32`, `sampler_pool_size = 16`,
+  `texture_pool_size = 256`, ...) are too small for per-material and per-instance bind
+  groups. Set them in `build.zig` from Step 1 and raise as scenes grow.
 - **Texture origin top-left**; no default V-flip.
 - **Cleanup**: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset.
 - **Dependencies**: URL packages in `build.zig.zon` (as in gui_test_webgpu), not vendored.
-- **Frame API**: `gpu_context.beginFrame()` returns a `Frame { encoder, color_view, depth_view }`;
-  `endFrame(frame)` submits and presents. Parallel to redfish's clear / `swapBuffers`.
+- **Frame API**: `gpu_context.beginFrame()` returns a `Frame { encoder, color_view, depth_view }`
+  where the views are the scene target, not the swapchain. `endFrame(frame)` encodes the
+  present pass (scene → swapchain, then zgui), submits, and presents. Parallel to redfish's
+  clear / `swapBuffers`.
 - **Audio**: zig-gamedev `zaudio` replaces the vendored miniaudio module; `sound_engine.zig`
-  is adapted to it.
+  is adapted to it in Step 6. zaudio is unproven on Zig 0.16, so it stays out of the skeleton.
+- **Dependencies left out**: `zopengl` (in gui_test_webgpu's `build.zig.zon`, not needed here).
 - **Assets**: `assets/` is a symlink to redfish_gl_zig's `assets/` for now.
 
 ### To Settle in the Step Where They First Matter
 
 | Decision | Step | Starting proposal |
 |---|---|---|
-| Where the depth texture lives | 1 | Owned by `GpuContext`, recreated on resize |
-| Missing vertex attributes | 4 | One shared placeholder buffer per attribute type, bound with stride 0, so one pipeline serves skinned and unskinned meshes |
+| Missing vertex attributes | 4 | One shared placeholder buffer per attribute type, bound with stride 0, so one pipeline serves skinned and unskinned meshes. PBR uses 7 vertex buffers of the default limit of 8 |
 | Pipeline cache key | 3 | `PipelineConfig` struct (shader, blend, depth write/compare, cull, topology) hashed to a pipeline |
 | Wide lines | 6 | `lineWidth` doesn't exist; start with 1px lines, add quad-based lines only if needed |
 | Clamp-to-border | 9 | Not in WebGPU; use clamp-to-edge plus an in-shader bounds check for shadows |
@@ -130,19 +148,25 @@ Checking "done" means building, running, and comparing side by side with the GL 
 Mirrors redfish `build.zig` layout: `math`, `containers`, `core` modules and the
 `inline for` app table with `<name>` / `<name>-run` steps.
 
-- `build.zig`, `build.zig.zon` (zglfw, zgpu + Dawn packages, zgui `glfw_wgpu`, zstbi, zaudio)
-- `src/core/gpu_context.zig`, `src/core/gpu_debug.zig`
+- `build.zig`, `build.zig.zon` (zglfw, zgpu + Dawn packages, zgui `glfw_wgpu`, zstbi)
+- zgpu pool size options set in `build.zig`
+- `src/core/gpu_context.zig`: scene color/depth textures, present pass with sRGB encode
+  (`src/core/shaders/present.wgsl`), zgui drawn in the present pass
+- `src/core/gpu_debug.zig`
 - Carry-over modules copied in so `core` builds
 - `examples/gpu_caps/` replaces `gl_caps`: prints adapter info and limits, clears the
   screen, shows a zgui panel
 
-**Done:** window clears to a color, zgui panel draws, resizing works without validation
+**Done:** window clears to a color (a known linear value shows its sRGB-encoded value on
+screen), zgui panel draws with correct colors, resizing works without validation
 errors, closing shuts down cleanly.
 
 ### Step 2 - Math: Zero-to-One Depth
 
 - `Mat4.perspectiveRhZo`, `Mat4.orthographicRhZo` alongside the GL versions
 - `Camera` uses the Zo versions; review `getWorldRayFromMouse` NDC z
+- Audit screen-Y assumptions (mouse → NDC, picking, anything that flipped Y for GL's
+  bottom-left origin) now that nothing is V-flipped
 - Tests comparing against known matrices
 
 **Done:** `zig build test` passes; GL versions remain only where explicitly wanted.
@@ -153,15 +177,16 @@ The step that fixes the core patterns. Split in two.
 
 **3a - one colored cube**
 - `bindings.zig` (groups 0-3, generated WGSL constants), `shader.zig`, `pipeline.zig`
-- `render_context.zig` writes `FrameUniforms` to group 0
+- `render_context.zig` writes `FrameUniforms` to group 0's persistent buffer once per frame
 - Per-draw uniforms via `uniformsAllocate` on group 2
 - `shapes/shape.zig`: `ShapeBuilder` → per-attribute vertex buffers; `Shape.draw(pass, ...)`
 - Shape flags (transparent, double-sided, depth write) select a pipeline variant instead
   of toggling state
 
 **3b - textures and all shapes**
-- `texture.zig`: `initFromFile`, RGB → RGBA expansion, sRGB/linear choice, mipmaps via
-  `gctx.generateMipmaps`, sampler cache keyed by filter/wrap
+- `texture.zig`: `initFromFile`, RGB → RGBA expansion, sRGB/linear choice, render-pass
+  mipmap generator (any size, non-square, sRGB and linear formats), sampler cache keyed by
+  filter/wrap
 - Remaining shape generators: cubeboid, square, cylinder, sphere, obj_loader, plane
 - Port `examples/scene_tree`
 
@@ -205,6 +230,7 @@ animation_example runs.
 
 Where new work happens, so it moves ahead of level_01.
 
+- `build.zig.zon` adds zaudio; `sound_engine.zig` moves onto it
 - `lines.zig` (1px), `skybox.zig` (cube texture, `LessEqual` depth pipeline, binds its own shader)
 - Instanced bullets: per-instance vertex buffers with `stepMode = .instance`
 - `lights.zig`: `SceneLights` as a uniform struct in group 0, used by basic and PBR shaders
@@ -224,8 +250,9 @@ Where new work happens, so it moves ahead of level_01.
 
 ### Step 8 - demo_app Complete
 
-- Screenshots: render to offscreen texture, `copyTextureToBuffer` (256-byte row alignment),
-  map, write PNG with no vertical flip
+- Screenshots: run the present pass (sRGB encode, no zgui) into an offscreen `rgba8unorm`
+  texture, `copyTextureToBuffer` (256-byte row alignment), map, write PNG with no vertical
+  flip
 - Uniform dump for screenshots from the frame/draw uniform structs
 - All zgui panels
 
@@ -234,7 +261,8 @@ Where new work happens, so it moves ahead of level_01.
 ### Step 9 - angrybot and Remaining Examples
 
 - Offscreen targets: shadow depth texture (comparison sampler, PCF), emission, scene,
-  blur ping-pong, composite, all as render passes
+  blur ping-pong, all as render passes; the composite writes into `GpuContext`'s scene
+  target so the present pass stays the only sRGB encode
 - Correct shadow NDC → UV mapping (Y flip, raw z)
 - Port `examples/skybox`
 
@@ -247,8 +275,15 @@ check for later changes.
 
 - **Per-draw data design (Step 3a).** Everything later depends on it. Test it with many
   draws per frame before moving on.
-- **zgpu limits.** `uniforms_buffer_size` (default 4 MiB) and `max_num_bindings_per_group`
-  (default 10) are zgpu build options. Check them against the material group and busy scenes.
+- **zgpu limits.** `uniforms_buffer_size` (default 4 MiB), `max_num_bindings_per_group`
+  (default 10), and the resource pool sizes (`bind_group_pool_size` 32, `sampler_pool_size`
+  16, ...) are zgpu build options. Check them against the material group and busy scenes;
+  a full pool is a hard failure, not a slowdown.
+- **Frozen Dawn.** Upstream zgpu HEAD is the pinned commit; its only changes since late 2024
+  are build scripts. It links michal-z's prebuilt `libdawn.a` (~2023 Dawn), which predates
+  `wgpuSurfaceConfigure` and accepts only `bgra8_unorm` for the swapchain. Forking zgpu can't
+  fix that without building a new Dawn and rewriting `wgpu.zig`, `zgpu.zig`, and zgui's
+  backend include path. Expect more gaps like these; work around them in `src/core`.
 - **zgui on WebGPU** draws inside a render pass, not after swap, so apps' frame order changes.
 - **Asset variety.** glTF files use many vertex formats; conversions in Step 4 need the full
   demo_app model list to validate.

@@ -182,8 +182,10 @@ Correctness rules. They exist because WebGPU works differently from GL.
 - **Depth is 0..1** (WebGPU clip space). Use the `*Zo` projection functions in `math`.
 - **Texture origin is top-left.** No default V-flip for GL's sake.
 - **Color space:** color textures (base color, emissive) are `*-srgb` formats; data
-  textures (normal, metallic-roughness, occlusion) are linear. The surface is sRGB;
-  shaders output linear color and do no manual gamma.
+  textures (normal, metallic-roughness, occlusion) are linear. Scene shaders
+  output linear color into an `rgba16float` scene target and do no manual gamma; the
+  present pass in `gpu_context.zig` is the one place linear → sRGB happens (zgpu's
+  swapchain is `bgra8_unorm`).
 
 ## 10. WGSL
 

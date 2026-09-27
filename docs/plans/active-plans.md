@@ -25,3 +25,9 @@
 
 Continue redfish_gl_zig's roadmap here: 016 motion patterns, 004 animation state machine,
 005 scene management.
+
+Consider moving from zgpu/Dawn to **wgpu-native** (the Rust `wgpu` crate behind the standard
+`webgpu.h`, prebuilt releases, used by Bevy) via bronter/wgpu_native_zig. It gives an sRGB
+surface and a maintained backend; the cost is replacing zgpu's `GraphicsContext` helpers
+(pools, uniforms ring) and pointing zgui's backend at wgpu-native. Raw `wgpu.*` calls live
+only in `src/core`, so the change stays mostly in `gpu_context.zig`.

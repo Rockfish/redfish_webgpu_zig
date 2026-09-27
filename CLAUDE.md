@@ -54,7 +54,10 @@ docs/
 - Never rewrite a buffer between draws expecting per-draw values; use `gctx.uniformsAllocate`
   with dynamic offsets
 - Pipelines created at init; render state is pipeline state
-- Depth 0..1, sRGB surface and color textures, texture origin top-left
+- Depth 0..1, sRGB color textures, texture origin top-left
+- Scenes render linear into `GpuContext`'s `rgba16float` target; only the present pass encodes sRGB
+  (zgpu's swapchain is `bgra8_unorm`)
+- Mipmaps from our render-pass generator in `texture.zig`, never `gctx.generateMipmaps`
 - GPU cleanup: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset
 
 ## Build
