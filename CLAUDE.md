@@ -1,7 +1,7 @@
 # redfish_webgpu_zig
 
 A port of redfish_gl_zig (`/Users/john/Dev/Dev_Zig/redfish_gl_zig`) from OpenGL 4.1 to WebGPU,
-using zig-gamedev `zgpu` (Dawn). A 3D engine for animated glTF models with PBR rendering.
+using **wgpu-native** through a build-translated `webgpu.h`. A 3D engine for animated glTF models with PBR rendering.
 Hobby project; readability for a returning reader matters more than cleverness.
 
 ## Read First
@@ -20,13 +20,15 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 ## Status
 
-Step 0 (project setup) done. No code yet. See `docs/plans/active-plans.md`.
+Step 1 in progress: window, device, sRGB clear, and zgui run on wgpu-native (`gpu_caps`).
+See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
 ```
 src/
 ├── core/         # Engine: gpu_context, shader, mesh, model, texture, animation, shapes, ...
+│   └── wgpu/     # webgpu.h translated by the build, string-view helpers, Metal layer
 ├── math/         # Vec/Mat/Quat, column-major
 └── containers/
 examples/         # gpu_caps, scene_tree, demo_app, animation_example, bullets, skybox
@@ -42,28 +44,32 @@ docs/
 ## Reference Projects
 
 - **redfish_gl_zig**: structure, names, behavior. Zig 0.16 idioms (`pub fn main(init: std.process.Init)`, `init.io`, `init.gpa`).
-- **gui_test_webgpu** (`/Users/john/Dev/Dev_Zig/gui_test_webgpu`): working zgpu + Dawn + zgui
-  `glfw_wgpu` build on Zig 0.16. Source of `build.zig.zon` dependencies.
-- **small_wgpu_core**, **angry_wgpu_rust** (`/Users/john/Dev/Dev_Rust/`): earlier wgpu work.
-  Reuse lessons, not the bind group layout (it needs 7 groups; Dawn allows 4).
+- **wgpu-native** (`gfx-rs/wgpu-native`): API reference is its `webgpu.h` / `wgpu.h`
+  (fetched into `zig-pkg/`, and the translated Zig in `.zig-cache`).
+- **gui_test_webgpu** (`/Users/john/Dev/Dev_Zig/gui_test_webgpu`): source of the zglfw and zgui
+  pins. Its zgpu/Dawn setup is not used (see `docs/reviews/2026-09-27-wgpu-native-spike.md`).
+- **small_wgpu_core**, **angry_wgpu_rust** (`/Users/john/Dev/Dev_Rust/`): earlier work on the same
+  wgpu. Reuse lessons, not the bind group layout (it needs 7 groups; WebGPU defaults allow 4).
 
 ## Key WebGPU Rules (details in STYLE.md section 9)
 
-- Raw `wgpu.*` / `zgpu.*` calls only in `src/core`
+- Raw WebGPU calls only in `src/core`; C API used as translated (`const c = wgpu.c;`)
 - Bind groups: 0 frame, 1 material, 2 object/draw, 3 pass-specific
-- Never rewrite a buffer between draws expecting per-draw values; use `gctx.uniformsAllocate`
+- Never rewrite a buffer between draws expecting per-draw values; use `uniform_ring.zig`
   with dynamic offsets
 - Pipelines created at init; render state is pipeline state
-- Depth 0..1, sRGB color textures, texture origin top-left
-- Scenes render linear into `GpuContext`'s `rgba16float` target; only the present pass encodes sRGB
-  (zgpu's swapchain is `bgra8_unorm`)
-- Mipmaps from our render-pass generator in `texture.zig`, never `gctx.generateMipmaps`
+- Depth 0..1, sRGB surface and color textures, texture origin top-left
+- Translated descriptors default every field to zero; set the ones where zero is wrong
+  (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`)
+- Mipmaps from our render-pass generator in `texture.zig` (WebGPU has none)
+- Request needed limits in `requiredLimits`; otherwise the device gets WebGPU defaults
 - GPU cleanup: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset
 
 ## Build
 
-Zig 0.16.0 (`~/zig/zig-aarch64-macos-0.16.0`). Build commands arrive with Step 1:
-`zig build <app>` and `zig build <app>-run`, as in redfish_gl_zig.
+Zig 0.16.0 (`~/zig/zig-aarch64-macos-0.16.0`). `zig build <app>` and `zig build <app>-run`,
+as in redfish_gl_zig (e.g. `zig build gpu_caps-run`). wgpu-native is listed for macOS arm64
+only; add a lazy package per platform in `build.zig.zon` and `wgpuNativeDependency`.
 
 ### macOS Toolchain Note (Xcode 27 / Zig 0.16)
 - The macOS 27 SDK `math.h` defers `INFINITY` to `<float.h>` via `__need_infinity_nan`

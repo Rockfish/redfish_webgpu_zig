@@ -36,10 +36,10 @@ Types are imported at the top of the file, never inline in a parameter list.
 
 ```zig
 const std = @import("std");
-const zgpu = @import("zgpu");
+const wgpu = @import("wgpu");
 const math = @import("math");
 
-const wgpu = zgpu.wgpu;
+const c = wgpu.c;
 const Vec3 = math.Vec3;
 const Mat4 = math.Mat4;
 const Allocator = std.mem.Allocator;
@@ -68,21 +68,20 @@ A reader scrolling down meets things in the order they execute.
   comment above a paragraph is welcome when the step isn't obvious from the code.
 - **Name temporaries for meaning.** A local that names an intermediate result is
   better than a nested expression.
-- **Hoist repeated access.** If `self.context.alloc` or `gctx.device` appears several
+- **Hoist repeated access.** If `self.context.alloc` or `gpu.device` appears several
   times, bind it to a local at the top.
 - **Top function reads like an outline.** A high-level function should mostly be calls
   to well-named helpers.
 
 ```zig
-pub fn draw(self: *Model, pass: wgpu.RenderPassEncoder, frame: *const FrameData) void {
-    const gctx = frame.gctx;
+pub fn draw(self: *Model, pass: c.WGPURenderPassEncoder, frame: *const FrameData) void {
+    const gpu = frame.gpu;
 
-    self.writeJointMatrices(gctx);
-    pass.setBindGroup(BindGroup.object, self.object_bind_group, &.{});
+    self.writeJointMatrices(gpu);
 
     for (self.draw_items) |item| {
-        const draw_uniforms = self.allocateDrawUniforms(gctx, item);
-        drawPrimitive(pass, item, draw_uniforms.offset);
+        const draw_offset = self.allocateDrawUniforms(frame.uniform_ring, item);
+        drawPrimitive(pass, item, draw_offset);
     }
 }
 ```
@@ -141,9 +140,14 @@ Carried over unchanged from redfish_gl_zig (`docs/review/allocator_conventions_r
 
 Correctness rules. They exist because WebGPU works differently from GL.
 
-- **Raw `wgpu.*` / `zgpu.*` calls live in `src/core`.** Apps work through core types
+- **Raw WebGPU calls live in `src/core`.** Apps work through core types
   (`Shader`, `Mesh`, `Model`, `Shape`, `RenderContext`). An app needing something new
   from the GPU adds it to core.
+- **The C API is used as translated.** `const c = wgpu.c;` then `c.wgpuDeviceCreateBuffer`,
+  `c.WGPUBufferDescriptor`, `c.WGPUTextureFormat_Depth32Float`. No wrapper types; core types
+  are the abstraction. Descriptors are `.{ ... }` with only the fields that matter; set any
+  field whose zero default is wrong (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`). Strings
+  go through `wgpu.stringView` / `wgpu.sliceFromView`.
 - **Bind group slots are fixed project-wide** and defined once in Zig, with the same
   numbers in WGSL:
   - group 0: frame (camera, lights, time)
@@ -170,7 +174,7 @@ Correctness rules. They exist because WebGPU works differently from GL.
 
 - **Never write the same buffer between draws expecting different values per draw.**
   Queue writes all land before the frame runs; the last write wins. Per-draw data
-  goes in its own slice (`gctx.uniformsAllocate` + dynamic offset) or in a storage
+  goes in its own slice (`uniform_ring.zig` + dynamic offset) or in a storage
   array indexed per draw or instance.
 - **Pipelines and bind group layouts are created at init, never per frame.** Render
   state (blend, depth write, cull) is part of the pipeline, so each combination is
@@ -182,10 +186,8 @@ Correctness rules. They exist because WebGPU works differently from GL.
 - **Depth is 0..1** (WebGPU clip space). Use the `*Zo` projection functions in `math`.
 - **Texture origin is top-left.** No default V-flip for GL's sake.
 - **Color space:** color textures (base color, emissive) are `*-srgb` formats; data
-  textures (normal, metallic-roughness, occlusion) are linear. Scene shaders
-  output linear color into an `rgba16float` scene target and do no manual gamma; the
-  present pass in `gpu_context.zig` is the one place linear → sRGB happens (zgpu's
-  swapchain is `bgra8_unorm`).
+  textures (normal, metallic-roughness, occlusion) are linear. The surface is
+  sRGB; shaders output linear color and do no manual gamma.
 
 ## 10. WGSL
 
