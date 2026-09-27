@@ -78,7 +78,7 @@ pub const model_infos = [_]ModelInfo{
     },
     // glTF-Sample-Models/2.0/CesiumMan/glTF/CesiumMan.gltf
     .{
-        .path = "assets_nas/assets/Models/CesiumMan/CesiumMan_converted.gltf",
+        .path = "assets/models/CesiumMan/CesiumMan_converted.gltf",
         .name = "CesiumMan (Converted)",
         .format = "glTF",
         .category = "Basic",

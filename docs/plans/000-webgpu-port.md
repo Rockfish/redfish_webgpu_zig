@@ -309,17 +309,37 @@ draws untextured.
 **Done:** demo_app's static models render and look correct (color is expected to differ
 from GL due to sRGB).
 
-### Step 5 - Skinning and Animation
+### Step 5 - Skinning and Animation ✅ 2026-09-27
 
-- Joint matrices in a storage buffer (group 2), written once per model instance per frame;
-  `pbr.wgsl` skinning path (skinned primitives carry `MaterialFlags.skin`)
-- `BakedAnimator` + the `baked_animator` variant of `AnimatorImpl`; demo_app `BAKE_ANIMATION`
-- `model_instance.zig` draw path for live, baked, and no animator
-- `baked_animator.zig` + `storage_buffer.zig` replace the TBO; instance matrices likewise
-- `pbr.wgsl` skinning path; `pbr_anim_baked.wgsl`
-- Port `examples/animation_example`
+Design: `docs/designs/005-skinning.md`.
 
-**Fixes:** `meshID` vs `meshId` naming split, `MAX_JOINTS` hand-copied into shaders.
+- Group 2 binding 1 is a read-only storage buffer of joint matrices; `DrawUniforms` gains
+  `joint_offset` and `DrawFlags.skinned`. One `pbr.wgsl` skins for live and baked animation
+  (`skinMatrix` in `common.wgsl`), so `pbr_anim_baked.wgsl` isn't needed. `pbr.wgsl` moved
+  to `src/core/shaders/` (shared by demo_app, scene_tree, and later apps)
+- `storage_buffer.zig` replaces `texture_buffer.zig`; `skinning.zig` (`JointBuffer` per live
+  skinned instance, written when it draws); `baked_animator.zig` (rows uploaded once, CPU
+  copy for node matrices, joints by offset)
+- `Model` and `ModelInstance` skin through the shared `Mesh.drawAt`; `ModelInstance` has its
+  `baked_animator` variant back; demo_app `BAKE_ANIMATION` on
+- `GltfAsset.addCustomTexture` (deferred from Step 4): GL uniform names map to material
+  slots (`texture_diffuse` → base color, `texture_specular` → the metallic-roughness slot,
+  `texture_normal(s)` → normal, `texture_emissive` → emissive) and override that slot for
+  meshes with the name
+- `examples/animation_example`: `player.wgsl` (redfish's player_shader without shadows,
+  custom textures from the material slots) or the core `pbr.wgsl`; the 4×4 grid is drawn as
+  16 draws instead of GL instancing (instancing is Step 6)
+- scene_tree's CesiumMan node is back, drawing with PBR through `Model` and animating
+
+Checked: Player, Fox, CesiumMan, BrainStem, Spacesuit animate baked and live in demo_app;
+animation_example's Player grid animates with its custom textures; scene_tree's model walks.
+
+**Fixes:** `MAX_JOINTS` hand-copied into shaders (now from `bindings.zig`); animation_example
+registering `texture_normal` while its shader read `texture_normals` (both map to the
+normal slot); demo_app's "CesiumMan (Converted)" entry pointing at a missing path. Design fix
+from 3b: `texture.bind(frame)` now records the frame's bound texture and each `.texture`
+shape draw sets group 1 from it, so a PBR draw in between no longer leaves an incompatible
+group 1 bound (found when scene_tree's model came back).
 
 **Done:** Fox, CesiumMan, and the other animated demo models play live and baked;
 animation_example runs.
@@ -330,7 +350,8 @@ Where new work happens, so it moves ahead of level_01.
 
 - `build.zig.zon` adds zaudio; `sound_engine.zig` moves onto it
 - `lines.zig` (1px), `skybox.zig` (cube texture, `LessEqual` depth pipeline, binds its own shader)
-- Instanced bullets: per-instance vertex buffers with `stepMode = .instance`
+- Instanced bullets: per-instance vertex buffers with `stepMode = .instance`; the same for
+  animation_example's grid if wanted
 - `lights.zig`: `SceneLights` as a uniform struct in group 0, used by basic and PBR shaders
 - Scene switching through `cleanUp()` then arena reset; `ResourceManager`
 - Port all three scenes, cannon, turret, bullet systems
@@ -379,6 +400,11 @@ check for later changes.
   moves with the mouse. In scene_tree, clicking the floor in ortho mode (key 5) moves the
   cylinder group to the wrong place. Likely never worked in redfish either. Fix with an
   ortho path that unprojects the mouse to a near-plane origin.
+
+- **CesiumMan_converted.gltf is upside down.** Its `Z_UP` and `Armature` rotations have the
+  opposite sign of the original CesiumMan's matrices (+90° X instead of -90°), as if the
+  converter wrote conjugated quaternions. demo_app entry 9 shows it on its head; scene_tree
+  compensates with a 180° X rotation. Fix the converter or re-export the asset.
 
 ## Risks
 

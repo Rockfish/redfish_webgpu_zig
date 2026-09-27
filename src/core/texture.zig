@@ -12,7 +12,6 @@ const GltfAsset = @import("gltf_asset.zig").GltfAsset;
 const c = wgpu.c;
 const stringView = wgpu.stringView;
 const Allocator = std.mem.Allocator;
-const BindGroup = bindings.BindGroup;
 const GpuContext = gpu_context.GpuContext;
 const Frame = gpu_context.Frame;
 
@@ -116,10 +115,11 @@ pub const Texture = struct {
         return texture;
     }
 
-    /// Bind as group 1 for the draws that follow. Replaces redfish's
-    /// `shader.bindTextureAuto(...)`; bind group changes are recorded in draw order.
+    /// The texture `MaterialKind.texture` draws use from here on, this frame. Replaces
+    /// redfish's `shader.bindTextureAuto(...)`; each shape draw sets group 1 from it, so
+    /// draws with other materials in between don't disturb it.
     pub fn bind(self: *const Self, frame: *const Frame) void {
-        c.wgpuRenderPassEncoderSetBindGroup(frame.pass, BindGroup.material, self.bind_group, 0, null);
+        frame.gpu.bound_texture = self.bind_group;
     }
 
     pub fn releaseGpuObjects(self: *Self) void {

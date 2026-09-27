@@ -22,8 +22,8 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 depth, and the
 rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`),
-textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app
-(static models; skinning is Step 5).
+textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app;
+Step 5 skinning (live and baked, one shader) and `animation_example`.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
@@ -68,7 +68,11 @@ docs/
 - Translated descriptors default every field to zero; set the ones where zero is wrong
   (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`)
 - Mipmaps from our render-pass generator in `mipmaps.zig` (WebGPU has none)
-- Group 1 materials: `Shader` declares a `MaterialKind`; `texture.bind(frame)` before draws
+- Group 1 materials: `Shader` declares a `MaterialKind`; `texture.bind(frame)` sets the texture
+  `.texture` shape draws use (re-set per draw, safe across PBR draws)
+- Group 2 binding 1 = joint matrices (storage); skinned draws set `joint_offset` and
+  `DrawFlags.skinned`. Draw each posed `ModelInstance` once per frame
+- Shared shaders live in `src/core/shaders/` (`common.wgsl` embedded, `pbr.wgsl` loaded by path)
 - GL-era color constants go through `colors.srgbToLinear` to look the same
 - Request needed limits in `requiredLimits`; otherwise the device gets WebGPU defaults
 - GPU cleanup: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset

@@ -4,3 +4,4 @@ zig-out/
 zig-pkg/
 .DS_Store
 imgui.ini
+model_report.md

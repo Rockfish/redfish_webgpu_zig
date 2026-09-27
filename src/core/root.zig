@@ -35,6 +35,11 @@ pub const AnimationRepeatMode = @import("animator.zig").AnimationRepeatMode;
 pub const WeightedAnimation = @import("animator.zig").WeightedAnimation;
 pub const AnimatorImpl = @import("model_instance.zig").AnimatorImpl;
 
+pub const BakedAnimation = @import("baked_animator.zig").BakedAnimation;
+pub const BakedAnimator = @import("baked_animator.zig").BakedAnimator;
+pub const StorageBuffer = @import("storage_buffer.zig").StorageBuffer;
+pub const skinning = @import("skinning.zig");
+
 pub const Movement = @import("movement.zig").Movement;
 pub const MovementDirection = @import("movement.zig").MovementDirection;
 

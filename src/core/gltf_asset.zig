@@ -10,6 +10,7 @@ const Mesh = @import("mesh.zig").Mesh;
 const Animator = @import("animator.zig").Animator;
 const Context = @import("context.zig").Context;
 const GpuContext = @import("gpu_context.zig").GpuContext;
+const TextureSlot = @import("material.zig").TextureSlot;
 const AABB = @import("aabb.zig").AABB;
 const Transform = @import("transform.zig").Transform;
 
@@ -33,6 +34,32 @@ const ManagedArrayList = containers.ManagedArrayList;
 const Path = std.fs.path;
 
 const GLTF = gltf_types.GLTF;
+
+/// A texture file assigned to a material slot of the meshes with a given name, for
+/// models whose materials don't reference their textures.
+const CustomTexture = struct {
+    mesh_name: []const u8,
+    slot: TextureSlot,
+    texture_path: []const u8,
+    config: texture.TextureConfig,
+    texture: ?*texture.Texture = null, // Loaded in `load`
+};
+
+/// redfish bound custom textures by GL uniform name; these are the names apps pass,
+/// mapped to the material slot a shader reads them from.
+fn slotForUniformName(uniform_name: []const u8) ?TextureSlot {
+    const names = [_]struct { []const u8, TextureSlot }{
+        .{ "texture_diffuse", .base_color },
+        .{ "texture_specular", .metallic_roughness },
+        .{ "texture_normal", .normal },
+        .{ "texture_normals", .normal },
+        .{ "texture_emissive", .emissive },
+    };
+    for (names) |entry| {
+        if (std.mem.eql(u8, entry[0], uniform_name)) return entry[1];
+    }
+    return null;
+}
 
 // GLB Format Constants
 const GLB_MAGIC: u32 = 0x46546C67; // "glTF" in little-endian
@@ -77,6 +104,7 @@ pub const GltfAsset = struct {
     buffer_data: ManagedArrayList([]align(4) const u8),
     loaded_textures: std.AutoHashMap(u32, *texture.Texture),
     generated_normals: std.AutoHashMap(u64, []Vec3), // Key: mesh_index << 32 | primitive_index
+    custom_textures: ManagedArrayList(CustomTexture), // Manual texture assignments
     directory: []const u8,
     name: []const u8,
     filepath: [:0]const u8,
@@ -100,6 +128,7 @@ pub const GltfAsset = struct {
             .buffer_data = ManagedArrayList([]align(4) const u8).init(context.alloc),
             .loaded_textures = std.AutoHashMap(u32, *texture.Texture).init(context.alloc),
             .generated_normals = std.AutoHashMap(u64, []Vec3).init(context.alloc),
+            .custom_textures = ManagedArrayList(CustomTexture).init(context.alloc),
             .directory = try context.alloc.dupe(u8, Path.dirname(path) orelse ""),
             .filepath = try context.alloc.dupeZ(u8, path),
             .load_textures = true,
@@ -119,10 +148,42 @@ pub const GltfAsset = struct {
         while (texture_iterator.next()) |tex| {
             tex.*.releaseGpuObjects();
         }
+
+        for (self.custom_textures.list.items) |custom_tex| {
+            if (custom_tex.texture) |tex| tex.releaseGpuObjects();
+        }
     }
 
     pub fn skipModelTextures(self: *Self) void {
         self.load_textures = false;
+    }
+
+    /// Assign a texture file (relative to the asset's directory) to the meshes named
+    /// `mesh_name`, in the material slot `uniform_name` maps to (see `slotForUniformName`).
+    /// Overrides the glTF material's texture in that slot. Before `load`.
+    pub fn addCustomTexture(self: *Self, mesh_name: []const u8, uniform_name: []const u8, texture_path: []const u8, config: texture.TextureConfig) !void {
+        if (self.is_loaded) log.err("Cannot add texture to already loaded asset", .{});
+
+        const slot = slotForUniformName(uniform_name) orelse {
+            log.err("addCustomTexture: no material slot for '{s}'", .{uniform_name});
+            return error.UnknownCustomTextureSlot;
+        };
+
+        const allocator = self.context.alloc;
+        try self.custom_textures.append(.{
+            .mesh_name = try allocator.dupe(u8, mesh_name),
+            .slot = slot,
+            .texture_path = try allocator.dupe(u8, texture_path),
+            .config = config,
+        });
+    }
+
+    /// The custom texture for a mesh and slot, if one was added.
+    pub fn getCustomTexture(self: *const Self, mesh_name: []const u8, slot: TextureSlot) ?*texture.Texture {
+        for (self.custom_textures.list.items) |custom_tex| {
+            if (custom_tex.slot == slot and std.mem.eql(u8, custom_tex.mesh_name, mesh_name)) return custom_tex.texture;
+        }
+        return null;
     }
 
     pub fn setNormalGenerationMode(self: *Self, mode: NormalGenerationMode) void {
@@ -351,6 +412,16 @@ pub const GltfAsset = struct {
         // Generate normals for missing ones based on configuration
         try self.generateMissingNormals();
 
+        // Custom textures first, so meshes find them. Color space follows the slot.
+        for (self.custom_textures.list.items) |*custom_tex| {
+            var config = custom_tex.config;
+            config.is_srgb = custom_tex.slot.isSrgb();
+            custom_tex.texture = self.loadTextureFromFile(custom_tex.texture_path, config) catch |err| {
+                log.err("Failed to load custom texture {s}: {any}", .{ custom_tex.texture_path, err });
+                continue;
+            };
+        }
+
         if (self.gltf.meshes) |meshes| {
             self.meshes = try self.context.alloc.alloc(*Mesh, meshes.len);
             if (self.gltf.meshes) |gltf_meshes| {
@@ -386,6 +457,13 @@ pub const GltfAsset = struct {
         }
 
         return GltAssetError.TextureNotLoaded;
+    }
+
+    pub fn loadTextureFromFile(self: *Self, texture_path: []const u8, config: texture.TextureConfig) !*texture.Texture {
+        const full_path = try std.fs.path.joinZ(self.context.temp_alloc, &[_][]const u8{ self.directory, texture_path });
+        defer self.context.temp_alloc.free(full_path);
+
+        return texture.Texture.initFromFile(self.context, self.gpu, full_path, config);
     }
 
     /// Loads a texture once per asset; later references reuse it. `is_srgb` is set by the

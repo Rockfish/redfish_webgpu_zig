@@ -52,6 +52,10 @@ pub const GpuContext = struct {
     samplers: SamplerCache,
     mipmaps: MipmapGenerator,
     default_textures: DefaultTextures = undefined,
+    /// Group 1 for `MaterialKind.texture` draws, set by `texture.bind(frame)`. Like GL's
+    /// bound texture, it survives other draws (a PBR draw sets its own group 1 and the
+    /// next shape draw sets this one back). Cleared each frame.
+    bound_texture: c.WGPUBindGroup = null,
 
     const Self = @This();
 
@@ -79,7 +83,7 @@ pub const GpuContext = struct {
             .width = 0,
             .height = 0,
             .uniform_ring = uniform_ring,
-            .bindings = Bindings.init(device, uniform_ring.buffer),
+            .bindings = Bindings.init(device, c.wgpuDeviceGetQueue(device), uniform_ring.buffer),
             .samplers = SamplerCache.init(allocator),
             .mipmaps = MipmapGenerator.init(device),
         };
@@ -124,6 +128,7 @@ pub const GpuContext = struct {
         }
 
         self.uniform_ring.reset();
+        self.bound_texture = null;
 
         const color_view = c.wgpuTextureCreateView(surface_texture.texture, null);
         const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});

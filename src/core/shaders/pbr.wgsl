@@ -1,7 +1,8 @@
 // glTF metallic-roughness PBR, ported from redfish's pbr.vert / pbr.frag.
 // Changes: no manual gamma (the surface is sRGB), emissive = factor * texture as glTF
 // specifies, alpha MASK discards, one frame light until SceneLights (port Step 6).
-// Skinning (joint matrices in a storage buffer) comes with port Step 5.
+// Skinning reads `joints` (group 2) from `draw.joint_offset`, for live and baked animation
+// alike; this replaces redfish's separate pbr_anim_baked.vert.
 
 @group(GROUP_MATERIAL) @binding(0) var<uniform> material: MaterialUniforms;
 @group(GROUP_MATERIAL) @binding(1) var base_color_texture: texture_2d<f32>;
@@ -39,11 +40,16 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    let world_position = draw.model * vec4f(in.position, 1.0);
+    // Skinned: blend the joint matrices by weight. The node transform is not applied
+    // (glTF); draw.model is the model transform alone.
+    let skin = skinMatrix(in.joints, in.weights);
+    let skin3 = mat3x3f(skin[0].xyz, skin[1].xyz, skin[2].xyz);
+
+    let world_position = draw.model * skin * vec4f(in.position, 1.0);
 
     // World-space TBN; the tangent is re-orthogonalized against the normal.
-    let normal = normalize((draw.normal_matrix * vec4f(in.normal, 0.0)).xyz);
-    var tangent = normalize((draw.model * vec4f(in.tangent.xyz, 0.0)).xyz);
+    let normal = normalize((draw.normal_matrix * vec4f(skin3 * in.normal, 0.0)).xyz);
+    var tangent = normalize((draw.model * vec4f(skin3 * in.tangent.xyz, 0.0)).xyz);
     tangent = normalize(tangent - dot(tangent, normal) * normal);
     let bitangent = cross(normal, tangent) * in.tangent.w;
 

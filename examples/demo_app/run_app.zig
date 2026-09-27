@@ -134,9 +134,21 @@ fn loadModel(context: Context, gpu: *GpuContext, model_info: assets_list.ModelIn
     gltf_asset.setNormalGenerationMode(.accurate);
     try gltf_asset.load();
 
-    // Baked animation (BAKE_ANIMATION) returns with BakedAnimator in port Step 5.
     const animator = try core.Animator.init(context, gltf_asset);
-    const animator_impl: AnimatorImpl = .{ .live_animator = animator };
+    var animator_impl: AnimatorImpl = .{ .live_animator = animator };
+
+    if (BAKE_ANIMATION) {
+        const baked_animator = try core.BakedAnimator.init(
+            context,
+            gpu,
+            animator,
+            .{
+                .frame_rate = 30.0,
+                .capture = .all,
+            },
+        );
+        animator_impl = .{ .baked_animator = baked_animator };
+    }
 
     const model = try ModelInstance.init(context.alloc, model_info.name, animator_impl, gltf_asset);
     errdefer gltf_asset.cleanUp();
@@ -220,6 +232,9 @@ fn switchModel(gpu: *GpuContext, state: *state_.State, current_scope: **ModelSco
 const camera_position = vec3(0.0, 12.0, 40.0);
 const camera_target = vec3(0.0, 12.0, 0.0);
 
+/// Baked and live animation draw with the same shader (pbr.wgsl).
+const BAKE_ANIMATION: bool = true;
+
 pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initial_model_index: i32, max_duration: ?f32) !void {
     std.debug.print("running app\n", .{});
 
@@ -288,7 +303,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
         context.io,
         context.alloc,
         gpu,
-        "examples/demo_app/shaders/pbr.wgsl",
+        "src/core/shaders/pbr.wgsl",
         &MeshPrimitive.vertex_buffer_layouts,
         .pbr,
     );

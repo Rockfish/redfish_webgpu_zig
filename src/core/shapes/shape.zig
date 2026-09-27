@@ -18,6 +18,8 @@ const DrawUniforms = bindings.DrawUniforms;
 const GpuContext = gpu_context.GpuContext;
 const Frame = gpu_context.Frame;
 
+const log = std.log.scoped(.shape);
+
 /// Filled in for shapes built without the attribute, so every shape has the same layout.
 const DEFAULT_TEXCOORD = [2]f32{ 0.0, 0.0 };
 const DEFAULT_NORMAL = [3]f32{ 0.0, 0.0, 1.0 };
@@ -184,7 +186,7 @@ pub const Shape = struct {
 
     /// Per-draw values go in `draw_uniforms`, copied into this frame's uniform ring,
     /// so any number of draws in a frame each see their own. A `.texture` shader draws
-    /// with whatever texture was last bound (`texture.bind(frame)`).
+    /// with the texture last bound this frame (`texture.bind(frame)`).
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, draw_uniforms: DrawUniforms) void {
         if (!self.is_visible) return;
 
@@ -193,9 +195,18 @@ pub const Shape = struct {
         const draw_offset = gpu.uniform_ring.allocate(DrawUniforms, draw_uniforms);
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.renderState()));
-        if (shader.material == .none) {
-            c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.material, gpu.bindings.empty_bind_group, 0, null);
-        }
+        const material_bind_group = switch (shader.material) {
+            .none => gpu.bindings.empty_bind_group,
+            .texture => gpu.bound_texture orelse {
+                log.err("Shape.draw: .texture shader with no texture bound this frame", .{});
+                return;
+            },
+            .pbr => {
+                log.err("Shape.draw: pbr shaders draw glTF meshes, not shapes", .{});
+                return;
+            },
+        };
+        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.material, material_bind_group, 0, null);
         c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, gpu.bindings.object_bind_group, 1, &draw_offset);
 
         const buffers = [_]c.WGPUBuffer{ self.position_buffer, self.texcoord_buffer, self.normal_buffer, self.color_buffer };

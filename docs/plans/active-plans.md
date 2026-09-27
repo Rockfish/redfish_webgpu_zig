@@ -3,7 +3,7 @@
 ## Currently Active
 
 - **[000-webgpu-port.md](000-webgpu-port.md)** - Port redfish_gl_zig to WebGPU (wgpu-native)
-  - Next: **Step 5 - Skinning and Animation**
+  - Next: **Step 6 - bullets**
 
 ## Port Progress
 
@@ -15,7 +15,7 @@
 | 3a | One colored cube: shaders, bindings, pipelines, per-draw data | ✅ 2026-09-27 |
 | 3b | Textures and all shapes, scene_tree | ✅ 2026-09-27 |
 | 4 | glTF static meshes with PBR | ✅ 2026-09-27 |
-| 5 | Skinning and animation | |
+| 5 | Skinning and animation | ✅ 2026-09-27 |
 | 6 | bullets | |
 | 7 | level_01 | |
 | 8 | demo_app complete | |

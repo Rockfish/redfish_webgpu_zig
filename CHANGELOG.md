@@ -2,6 +2,15 @@
 
 ## Recent Changes
 
+### 2026-09-27 - Skinning and Animation (Port Step 5)
+- **Design**: `docs/designs/005-skinning.md`
+- **Skinning**: joint matrices in a group 2 storage buffer; `DrawUniforms.joint_offset` and `DrawFlags.skinned`; one `pbr.wgsl` for live and baked (moved to `src/core/shaders/`); `skinMatrix` in `common.wgsl`
+- **Core**: `storage_buffer.zig` (replaces texture buffers), `skinning.zig` (`JointBuffer`), `baked_animator.zig` (storage buffer rows, CPU node matrices); `Model` / `ModelInstance` skin through `Mesh.drawAt`; baked variant of `AnimatorImpl`
+- **Custom textures**: `GltfAsset.addCustomTexture` maps GL uniform names to material slots
+- **Examples**: `animation_example` ported (`player.wgsl`, 4×4 baked grid); demo_app `BAKE_ANIMATION` on; scene_tree's CesiumMan node back and animating
+- **Fixes**: bound texture lost across PBR draws (3b design fix); animation_example's normal-map name mismatch; demo_app's converted CesiumMan path
+- **Known issue**: `CesiumMan_converted.gltf` root rotations have flipped signs (upside down)
+
 ### 2026-09-27 - glTF Static Meshes with PBR (Port Step 4)
 - **Design**: `docs/designs/004-gltf-pbr.md`
 - **Core**: `gltf_asset.zig`, `mesh.zig` (canonical vertex format, strided accessor reader, u8→u16 indices), `material.zig` (`PbrMaterial` group 1 bind group, 1×1 default textures), `model.zig` and `model_instance.zig` sharing `Mesh.drawAt`, `animator.zig` (CPU side), `gltf/report.zig`

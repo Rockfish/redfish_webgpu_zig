@@ -52,6 +52,8 @@ pub const PBR_TEXTURE_COUNT = 5;
 pub const DrawFlags = struct {
     /// Use the vertex color attribute instead of `DrawUniforms.color`.
     pub const vertex_color: u32 = 1 << 0;
+    /// Skin with `joints[joint_offset + joint_index]`. Set only when joints are bound.
+    pub const skinned: u32 = 1 << 1;
 };
 
 /// Mirrors `FrameUniforms` in shaders/common.wgsl (group 0, binding 0).
@@ -76,7 +78,9 @@ pub const DrawUniforms = extern struct {
     normal_matrix: Mat4,
     color: Vec4,
     flags: u32,
-    _pad: [3]u32 = .{ 0, 0, 0 },
+    /// First joint matrix of this draw in group 2's `joints` array (skinned meshes).
+    joint_offset: u32 = 0,
+    _pad: [2]u32 = .{ 0, 0 },
 
     pub fn init(model: Mat4, color: Vec4) DrawUniforms {
         return .{
@@ -135,6 +139,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     \\const LOCATION_WEIGHTS: u32 = {d}u;
     \\const MAX_JOINTS: u32 = {d}u;
     \\const DRAW_FLAG_VERTEX_COLOR: u32 = {d}u;
+    \\const DRAW_FLAG_SKINNED: u32 = {d}u;
     \\const MATERIAL_FLAG_BASE_COLOR_TEXTURE: u32 = {d}u;
     \\const MATERIAL_FLAG_METALLIC_ROUGHNESS_TEXTURE: u32 = {d}u;
     \\const MATERIAL_FLAG_NORMAL_TEXTURE: u32 = {d}u;
@@ -160,6 +165,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     VertexAttr.weights,
     MAX_JOINTS,
     DrawFlags.vertex_color,
+    DrawFlags.skinned,
     MaterialFlags.base_color_texture,
     MaterialFlags.metallic_roughness_texture,
     MaterialFlags.normal_texture,
@@ -182,17 +188,27 @@ pub const Bindings = struct {
     frame_buffer: c.WGPUBuffer,
     frame_bind_group: c.WGPUBindGroup,
     empty_bind_group: c.WGPUBindGroup,
-    /// Binds the uniform ring with a dynamic offset per draw.
+    /// One identity matrix: group 2's `joints` for draws without skinning.
+    no_joints_buffer: c.WGPUBuffer,
+    /// Binds the uniform ring with a dynamic offset per draw, and `no_joints_buffer`.
+    /// Skinned instances make their own with `createObjectBindGroup`.
     object_bind_group: c.WGPUBindGroup,
 
     const Self = @This();
 
-    pub fn init(device: c.WGPUDevice, uniform_ring_buffer: c.WGPUBuffer) Self {
+    pub fn init(device: c.WGPUDevice, queue: c.WGPUQueue, uniform_ring_buffer: c.WGPUBuffer) Self {
         const frame_layout = createUniformLayout(device, "frame layout", @sizeOf(FrameUniforms), false);
         const empty_layout = c.wgpuDeviceCreateBindGroupLayout(device, &.{ .label = stringView("empty layout") });
-        const object_layout = createUniformLayout(device, "object layout", @sizeOf(DrawUniforms), true);
+        const object_layout = createObjectLayout(device);
         const texture_layout = createTextureLayout(device);
         const pbr_layout = createPbrLayout(device);
+
+        const no_joints_buffer = c.wgpuDeviceCreateBuffer(device, &.{
+            .label = stringView("no joints"),
+            .usage = c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopyDst,
+            .size = @sizeOf(Mat4),
+        });
+        c.wgpuQueueWriteBuffer(queue, no_joints_buffer, 0, &Mat4.Identity, @sizeOf(Mat4));
 
         const frame_buffer = c.wgpuDeviceCreateBuffer(device, &.{
             .label = stringView("frame uniforms"),
@@ -212,7 +228,8 @@ pub const Bindings = struct {
                 .label = stringView("empty"),
                 .layout = empty_layout,
             }),
-            .object_bind_group = createUniformBindGroup(device, "object", object_layout, uniform_ring_buffer, @sizeOf(DrawUniforms)),
+            .no_joints_buffer = no_joints_buffer,
+            .object_bind_group = createObjectBindGroup(device, object_layout, uniform_ring_buffer, no_joints_buffer, @sizeOf(Mat4)),
         };
     }
 
@@ -226,6 +243,7 @@ pub const Bindings = struct {
 
     pub fn releaseGpuObjects(self: *Self) void {
         c.wgpuBindGroupRelease(self.object_bind_group);
+        c.wgpuBufferRelease(self.no_joints_buffer);
         c.wgpuBindGroupRelease(self.empty_bind_group);
         c.wgpuBindGroupRelease(self.frame_bind_group);
         c.wgpuBufferRelease(self.frame_buffer);
@@ -252,6 +270,51 @@ fn createUniformLayout(device: c.WGPUDevice, label: []const u8, size: u64, dynam
         .label = stringView(label),
         .entryCount = 1,
         .entries = &entry,
+    });
+}
+
+/// Group 2: per-draw uniforms from the ring (dynamic offset) at 0, joint matrices at 1.
+fn createObjectLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
+    const entries = [_]c.WGPUBindGroupLayoutEntry{
+        .{
+            .binding = 0,
+            .visibility = c.WGPUShaderStage_Vertex | c.WGPUShaderStage_Fragment,
+            .buffer = .{
+                .type = c.WGPUBufferBindingType_Uniform,
+                .hasDynamicOffset = 1,
+                .minBindingSize = @sizeOf(DrawUniforms),
+            },
+        },
+        .{
+            .binding = 1,
+            .visibility = c.WGPUShaderStage_Vertex,
+            .buffer = .{ .type = c.WGPUBufferBindingType_ReadOnlyStorage, .minBindingSize = @sizeOf(Mat4) },
+        },
+    };
+    return c.wgpuDeviceCreateBindGroupLayout(device, &.{
+        .label = stringView("object layout"),
+        .entryCount = entries.len,
+        .entries = &entries,
+    });
+}
+
+/// A group 2 bind group: the uniform ring plus a joint matrix buffer.
+pub fn createObjectBindGroup(
+    device: c.WGPUDevice,
+    object_layout: c.WGPUBindGroupLayout,
+    uniform_ring_buffer: c.WGPUBuffer,
+    joints_buffer: c.WGPUBuffer,
+    joints_size: u64,
+) c.WGPUBindGroup {
+    const entries = [_]c.WGPUBindGroupEntry{
+        .{ .binding = 0, .buffer = uniform_ring_buffer, .size = @sizeOf(DrawUniforms) },
+        .{ .binding = 1, .buffer = joints_buffer, .size = joints_size },
+    };
+    return c.wgpuDeviceCreateBindGroup(device, &.{
+        .label = stringView("object"),
+        .layout = object_layout,
+        .entryCount = entries.len,
+        .entries = &entries,
     });
 }
 

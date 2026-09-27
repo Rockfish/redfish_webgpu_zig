@@ -19,6 +19,10 @@ const Ray = core.Ray;
 const Arenas = core.Arenas;
 const Context = core.Context;
 const Frame = core.Frame;
+const DrawUniforms = core.DrawUniforms;
+const GltfAsset = core.gltf_asset.GltfAsset;
+const Model = core.Model;
+const MeshPrimitive = core.MeshPrimitive;
 const GpuContext = core.GpuContext;
 const Shader = core.Shader;
 const Shape = shapes.Shape;
@@ -33,6 +37,21 @@ const srgbToLinear = core.colors.srgbToLinear;
 const CLEAR_COLOR = [4]f64{ srgbToLinear(0.1), srgbToLinear(0.3), srgbToLinear(0.1), 1.0 };
 const NO_HIT = vec4(0.0, 0.0, 0.0, 0.0);
 const HIT = vec4(1.0, 0.0, 0.0, 0.0);
+
+/// Scene nodes share scene_tree's unlit shader; the model node draws with PBR instead.
+const ModelObj = struct {
+    model: *Model,
+    shader: *const Shader,
+
+    pub fn draw(self: *ModelObj, frame: *const Frame, node_shader: *const Shader, draw_uniforms: DrawUniforms) void {
+        _ = node_shader;
+        self.model.draw(frame, self.shader, draw_uniforms.model);
+    }
+
+    pub fn updateAnimation(self: *ModelObj, delta_time: f32) !void {
+        try self.model.updateAnimation(delta_time);
+    }
+};
 
 pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void {
     var common_arenas = try Arenas.init(init.gpa);
@@ -142,7 +161,25 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     );
     defer surface_texture.releaseGpuObjects();
 
-    // The CesiumMan model node returns with GltfAsset / Model (port Step 4).
+    const pbr_shader = try Shader.init(
+        init.io,
+        context.alloc,
+        gpu,
+        "src/core/shaders/pbr.wgsl",
+        &MeshPrimitive.vertex_buffer_layouts,
+        .pbr,
+    );
+    defer pbr_shader.releaseGpuObjects();
+
+    const model_path = "assets/models/CesiumMan/CesiumMan_converted.gltf";
+    var gltf_asset = try GltfAsset.init(context, gpu, "alien", model_path);
+    try gltf_asset.load();
+
+    const model = try gltf_asset.buildModel();
+    defer model.cleanUp();
+    // redfish never animated this node; playing its walk exercises Model's skinning path.
+    try model.playAnimations(&.{0});
+    var model_obj = ModelObj{ .model = model, .shader = pbr_shader };
 
     // Simple placeholder object for root node (no update or draw methods)
     const RootPlaceholder = struct {};
@@ -150,7 +187,18 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
     const root_node = try Node.init(context.alloc, "root_node", &root_placeholder, &main.state);
 
+    const node_model = try Node.init(context.alloc, "node_model", &model_obj, &main.state);
+
+    // CesiumMan_converted's Z_UP root node rotates +90° about X (the original asset: -90°),
+    // so the model stands on its head; 180° about X sets it upright. redfish rotated
+    // -90°, which laid it down, but never showed it (its Node.draw set a uniform the
+    // shader didn't have). See Known Issues in the port plan.
+    node_model.transform.translation = vec3(0.0, 0.0, 2.0);
+    node_model.transform.rotation = Quat.fromAxisAngle(vec3(1.0, 0.0, 0.0), math.degreesToRadians(180.0));
+
     const node_cylinder = try Node.init(context.alloc, "shape_cylinder", cylinder, &main.state);
+
+    root_node.addChild(node_model);
     root_node.addChild(node_cylinder);
 
     const cube_positions = [_]Vec3{
@@ -252,6 +300,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         }
 
         updateSpin(node_cylinder, &main.state);
+        try node_model.update(&main.state);
 
         root_node.transform.translation = main.state.target_position;
         root_node.updateTransform(null);
@@ -304,7 +353,11 @@ fn frameUniforms(st: *State) core.bindings.FrameUniforms {
     var render_context = st.camera.getRenderContext(st.total_time);
     render_context.projection = st.projection;
     render_context.projection_view = st.projection.mulMat4(&render_context.view);
-    return render_context.frameUniforms();
+    var uniforms = render_context.frameUniforms();
+    // For the PBR model node (demo_app's light); redfish's basic shader was unlit
+    uniforms.light_position = vec3(50.0, 50.0, 50.0);
+    uniforms.light_intensity = 100.0;
+    return uniforms;
 }
 
 pub fn updateSpin(node: *Node, st: *State) void {

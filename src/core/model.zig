@@ -9,6 +9,7 @@ const Animator = @import("animator.zig").Animator;
 const Transform = @import("transform.zig").Transform;
 const AABB = @import("aabb.zig").AABB;
 const gpu_context = @import("gpu_context.zig");
+const skinning = @import("skinning.zig");
 const Context = @import("context.zig").Context;
 
 const Frame = gpu_context.Frame;
@@ -28,6 +29,8 @@ pub const Model = struct {
     scene: usize,
     animator: *Animator,
     gltf_asset: *GltfAsset,
+    /// Joint matrices on the GPU, for skinned models.
+    joint_buffer: ?skinning.JointBuffer,
 
     const Self = @This();
 
@@ -44,12 +47,14 @@ pub const Model = struct {
             .name = try alloc.dupe(u8, name),
             .animator = animator,
             .gltf_asset = gltf_asset,
+            .joint_buffer = if (animator.skin_index != null) skinning.JointBuffer.init(gltf_asset.gpu) else null,
         };
 
         return model;
     }
 
     pub fn cleanUp(self: *Self) void {
+        if (self.joint_buffer) |*joint_buffer| joint_buffer.releaseGpuObjects();
         self.gltf_asset.cleanUp();
     }
 
@@ -71,32 +76,45 @@ pub const Model = struct {
         try self.animator.playAnimations(animation_indices);
     }
 
-    /// `model_transform` places the whole model (redfish's `matModel`). Skinning (joint
-    /// matrices in a storage buffer) comes with port Step 5.
+    /// `model_transform` places the whole model (redfish's `matModel`). A skinned model
+    /// uploads its current pose; draw each `Model` once per frame.
     pub fn draw(self: *Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4) void {
+        const skin: ?skinning.SkinBinding = if (self.joint_buffer) |*joint_buffer|
+            joint_buffer.update(frame.gpu, &self.animator.joint_matrices)
+        else
+            null;
+
         const scene = self.gltf_asset.gltf.scenes.?[self.scene];
 
         if (scene.nodes) |nodes| {
             for (nodes) |node_index| {
                 const node = self.gltf_asset.gltf.nodes.?[node_index];
-                self.drawNodes(frame, shader, model_transform, node, node_index);
+                self.drawNodes(frame, shader, model_transform, skin, node, node_index);
             }
         }
     }
 
-    fn drawNodes(self: *Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4, node: gltf_types.Node, node_index: usize) void {
+    fn drawNodes(
+        self: *Self,
+        frame: *const Frame,
+        shader: *const Shader,
+        model_transform: Mat4,
+        skin: ?skinning.SkinBinding,
+        node: gltf_types.Node,
+        node_index: usize,
+    ) void {
         if (!self.animator.nodes[node_index].is_visible) return;
 
         if (node.mesh) |mesh_index| {
             const transform = self.animator.nodes[node_index].calculated_transform.?;
             const mesh: *Mesh = self.gltf_asset.meshes[mesh_index];
-            mesh.drawAt(frame, shader, model_transform, transform);
+            mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin);
         }
 
         if (node.children) |children| {
             for (children) |child_node_index| {
                 const child = self.gltf_asset.gltf.nodes.?[child_node_index];
-                self.drawNodes(frame, shader, model_transform, child, child_node_index);
+                self.drawNodes(frame, shader, model_transform, skin, child, child_node_index);
             }
         }
     }

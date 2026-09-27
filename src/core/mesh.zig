@@ -13,7 +13,7 @@ const material_ = @import("material.zig");
 const Shader = @import("shader.zig").Shader;
 const GltfAsset = @import("gltf_asset.zig").GltfAsset;
 const Texture = @import("texture.zig").Texture;
-const Transform = @import("transform.zig").Transform;
+const SkinBinding = @import("skinning.zig").SkinBinding;
 
 const c = wgpu.c;
 const stringView = wgpu.stringView;
@@ -93,20 +93,34 @@ pub const Mesh = struct {
         return mesh;
     }
 
-    /// `draw_uniforms.model` is the full model * node transform for this mesh.
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, draw_uniforms: DrawUniforms) void {
+    /// The one draw path `Model`, `ModelInstance`, and `BakedAnimator` share. Unskinned
+    /// primitives draw at `model_transform * node_matrix`; skinned ones (with `skin`) at
+    /// `model_transform` with their joints, as glTF says the node transform doesn't apply.
+    pub fn drawAt(
+        self: *const Self,
+        frame: *const Frame,
+        shader: *const Shader,
+        model_transform: Mat4,
+        node_matrix: Mat4,
+        skin: ?SkinBinding,
+    ) void {
         if (!self.is_visible) return;
-        for (self.primitives.list.items) |primitive| {
-            primitive.draw(frame, shader, draw_uniforms);
-        }
-    }
-
-    /// Draw at `model_transform * node_transform`. The one draw path `Model` and
-    /// `ModelInstance` share.
-    pub fn drawAt(self: *const Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4, node_transform: Transform) void {
-        const node_matrix = node_transform.toMatrix();
         const white = math.vec4(1.0, 1.0, 1.0, 1.0);
-        self.draw(frame, shader, DrawUniforms.init(model_transform.mulMat4(&node_matrix), white));
+        const unskinned = DrawUniforms.init(model_transform.mulMat4(&node_matrix), white);
+        const default_object = frame.gpu.bindings.object_bind_group;
+
+        for (self.primitives.list.items) |primitive| {
+            if (primitive.has_skin) {
+                if (skin) |binding| {
+                    var skinned = DrawUniforms.init(model_transform, white);
+                    skinned.joint_offset = binding.joint_offset;
+                    skinned.flags |= bindings.DrawFlags.skinned;
+                    primitive.draw(frame, shader, skinned, binding.object_bind_group);
+                    continue;
+                }
+            }
+            primitive.draw(frame, shader, unskinned, default_object);
+        }
     }
 
     pub fn cleanUp(self: *Self) void {
@@ -214,7 +228,7 @@ pub const MeshPrimitive = struct {
             .has_skin = has_skin,
             .has_normals = normals.is_real,
             .has_vertex_colors = has_vertex_colors,
-            .material = try PbrMaterial.init(gpu, material, try loadMaterialTextures(gltf_asset, material), .{
+            .material = try PbrMaterial.init(gpu, material, try loadMaterialTextures(gltf_asset, material, mesh_name), .{
                 .has_normals = normals.is_real,
                 .has_vertex_colors = has_vertex_colors,
                 .has_skin = has_skin,
@@ -228,8 +242,15 @@ pub const MeshPrimitive = struct {
 
     /// Sets the pipeline for the material's render state, binds material and per-draw
     /// data, and draws. `shader` must be a `MaterialKind.pbr` shader built with
-    /// `vertex_buffer_layouts`.
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, draw_uniforms: DrawUniforms) void {
+    /// `vertex_buffer_layouts`. `object_bind_group` is group 2: the shared one, or a
+    /// skinned instance's (ring plus its joints).
+    pub fn draw(
+        self: *const Self,
+        frame: *const Frame,
+        shader: *const Shader,
+        draw_uniforms: DrawUniforms,
+        object_bind_group: c.WGPUBindGroup,
+    ) void {
         std.debug.assert(shader.material == .pbr);
         const gpu = frame.gpu;
         const pass = frame.pass;
@@ -237,7 +258,7 @@ pub const MeshPrimitive = struct {
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.material.render_state));
         self.material.bind(frame);
-        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, gpu.bindings.object_bind_group, 1, &draw_offset);
+        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, object_bind_group, 1, &draw_offset);
 
         for (self.vertex_buffers, 0..) |buffer, slot| {
             c.wgpuRenderPassEncoderSetVertexBuffer(pass, @intCast(slot), buffer, 0, c.WGPU_WHOLE_SIZE);
@@ -278,13 +299,21 @@ pub const MeshPrimitive = struct {
     }
 };
 
-/// Loads (or reuses) each texture the material references. With `skipModelTextures`,
-/// every slot stays null and binds the default texture.
-fn loadMaterialTextures(gltf_asset: *GltfAsset, material: gltf_types.Material) ![bindings.PBR_TEXTURE_COUNT]?*const Texture {
+/// Loads (or reuses) each texture the material references; custom textures added for
+/// this mesh name override their slot. With `skipModelTextures`, only custom textures
+/// are used and the other slots bind the defaults.
+fn loadMaterialTextures(gltf_asset: *GltfAsset, material: gltf_types.Material, mesh_name: ?[]const u8) ![bindings.PBR_TEXTURE_COUNT]?*const Texture {
     var textures: [bindings.PBR_TEXTURE_COUNT]?*const Texture = @splat(null);
-    if (!gltf_asset.load_textures) return textures;
+
     for (&textures, 0..) |*texture, i| {
         const slot: TextureSlot = @enumFromInt(i);
+        if (mesh_name) |name| {
+            if (gltf_asset.getCustomTexture(name, slot)) |custom| {
+                texture.* = custom;
+                continue;
+            }
+        }
+        if (!gltf_asset.load_textures) continue;
         if (material_.textureIndex(material, slot)) |texture_index| {
             texture.* = try gltf_asset.loadTextureFromGltf(texture_index, slot.isSrgb());
         }
