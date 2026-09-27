@@ -3,7 +3,7 @@
 ## Currently Active
 
 - **[000-webgpu-port.md](000-webgpu-port.md)** - Port redfish_gl_zig to WebGPU (wgpu-native)
-  - Next: **Step 3b - Textures and all shapes, scene_tree**
+  - Next: **Step 4 - glTF Static Meshes with PBR**
 
 ## Port Progress
 
@@ -13,7 +13,7 @@
 | 1 | Skeleton: window, device, clear, zgui | ✅ 2026-09-27 |
 | 2 | Math: zero-to-one depth | ✅ 2026-09-27 |
 | 3a | One colored cube: shaders, bindings, pipelines, per-draw data | ✅ 2026-09-27 |
-| 3b | Textures and all shapes, scene_tree | |
+| 3b | Textures and all shapes, scene_tree | ✅ 2026-09-27 |
 | 4 | glTF static meshes with PBR | |
 | 5 | Skinning and animation | |
 | 6 | bullets | |

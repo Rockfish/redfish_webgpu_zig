@@ -73,7 +73,8 @@ GL-specific files. Same file name unless the name itself says GL:
 | (none) | `bindings.zig` | Bind group slot numbers, shared layouts, shared WGSL constants |
 | `shader.zig` | `shader.zig` | WGSL loader, prepends generated constants + `common.wgsl` |
 | (none) | `pipeline.zig` | Pipeline config (blend, depth, cull, topology) → cached pipeline |
-| `texture.zig` | `texture.zig` | RGBA upload, sRGB vs linear, render-pass mipmap generator, sampler cache |
+| `texture.zig` | `texture.zig` | RGBA upload, sRGB vs linear, sampler cache, material bind group |
+| (none) | `mipmaps.zig` | Render-pass mipmap generator |
 | `texture_buffer.zig` | `storage_buffer.zig` | Storage buffers replace TBOs |
 | `mesh.zig` | `mesh.zig` | Per-attribute vertex buffers, format conversion, placeholder buffers |
 | `model.zig`, `model_instance.zig` | same | Draw path through bind groups and per-draw uniforms |
@@ -120,14 +121,20 @@ GL-specific files. Same file name unless the name itself says GL:
 - **Color**: sRGB surface (`BGRA8UnormSrgb`, chosen from the surface capabilities); base
   color and emissive textures `rgba8unorm-srgb`; normal, metallic-roughness, occlusion
   `rgba8unorm`. Shaders output linear color and do no manual gamma.
-- **Mipmaps**: our own generator in `texture.zig` (WebGPU has none). It renders each mip level
+- **Mipmaps**: our own generator in `mipmaps.zig` (WebGPU has none). It renders each mip level
   from the one above with a full-screen triangle and a linear sampler, one pipeline per
   format, so any size and sRGB formats work.
 - **Device limits**: a device gets WebGPU's defaults (4 bind groups, 8 vertex buffers, ...)
   unless `requiredLimits` asks for more, not the adapter's (the M1 offers 8 and 16). The
   defaults cover the design (groups 0-3, 7 PBR vertex buffers), so none are requested yet;
   a step that needs more adds it to `requiredLimits` in `GpuContext.init`.
-- **Texture origin top-left**; no default V-flip.
+- **Texture origin top-left**; no default V-flip. For images loaded from files this
+  changes nothing: both APIs sample v = 0 from the first uploaded row, so `flip_v` keeps
+  its redfish meaning. It matters for textures something rendered into (Step 9).
+- **Materials at group 1**: a `Shader` declares a `MaterialKind` (`none`, `texture`; PBR
+  adds its own in Step 4). `texture.bind(frame)` sets group 1 for the draws that follow,
+  as redfish's `bindTextureAuto` did; bind group changes are recorded in draw order, so
+  this is correct WebGPU.
 - **Cleanup**: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset.
 - **Dependencies**: URL packages in `build.zig.zon`, not vendored: wgpu-native release zips
   (lazy, one per platform; macOS arm64 listed so far), zglfw, zgui with `.backend = .glfw`.
@@ -207,7 +214,7 @@ errors, closing shuts down cleanly.
   NDC z set to 0 (the near plane) and the function documented as perspective-only
 - Screen-Y audit: WebGPU NDC is y-up like GL, so mouse → NDC is unchanged. The GL flips that
   matter are in files not yet ported; each is listed in its step (3b/4 texture `flip_v`,
-  8 screenshot readback, 9 shadow UV)
+  8 screenshot readback, 9 shadow UV). Correction in 3b: file textures need no change
 - Tests: hand-computed known matrices, near → 0 / far → 1 depth, mouse rays at the center
   and corners; `ray.zig` restored with tests for later picking
 
@@ -232,18 +239,32 @@ The step that fixes the core patterns. Split in two.
 - Shader compile errors come back from `Shader.init` as `error.ShaderCompile` with naga's
   message and the prepended line count
 
-**3b - textures and all shapes**
-- `texture.zig`: `flip_v` / `zstbi.setFlipVerticallyOnLoad` existed for GL's bottom-left
-  texture origin; with WebGPU's top-left origin, glTF and image files load unflipped.
-  Keep the option only if an asset proves it needs it
-- `texture.zig`: `initFromFile`, RGB → RGBA expansion, sRGB/linear choice, render-pass
-  mipmap generator (any size, non-square, sRGB and linear formats), sampler cache keyed by
-  filter/wrap
-- Remaining shape generators: cubeboid, square, cylinder, sphere, obj_loader, plane
-- Port `examples/scene_tree`
+**3b - textures and all shapes** ✅ 2026-09-27
+- `texture.zig`: `initFromFile` (always 4 channels: WebGPU has no RGB8, and 1-/2-channel
+  images read as color), `is_srgb` replaces redfish's unused `gamma_correction`,
+  `SamplerCache` keyed by filter / wrap / mipmaps, a group 1 bind group per texture,
+  `bind(frame)`. `flip_v` keeps its meaning (see Texture origin). `initFromGltf` /
+  `loadImage` come with `gltf_asset.zig` in Step 4
+- `mipmaps.zig`: each level rendered from the one above; any size, sRGB and linear
+- Shapes: square, cylinder, sphere, obj_loader, plane; `input.zig` (no `gl.viewport`)
+- `colors.srgbToLinear` for GL-era color constants (clear colors, uniform colors), which
+  GL displayed as-is
+- `examples/scene_tree` (the `run_interfaces` path; `run_union` / `nodes_union` were never
+  called). The CesiumMan node returns in Step 4. Checked: textured cubes, cylinder with
+  spinning cube, mipmapped floor, red hit highlight on the cube under the mouse
+- `draw_test` gained a shape selector (`zig build draw_test-run -- sphere`); every
+  generator checked with culling on
 
-**Fixes:** `Shape` leaking texcoord/normal buffers, `Shape.draw` always disabling culling,
-`Plane` having 2 normals for 4 vertices, dead `Plane.draw` / `shapes/cube.zig` / `createSkybox`.
+**Fixes:** `Shape.draw` always disabling culling; winding wrong for culling in `Square`
+(clockwise) and `Cylinder` (top cap facing down, tube facing in, cap fans closing with a
+reversed triangle); cylinder bottom cap normal; `Plane` having 2 normals for 4 vertices;
+`Sphere` resizing its index list before appending (uninitialized indices), using the
+unclamped poly count, typed `.cylinder`; `ShapeBuilder.resize` leaving colors
+uninitialized; `Plane` textures `undefined` when not configured and its shape never
+released; Plane's normal and specular maps loaded as color; scene_tree's `Node.draw`
+setting a uniform named `model` the shader didn't have (all nodes drew with one matrix) and
+its hit highlight being commented out. Dead code removed: `Plane.draw`, `shapes/cube.zig`,
+`createSkybox`, `input.getProjectionView`.
 
 **Done:** scene_tree renders with textures and depth; many shapes drawn with different
 transforms in one frame show correct per-draw data.

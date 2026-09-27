@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub const string = @import("string.zig");
+pub const texture = @import("texture.zig");
+pub const mipmaps = @import("mipmaps.zig");
 pub const utils = @import("utils/root.zig");
 // Exported until gltf_asset.zig (Step 4) imports them, so the build checks them.
 pub const gltf = @import("gltf/gltf.zig");
@@ -20,6 +22,7 @@ pub const Random = @import("random.zig").Random;
 pub const Transform = @import("transform.zig").Transform;
 pub const String = @import("string.zig").String;
 
+pub const Input = @import("input.zig").Input;
 pub const Movement = @import("movement.zig").Movement;
 pub const MovementDirection = @import("movement.zig").MovementDirection;
 
@@ -33,12 +36,14 @@ pub const UniformRing = @import("uniform_ring.zig").UniformRing;
 pub const pipeline = @import("pipeline.zig");
 pub const RenderState = pipeline.RenderState;
 pub const DrawUniforms = bindings.DrawUniforms;
+pub const MaterialKind = bindings.MaterialKind;
 
 pub const render = @import("render_context.zig");
 pub const RenderContext = render.RenderContext;
 
 pub const shapes = @import("shapes/root.zig");
 
+pub const colors = @import("colors.zig");
 pub const Color = @import("colors.zig").Color;
 
 test {

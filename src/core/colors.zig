@@ -305,3 +305,18 @@ pub const Color = enum {
         };
     }
 };
+
+/// sRGB-encoded channel (0..1) to linear. For color constants written for GL, which
+/// displayed values as-is: convert them before giving them to a linear, sRGB-surface
+/// pipeline, or they come out lighter.
+pub fn srgbToLinear(value: f32) f32 {
+    if (value <= 0.04045) return value / 12.92;
+    return std.math.pow(f32, (value + 0.055) / 1.055, 2.4);
+}
+
+test "srgbToLinear endpoints and midpoint" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), srgbToLinear(0.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), srgbToLinear(1.0), 1e-6);
+    // sRGB 188/255 is linear 0.5
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), srgbToLinear(188.0 / 255.0), 3e-3);
+}

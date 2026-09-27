@@ -21,7 +21,8 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 ## Status
 
 Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 depth, and the
-rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`).
+rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`),
+textures / mipmaps / samplers, all shapes, and `scene_tree`.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
@@ -64,7 +65,9 @@ docs/
 - Depth 0..1, sRGB surface and color textures, texture origin top-left
 - Translated descriptors default every field to zero; set the ones where zero is wrong
   (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`)
-- Mipmaps from our render-pass generator in `texture.zig` (WebGPU has none)
+- Mipmaps from our render-pass generator in `mipmaps.zig` (WebGPU has none)
+- Group 1 materials: `Shader` declares a `MaterialKind`; `texture.bind(frame)` before draws
+- GL-era color constants go through `colors.srgbToLinear` to look the same
 - Request needed limits in `requiredLimits`; otherwise the device gets WebGPU defaults
 - GPU cleanup: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset
 

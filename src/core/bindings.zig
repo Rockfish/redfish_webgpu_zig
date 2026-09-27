@@ -35,6 +35,14 @@ pub const VertexAttr = struct {
 
 pub const MAX_JOINTS = 100;
 
+/// What a shader binds at group 1. Picks the pipeline layout's material slot.
+pub const MaterialKind = enum {
+    /// Nothing; draws bind the empty group.
+    none,
+    /// One color texture and its sampler: `@binding(0)` texture_2d<f32>, `@binding(1)` sampler.
+    texture,
+};
+
 /// `DrawUniforms.flags` bits.
 pub const DrawFlags = struct {
     /// Use the vertex color attribute instead of `DrawUniforms.color`.
@@ -113,6 +121,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
 pub const Bindings = struct {
     frame_layout: c.WGPUBindGroupLayout,
     empty_layout: c.WGPUBindGroupLayout,
+    texture_layout: c.WGPUBindGroupLayout,
     object_layout: c.WGPUBindGroupLayout,
 
     frame_buffer: c.WGPUBuffer,
@@ -127,6 +136,7 @@ pub const Bindings = struct {
         const frame_layout = createUniformLayout(device, "frame layout", @sizeOf(FrameUniforms), false);
         const empty_layout = c.wgpuDeviceCreateBindGroupLayout(device, &.{ .label = stringView("empty layout") });
         const object_layout = createUniformLayout(device, "object layout", @sizeOf(DrawUniforms), true);
+        const texture_layout = createTextureLayout(device);
 
         const frame_buffer = c.wgpuDeviceCreateBuffer(device, &.{
             .label = stringView("frame uniforms"),
@@ -137,6 +147,7 @@ pub const Bindings = struct {
         return .{
             .frame_layout = frame_layout,
             .empty_layout = empty_layout,
+            .texture_layout = texture_layout,
             .object_layout = object_layout,
             .frame_buffer = frame_buffer,
             .frame_bind_group = createUniformBindGroup(device, "frame", frame_layout, frame_buffer, @sizeOf(FrameUniforms)),
@@ -148,12 +159,20 @@ pub const Bindings = struct {
         };
     }
 
+    pub fn materialLayout(self: *const Self, kind: MaterialKind) c.WGPUBindGroupLayout {
+        return switch (kind) {
+            .none => self.empty_layout,
+            .texture => self.texture_layout,
+        };
+    }
+
     pub fn releaseGpuObjects(self: *Self) void {
         c.wgpuBindGroupRelease(self.object_bind_group);
         c.wgpuBindGroupRelease(self.empty_bind_group);
         c.wgpuBindGroupRelease(self.frame_bind_group);
         c.wgpuBufferRelease(self.frame_buffer);
         c.wgpuBindGroupLayoutRelease(self.object_layout);
+        c.wgpuBindGroupLayoutRelease(self.texture_layout);
         c.wgpuBindGroupLayoutRelease(self.empty_layout);
         c.wgpuBindGroupLayoutRelease(self.frame_layout);
     }
@@ -174,6 +193,27 @@ fn createUniformLayout(device: c.WGPUDevice, label: []const u8, size: u64, dynam
         .label = stringView(label),
         .entryCount = 1,
         .entries = &entry,
+    });
+}
+
+/// `MaterialKind.texture`: filterable 2D texture at binding 0, filtering sampler at 1.
+fn createTextureLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
+    const entries = [_]c.WGPUBindGroupLayoutEntry{
+        .{
+            .binding = 0,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .texture = .{ .sampleType = c.WGPUTextureSampleType_Float, .viewDimension = c.WGPUTextureViewDimension_2D },
+        },
+        .{
+            .binding = 1,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .sampler = .{ .type = c.WGPUSamplerBindingType_Filtering },
+        },
+    };
+    return c.wgpuDeviceCreateBindGroupLayout(device, &.{
+        .label = stringView("texture material layout"),
+        .entryCount = entries.len,
+        .entries = &entries,
     });
 }
 

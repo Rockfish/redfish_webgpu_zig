@@ -75,3 +75,25 @@ working directory. App shaders still load from files at runtime, as in redfish.
 `examples/draw_test`: a grid of cubes, each drawn with its own model matrix and color
 through the ring, rotating. Every cube distinct means per-draw data works; all the same
 color or position means a write-between-draws bug.
+
+## Step 3b additions
+
+**Materials.** A `Shader` declares a `MaterialKind` for group 1 (`none`, `texture`). Each
+`Texture` owns a bind group for the `texture` layout, and `texture.bind(frame)` sets it for
+the draws that follow. This keeps redfish's "bind texture, then draw" shape and is correct
+WebGPU: `setBindGroup` is recorded in draw order, unlike buffer writes.
+
+**Samplers** come from `GpuContext.samplers`, keyed by filter / wrap / mipmaps, so
+textures with the same settings share one. `lodMaxClamp` and `maxAnisotropy` are set
+explicitly; their zero defaults would disable mipmaps or be invalid.
+
+**Mipmaps** (`mipmaps.zig`): one downsample pipeline per format, each level rendered from
+the one above. Sampling an sRGB view decodes and the sRGB target encodes, so filtering
+happens in linear space.
+
+**Texture orientation.** Unchanged from GL for loaded images: both APIs sample v = 0 from
+the first uploaded row, so `flip_v` keeps its meaning.
+
+**Color constants.** GL displayed color values as-is, so GL-era constants are sRGB values.
+`colors.srgbToLinear` converts them for the linear pipeline. Textures need nothing: GL
+showed their bytes raw, and decode + encode here gives the same bytes.

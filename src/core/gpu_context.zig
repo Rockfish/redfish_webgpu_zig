@@ -9,6 +9,8 @@ const wgpu = @import("wgpu");
 const gpu_debug = @import("gpu_debug.zig");
 const bindings_ = @import("bindings.zig");
 const UniformRing = @import("uniform_ring.zig").UniformRing;
+const SamplerCache = @import("texture.zig").SamplerCache;
+const MipmapGenerator = @import("mipmaps.zig").MipmapGenerator;
 
 const c = wgpu.c;
 const stringView = wgpu.stringView;
@@ -46,6 +48,8 @@ pub const GpuContext = struct {
     depth_view: c.WGPUTextureView = null,
     uniform_ring: UniformRing,
     bindings: Bindings,
+    samplers: SamplerCache,
+    mipmaps: MipmapGenerator,
 
     const Self = @This();
 
@@ -74,6 +78,8 @@ pub const GpuContext = struct {
             .height = 0,
             .uniform_ring = uniform_ring,
             .bindings = Bindings.init(device, uniform_ring.buffer),
+            .samplers = SamplerCache.init(allocator),
+            .mipmaps = MipmapGenerator.init(device),
         };
         try self.chooseSurfaceFormat();
 
@@ -166,6 +172,9 @@ pub const GpuContext = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        self.mipmaps.releaseGpuObjects();
+        self.samplers.releaseGpuObjects();
+        self.samplers.deinit();
         self.bindings.releaseGpuObjects();
         self.uniform_ring.releaseGpuObjects();
         self.uniform_ring.deinit(self.allocator);

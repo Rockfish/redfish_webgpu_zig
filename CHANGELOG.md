@@ -2,6 +2,16 @@
 
 ## Recent Changes
 
+### 2026-09-27 - Textures and All Shapes (Port Step 3b)
+- **Textures**: `texture.zig` (`initFromFile`, RGBA upload, `is_srgb`, `SamplerCache`, per-texture group 1 bind group, `bind(frame)`); `mipmaps.zig` render-pass mip generator for any size, sRGB and linear
+- **Materials**: `MaterialKind` on `Shader` selects the group 1 layout
+- **Shapes**: square, cylinder, sphere, obj_loader, plane ported; winding fixed for culling (square, cylinder caps and tube), cylinder bottom normal, plane normals, sphere index/count/type bugs, `ShapeBuilder.resize` colors, plane texture/cleanup bugs
+- **Input**: `input.zig` ported (no `gl.viewport`)
+- **Colors**: `colors.srgbToLinear` for GL-era color constants
+- **Examples**: `scene_tree` ported (textures, cylinder, picking with hit highlight; model node waits for Step 4); `draw_test` shape selector
+- **Correction**: loaded textures need no V-flip change; `flip_v` keeps its redfish meaning
+- **Tests**: 56 pass
+
 ### 2026-09-27 - Rendering Foundation (Port Step 3a)
 - **Design**: `docs/designs/003a-rendering-foundation.md`
 - **bindings.zig**: group numbers, vertex locations, `MAX_JOINTS`, `FrameUniforms` / `DrawUniforms` (size-checked), generated WGSL header, shared layouts and bind groups (frame, empty material, object with dynamic offset)

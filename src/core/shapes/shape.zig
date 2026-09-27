@@ -74,11 +74,12 @@ pub const ShapeBuilder = struct {
         try self.indices.append(index);
     }
 
+    /// Sizes positions, texcoords, and normals for direct writes. Colors stay optional:
+    /// resizing them without filling would upload garbage instead of the default.
     pub fn resize(self: *Self, size: u32) !void {
         try self.positions.resize(size);
         try self.texcoords.resize(size);
         try self.normals.resize(size);
-        try self.colors.resize(size);
     }
 
     pub fn build(self: *Self, gpu: *const GpuContext) !*Shape {
@@ -182,7 +183,8 @@ pub const Shape = struct {
     };
 
     /// Per-draw values go in `draw_uniforms`, copied into this frame's uniform ring,
-    /// so any number of draws in a frame each see their own.
+    /// so any number of draws in a frame each see their own. A `.texture` shader draws
+    /// with whatever texture was last bound (`texture.bind(frame)`).
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, draw_uniforms: DrawUniforms) void {
         if (!self.is_visible) return;
 
@@ -191,7 +193,9 @@ pub const Shape = struct {
         const draw_offset = gpu.uniform_ring.allocate(DrawUniforms, draw_uniforms);
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.renderState()));
-        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.material, gpu.bindings.empty_bind_group, 0, null);
+        if (shader.material == .none) {
+            c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.material, gpu.bindings.empty_bind_group, 0, null);
+        }
         c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, gpu.bindings.object_bind_group, 1, &draw_offset);
 
         const buffers = [_]c.WGPUBuffer{ self.position_buffer, self.texcoord_buffer, self.normal_buffer, self.color_buffer };

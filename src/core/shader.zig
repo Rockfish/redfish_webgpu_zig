@@ -20,6 +20,7 @@ const Allocator = std.mem.Allocator;
 const GpuContext = gpu_context.GpuContext;
 const PipelineVariants = pipeline.PipelineVariants;
 const RenderState = pipeline.RenderState;
+const MaterialKind = bindings.MaterialKind;
 
 const log = std.log.scoped(.shader);
 
@@ -30,6 +31,7 @@ const PREPENDED_LINES = std.mem.count(u8, bindings.wgsl_header, "\n") + std.mem.
 
 pub const Shader = struct {
     file_path: []const u8,
+    material: MaterialKind,
     module: c.WGPUShaderModule,
     pipeline_layout: c.WGPUPipelineLayout,
     variants: PipelineVariants,
@@ -37,20 +39,22 @@ pub const Shader = struct {
     const Self = @This();
 
     /// `vertex_buffers` is the vertex layout of the geometry this shader draws
-    /// (e.g. `Shape.vertex_buffer_layouts`).
+    /// (e.g. `Shape.vertex_buffer_layouts`); `material` is what it binds at group 1.
     pub fn init(
         io: Io,
         allocator: Allocator,
         gpu: *const GpuContext,
         file_path: []const u8,
         vertex_buffers: []const c.WGPUVertexBufferLayout,
+        material: MaterialKind,
     ) !*Shader {
         const module = try createModule(io, allocator, gpu, file_path);
-        const pipeline_layout = createPipelineLayout(gpu);
+        const pipeline_layout = createPipelineLayout(gpu, material);
 
         const shader = try allocator.create(Shader);
         shader.* = .{
             .file_path = try allocator.dupe(u8, file_path),
+            .material = material,
             .module = module,
             .pipeline_layout = pipeline_layout,
             .variants = PipelineVariants.init(gpu.device, .{
@@ -103,10 +107,10 @@ fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path:
     return module;
 }
 
-/// Groups 0-2: frame, material (empty until materials exist), object.
-fn createPipelineLayout(gpu: *const GpuContext) c.WGPUPipelineLayout {
+/// Groups 0-2: frame, material, object.
+fn createPipelineLayout(gpu: *const GpuContext, material: MaterialKind) c.WGPUPipelineLayout {
     const shared = &gpu.bindings;
-    const layouts = [_]c.WGPUBindGroupLayout{ shared.frame_layout, shared.empty_layout, shared.object_layout };
+    const layouts = [_]c.WGPUBindGroupLayout{ shared.frame_layout, shared.materialLayout(material), shared.object_layout };
     return c.wgpuDeviceCreatePipelineLayout(gpu.device, &.{
         .bindGroupLayoutCount = layouts.len,
         .bindGroupLayouts = &layouts,
