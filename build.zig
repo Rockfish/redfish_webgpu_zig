@@ -23,14 +23,42 @@ pub fn build(b: *std.Build) void {
         .shared = false,
     });
 
+    const zstbi = b.dependency("zstbi", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const wgpu_native = wgpuNativeDependency(b, target) orelse return;
     const wgpu = wgpuModule(b, target, optimize, wgpu_native);
     const imgui_wgpu = imguiWgpuLibrary(b, target, optimize, zgui, wgpu_native);
 
-    const core = b.createModule(.{ .root_source_file = b.path("src/core/root.zig") });
+    const containers = b.createModule(.{
+        .root_source_file = b.path("src/containers/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const math = b.createModule(.{
+        .root_source_file = b.path("src/math/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const core = b.createModule(.{
+        .root_source_file = b.path("src/core/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    core.addImport("math", math);
+    core.addImport("containers", containers);
     core.addImport("wgpu", wgpu);
     core.addImport("zglfw", zglfw.module("root"));
     core.addImport("zgui", zgui.module("root"));
+    core.addImport("zstbi", zstbi.module("root"));
+
+    core.linkLibrary(zgui.artifact("imgui"));
+    core.linkLibrary(imgui_wgpu);
+    core.linkLibrary(zglfw.artifact("glfw"));
+    linkWgpuNative(core, target, wgpu_native);
 
     inline for ([_]struct {
         name: []const u8,
@@ -47,17 +75,15 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
                 .imports = &.{
                     .{ .name = "core", .module = core },
+                    .{ .name = "math", .module = math },
+                    .{ .name = "containers", .module = containers },
                     .{ .name = "zglfw", .module = zglfw.module("root") },
                     .{ .name = "zgui", .module = zgui.module("root") },
+                    .{ .name = "zstbi", .module = zstbi.module("root") },
                     .{ .name = "build_options", .module = build_options.createModule() },
                 },
             }),
         });
-
-        exe.root_module.linkLibrary(zgui.artifact("imgui"));
-        exe.root_module.linkLibrary(imgui_wgpu);
-        exe.root_module.linkLibrary(zglfw.artifact("glfw"));
-        linkWgpuNative(exe.root_module, target, wgpu_native);
 
         const install_exe = b.addInstallArtifact(exe, .{});
 
@@ -72,6 +98,29 @@ pub fn build(b: *std.Build) void {
         }
 
         b.step(app.name ++ "-run", "Run '" ++ app.name ++ "' app").dependOn(&run_exe.step);
+    }
+
+    // Unit tests plus a full semantic check of math, containers, and core: lazy analysis
+    // would otherwise skip every function no app calls yet.
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/analyze_all.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "core", .module = core },
+                .{ .name = "math", .module = math },
+                .{ .name = "containers", .module = containers },
+            },
+        }),
+    });
+    const test_step = b.step("test", "Run unit tests and analyze all of math, containers, core");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+
+    // Test blocks are only discovered in a test's root module, so each module gets its own.
+    inline for (.{ math, containers, core }) |module| {
+        const module_tests = b.addTest(.{ .root_module = module });
+        test_step.dependOn(&b.addRunArtifact(module_tests).step);
     }
 }
 

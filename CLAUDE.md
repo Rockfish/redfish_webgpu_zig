@@ -20,8 +20,8 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 ## Status
 
-Step 1 in progress: window, device, sRGB clear, and zgui run on wgpu-native (`gpu_caps`).
-See `docs/plans/active-plans.md`.
+Step 1 done: window, device, sRGB clear, and zgui on wgpu-native (`gpu_caps`); carry-over
+modules in. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -86,5 +86,8 @@ only; add a lazy package per platform in `build.zig.zon` and `wgpuNativeDependen
 - Run `zig fmt` on every edited `.zig` file, and only on `.zig` files; never on dependency code
 - Every print/log call takes an args tuple, even `.{}`
 - Delete dead code; don't comment it out
-- Zig lazy analysis skips unreferenced functions: "it builds" proves nothing about uncalled code
+- Zig lazy analysis skips unreferenced functions: "it builds" proves nothing about uncalled code.
+  `zig build test` runs `tests/analyze_all.zig`, which forces analysis of all public decls in
+  math, containers, and core; run it after every change. A module root (or namespace root like
+  `utils/root.zig`) needs `test { std.testing.refAllDecls(@This()); }` for its files' tests to run
 - Each plan step ends with a `CHANGELOG.md` entry and a commit

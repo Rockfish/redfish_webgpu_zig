@@ -47,6 +47,11 @@ Code follows `docs/STYLE.md`.
 
 Copied as-is (then conformed to STYLE.md when touched):
 
+Status after Step 1: copied except `math/cglm.zig` (dead `@cImport`), `constants.zig`
+(GL uniform names; `MAX_JOINTS` moves to `bindings.zig`), `gltf/report.zig` (needs
+`gltf_asset`, Step 4), and `animator.zig` / `animation_fsm.zig` (need `model_instance`,
+Step 5). `render_context.zig` came over early because the cameras use it.
+
 - `src/math/` (plus zero-to-one depth projections, Step 2)
 - `src/containers/`
 - `src/core/`: `context.zig`, `arenas.zig`, `gltf/` (parser, report), `animator.zig` (CPU side),
@@ -112,9 +117,10 @@ GL-specific files. Same file name unless the name itself says GL:
 - **Mipmaps**: our own generator in `texture.zig` (WebGPU has none). It renders each mip level
   from the one above with a full-screen triangle and a linear sampler, one pipeline per
   format, so any size and sRGB formats work.
-- **Device limits**: request what the engine needs in `requiredLimits`. A device created
-  without it gets WebGPU's defaults (4 bind groups, 8 vertex buffers, ...), not the
-  adapter's (the M1 offers 8 and 16).
+- **Device limits**: a device gets WebGPU's defaults (4 bind groups, 8 vertex buffers, ...)
+  unless `requiredLimits` asks for more, not the adapter's (the M1 offers 8 and 16). The
+  defaults cover the design (groups 0-3, 7 PBR vertex buffers), so none are requested yet;
+  a step that needs more adds it to `requiredLimits` in `GpuContext.init`.
 - **Texture origin top-left**; no default V-flip.
 - **Cleanup**: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset.
 - **Dependencies**: URL packages in `build.zig.zon`, not vendored: wgpu-native release zips
@@ -159,7 +165,7 @@ Checking "done" means building, running, and comparing side by side with the GL 
 
 **Done:** repo has docs only; first commit.
 
-### Step 1 - Skeleton: Window, Device, Clear, zgui
+### Step 1 - Skeleton: Window, Device, Clear, zgui ✅ 2026-09-27
 
 Mirrors redfish `build.zig` layout: `math`, `containers`, `core` modules and the
 `inline for` app table with `<name>` / `<name>-run` steps.
@@ -172,10 +178,15 @@ Landed from the spike:
   0.5 gray, shows a zgui panel. Checked on an external monitor and the Retina screen:
   resize, drag between screens, Esc quit
 
-Remaining:
-- zstbi dependency; carry-over modules copied in and `math` / `containers` modules added,
-  so `core` builds with them
-- `requiredLimits` set from what the engine needs (see Device limits)
+Then:
+- zstbi dependency; carry-over modules copied in, `math` / `containers` modules added
+- `zig build test`: each module's tests, plus `tests/analyze_all.zig`, which forces
+  analysis of every public declaration so uncalled code can't hide compile errors
+- That check found carry-over code redfish never compiled. Fixed where it has callers
+  (`camera_gimbal`, `Quat.lookAtOrientation`, vec tests, `remove` / `retain` tests
+  rewritten with assertions); deleted where it has none (`math/ray.zig`, `truncate`,
+  `wrapAround`, `screenToModelGlam`, `calculateNormal`, `Quat.toEulerAngles`,
+  `randIntInRange`, `fileExists`, `getExistsFilename`, `hasDeinit`)
 
 **Done:** window clears to a color (a known linear value shows its sRGB-encoded value on
 screen), zgui panel draws with correct colors, resizing works without validation

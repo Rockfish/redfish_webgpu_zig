@@ -3,14 +3,14 @@
 ## Currently Active
 
 - **[000-webgpu-port.md](000-webgpu-port.md)** - Port redfish_gl_zig to WebGPU (wgpu-native)
-  - Current: **Step 1 - Skeleton: Window, Device, Clear, zgui** (spike landed; carry-over modules remain)
+  - Next: **Step 2 - Math: Zero-to-One Depth**
 
 ## Port Progress
 
 | Step | Description | Status |
 |---|---|---|
 | 0 | Project setup | ✅ 2026-09-27 |
-| 1 | Skeleton: window, device, clear, zgui | in progress |
+| 1 | Skeleton: window, device, clear, zgui | ✅ 2026-09-27 |
 | 2 | Math: zero-to-one depth | |
 | 3a | One colored cube: shaders, bindings, pipelines, per-draw data | |
 | 3b | Textures and all shapes, scene_tree | |
