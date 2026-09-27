@@ -276,7 +276,10 @@ transforms in one frame show correct per-draw data.
   → 4-component; placeholder buffers for missing attributes
 - Texture dedupe per asset; material bind group with 1×1 default textures;
   glTF samplers through the sampler cache
-- `model.zig`: per-node transform and material factors as per-draw data
+- `model.zig`: per-node transform and material factors as per-draw data. `ModelInstance`
+  (Step 5) is replacing `Model` in redfish, mainly to support baked animation; both stay
+  in use until callers migrate. Put the GPU draw path (mesh draw, material bind, per-draw
+  uniforms) where both can share it, so it isn't written twice
 - `pbr.wgsl` from `pbr.vert`/`pbr.frag`; alpha mode and double-sided become pipeline variants
 - Port `examples/demo_app` model cycling, static models only
 
@@ -346,6 +349,14 @@ Where new work happens, so it moves ahead of level_01.
 check for later changes.
 
 ---
+
+## Known Issues (later)
+
+- **Orthographic mouse picking.** `getWorldRayFromMouse` is perspective-only: with an
+  orthographic projection every ray has the camera's forward direction and only the origin
+  moves with the mouse. In scene_tree, clicking the floor in ortho mode (key 5) moves the
+  cylinder group to the wrong place. Likely never worked in redfish either. Fix with an
+  ortho path that unprojects the mouse to a near-plane origin.
 
 ## Risks
 
