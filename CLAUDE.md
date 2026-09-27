@@ -20,8 +20,9 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 ## Status
 
-Steps 1-2 done: window, device, sRGB clear, and zgui on wgpu-native (`gpu_caps`); carry-over
-modules in; 0..1 depth projections. See `docs/plans/active-plans.md`.
+Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 depth, and the
+rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`).
+See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -57,7 +58,9 @@ docs/
 - Bind groups: 0 frame, 1 material, 2 object/draw, 3 pass-specific
 - Never rewrite a buffer between draws expecting per-draw values; use `uniform_ring.zig`
   with dynamic offsets
-- Pipelines created at init; render state is pipeline state
+- Pipelines created at init; render state is pipeline state (`RenderState` → `PipelineVariants`)
+- Per-draw values: `DrawUniforms` through `gpu.uniform_ring`; frame values: `gpu.writeFrameUniforms`
+- `examples/draw_test` is the per-draw regression check; run it after touching the draw path
 - Depth 0..1, sRGB surface and color textures, texture origin top-left
 - Translated descriptors default every field to zero; set the ones where zero is wrong
   (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`)

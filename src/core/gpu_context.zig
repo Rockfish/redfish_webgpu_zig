@@ -1,14 +1,21 @@
-//! Owns the WebGPU instance, surface, device, and the depth texture, and brackets each
-//! frame. `beginFrame` acquires the surface texture and opens the main render pass;
-//! `endFrame` closes it, submits, and presents. Parallel to redfish's clear / swapBuffers.
+//! Owns the WebGPU instance, surface, device, depth texture, uniform ring, and shared
+//! bindings, and brackets each frame. `beginFrame` acquires the surface texture and opens
+//! the main render pass with group 0 bound; `endFrame` closes it, uploads the frame's
+//! per-draw uniforms, submits, and presents. Parallel to redfish's clear / swapBuffers.
 
 const std = @import("std");
 const zglfw = @import("zglfw");
 const wgpu = @import("wgpu");
 const gpu_debug = @import("gpu_debug.zig");
+const bindings_ = @import("bindings.zig");
+const UniformRing = @import("uniform_ring.zig").UniformRing;
 
 const c = wgpu.c;
 const stringView = wgpu.stringView;
+const Allocator = std.mem.Allocator;
+const Bindings = bindings_.Bindings;
+const BindGroup = bindings_.BindGroup;
+const FrameUniforms = bindings_.FrameUniforms;
 
 const log = std.log.scoped(.gpu_context);
 
@@ -16,6 +23,7 @@ pub const depth_format = c.WGPUTextureFormat_Depth32Float;
 
 /// One frame's GPU objects. Valid between `beginFrame` and `endFrame`.
 pub const Frame = struct {
+    gpu: *GpuContext,
     surface_texture: c.WGPUTexture,
     color_view: c.WGPUTextureView,
     encoder: c.WGPUCommandEncoder,
@@ -23,6 +31,7 @@ pub const Frame = struct {
 };
 
 pub const GpuContext = struct {
+    allocator: Allocator,
     window: *zglfw.Window,
     instance: c.WGPUInstance,
     surface: c.WGPUSurface,
@@ -35,10 +44,13 @@ pub const GpuContext = struct {
     height: u32,
     depth_texture: c.WGPUTexture = null,
     depth_view: c.WGPUTextureView = null,
+    uniform_ring: UniformRing,
+    bindings: Bindings,
 
     const Self = @This();
 
-    pub fn init(window: *zglfw.Window) !Self {
+    /// `allocator` holds the uniform ring's staging memory until `deinit`.
+    pub fn init(allocator: Allocator, window: *zglfw.Window) !Self {
         const instance = c.wgpuCreateInstance(&.{}) orelse return error.NoWebGpuInstance;
         const surface = try createSurface(instance, window);
         const adapter = try requestAdapter(instance, surface);
@@ -46,7 +58,10 @@ pub const GpuContext = struct {
 
         gpu_debug.logAdapterInfo(adapter);
 
+        const uniform_ring = try UniformRing.init(allocator, device);
+
         var self: Self = .{
+            .allocator = allocator,
             .window = window,
             .instance = instance,
             .surface = surface,
@@ -57,6 +72,8 @@ pub const GpuContext = struct {
             .alpha_mode = c.WGPUCompositeAlphaMode_Auto,
             .width = 0,
             .height = 0,
+            .uniform_ring = uniform_ring,
+            .bindings = Bindings.init(device, uniform_ring.buffer),
         };
         try self.chooseSurfaceFormat();
 
@@ -91,6 +108,8 @@ pub const GpuContext = struct {
             },
         }
 
+        self.uniform_ring.reset();
+
         const color_view = c.wgpuTextureCreateView(surface_texture.texture, null);
         const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});
 
@@ -114,7 +133,10 @@ pub const GpuContext = struct {
             .depthStencilAttachment = &depth_attachment,
         });
 
+        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.frame, self.bindings.frame_bind_group, 0, null);
+
         return .{
+            .gpu = self,
             .surface_texture = surface_texture.texture,
             .color_view = color_view,
             .encoder = encoder,
@@ -127,6 +149,7 @@ pub const GpuContext = struct {
         c.wgpuRenderPassEncoderRelease(frame.pass);
 
         const commands = c.wgpuCommandEncoderFinish(frame.encoder, &.{});
+        self.uniform_ring.upload(self.queue);
         c.wgpuQueueSubmit(self.queue, 1, &commands);
         c.wgpuCommandBufferRelease(commands);
         c.wgpuCommandEncoderRelease(frame.encoder);
@@ -137,7 +160,15 @@ pub const GpuContext = struct {
         c.wgpuTextureRelease(frame.surface_texture);
     }
 
+    /// Write this frame's camera and time for group 0. Once per frame, before drawing.
+    pub fn writeFrameUniforms(self: *Self, uniforms: FrameUniforms) void {
+        c.wgpuQueueWriteBuffer(self.queue, self.bindings.frame_buffer, 0, &uniforms, @sizeOf(FrameUniforms));
+    }
+
     pub fn deinit(self: *Self) void {
+        self.bindings.releaseGpuObjects();
+        self.uniform_ring.releaseGpuObjects();
+        self.uniform_ring.deinit(self.allocator);
         self.releaseDepthTexture();
         c.wgpuSurfaceUnconfigure(self.surface);
         c.wgpuQueueRelease(self.queue);

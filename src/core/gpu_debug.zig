@@ -18,6 +18,34 @@ pub fn deviceLostCallbackInfo() c.WGPUDeviceLostCallbackInfo {
     return .{ .mode = c.WGPUCallbackMode_AllowSpontaneous, .callback = onDeviceLost };
 }
 
+/// The first error caught by an error scope, copied out of the callback.
+pub const ScopeError = struct {
+    error_type: c.WGPUErrorType,
+    buffer: [2048]u8 = undefined,
+    len: usize = 0,
+
+    pub fn message(self: *const ScopeError) []const u8 {
+        return self.buffer[0..self.len];
+    }
+};
+
+/// Start catching validation errors from the calls that follow. Pair with `popValidationScope`.
+pub fn pushValidationScope(device: c.WGPUDevice) void {
+    c.wgpuDevicePushErrorScope(device, c.WGPUErrorFilter_Validation);
+}
+
+/// Waits for the scope's result. Returns the error, or null if the calls were valid.
+pub fn popValidationScope(instance: c.WGPUInstance, device: c.WGPUDevice) ?ScopeError {
+    var result: PopResult = .{};
+    _ = c.wgpuDevicePopErrorScope(device, .{
+        .mode = c.WGPUCallbackMode_AllowProcessEvents,
+        .callback = onPopErrorScope,
+        .userdata1 = &result,
+    });
+    while (!result.done) c.wgpuInstanceProcessEvents(instance);
+    return result.scope_error;
+}
+
 pub fn logAdapterInfo(adapter: c.WGPUAdapter) void {
     var info: c.WGPUAdapterInfo = .{};
     if (c.wgpuAdapterGetInfo(adapter, &info) != c.WGPUStatus_Success) {
@@ -45,6 +73,33 @@ pub fn logAdapterLimits(adapter: c.WGPUAdapter) void {
         if (comptime std.mem.eql(u8, field.name, "nextInChain")) continue;
         log.info("  {s}: {d}", .{ field.name, @field(limits, field.name) });
     }
+}
+
+const PopResult = struct {
+    done: bool = false,
+    scope_error: ?ScopeError = null,
+};
+
+fn onPopErrorScope(
+    status: c.WGPUPopErrorScopeStatus,
+    error_type: c.WGPUErrorType,
+    message: c.WGPUStringView,
+    userdata1: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    const result: *PopResult = @ptrCast(@alignCast(userdata1));
+    result.done = true;
+    if (status != c.WGPUPopErrorScopeStatus_Success) {
+        log.err("popErrorScope failed ({d}): {s}", .{ status, sliceFromView(message) });
+        return;
+    }
+    if (error_type == c.WGPUErrorType_NoError) return;
+
+    var scope_error: ScopeError = .{ .error_type = error_type };
+    const text = sliceFromView(message);
+    scope_error.len = @min(text.len, scope_error.buffer.len);
+    @memcpy(scope_error.buffer[0..scope_error.len], text[0..scope_error.len]);
+    result.scope_error = scope_error;
 }
 
 fn onUncapturedError(

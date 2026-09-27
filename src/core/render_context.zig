@@ -1,4 +1,5 @@
 const math = @import("math");
+const FrameUniforms = @import("bindings.zig").FrameUniforms;
 
 const Vec3 = math.Vec3;
 const Mat4 = math.Mat4;
@@ -14,4 +15,14 @@ pub const RenderContext = struct {
     view: Mat4,
     view_position: Vec3,
     time: f32 = 0.0,
+
+    pub fn frameUniforms(self: RenderContext) FrameUniforms {
+        return .{
+            .projection = self.projection,
+            .view = self.view,
+            .projection_view = self.projection_view,
+            .view_position = self.view_position,
+            .time = self.time,
+        };
+    }
 };

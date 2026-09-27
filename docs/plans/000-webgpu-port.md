@@ -107,6 +107,12 @@ GL-specific files. Same file name unless the name itself says GL:
   allocated at 256-byte alignment into CPU memory during the frame, one `wgpuQueueWriteBuffer`
   before submit, bound with a dynamic offset on group 2. Queue ordering makes reusing the
   buffer next frame safe. Never rewrite a buffer between draws.
+- **One `DrawUniforms` for every draw path** (`bindings.zig`, mirrored in `common.wgsl`):
+  `model`, `normal_matrix` (CPU inverse-transpose; WGSL has no `inverse()`), `color`,
+  `flags`. glTF node transforms fold into `model`; material factors go in group 1.
+- **Pipeline variants**: `RenderState` (transparent, double-sided, depth write, depth test)
+  indexes 16 pipelines a `Shader` creates at init. No hashed cache, no first-use hitch.
+  No wireframe: WebGPU has no polygon mode.
 - **Joint matrices and baked animation** use read-only storage buffers.
 - **Shaders**: hand-written WGSL, loaded from files at runtime. A generated header of shared
   constants (`MAX_JOINTS`, ...) and `common.wgsl` are prepended.
@@ -143,7 +149,6 @@ GL-specific files. Same file name unless the name itself says GL:
 |---|---|---|
 | Missing vertex attributes | 4 | One shared placeholder buffer per attribute type, bound with stride 0, so one pipeline serves skinned and unskinned meshes. PBR uses 7 vertex buffers of the default limit of 8 |
 | Passes before the main pass | 9 | Shadow and bloom passes need the encoder before the main pass opens; split `beginFrame` into acquire + `beginMainPass` then |
-| Pipeline cache key | 3 | `PipelineConfig` struct (shader, blend, depth write/compare, cull, topology) hashed to a pipeline |
 | Wide lines | 6 | `lineWidth` doesn't exist; start with 1px lines, add quad-based lines only if needed |
 | Clamp-to-border | 9 | Not in WebGPU; use clamp-to-edge plus an in-shader bounds check for shadows |
 
@@ -212,13 +217,20 @@ errors, closing shuts down cleanly.
 
 The step that fixes the core patterns. Split in two.
 
-**3a - one colored cube**
+**3a - one colored cube** ✅ 2026-09-27 (design: `docs/designs/003a-rendering-foundation.md`)
 - `bindings.zig` (groups 0-3, generated WGSL constants), `shader.zig`, `pipeline.zig`
 - `render_context.zig` writes `FrameUniforms` to group 0's persistent buffer once per frame
 - `uniform_ring.zig`; per-draw uniforms from it on group 2 with dynamic offsets
 - `shapes/shape.zig`: `ShapeBuilder` → per-attribute vertex buffers; `Shape.draw(pass, ...)`
 - Shape flags (transparent, double-sided, depth write) select a pipeline variant instead
   of toggling state
+- `shapes/cubeboid.zig` ported early (the cube); shapes are built with all four attributes,
+  missing ones filled with defaults
+- `examples/draw_test` (new, no redfish equivalent): a grid of up to 100×100 cubes, each with
+  its own model matrix and gradient color through the ring; kept as the per-draw regression
+  check. Checked at 400 draws: correct gradient, per-cube rotation, lighting, culling, depth
+- Shader compile errors come back from `Shader.init` as `error.ShaderCompile` with naga's
+  message and the prepended line count
 
 **3b - textures and all shapes**
 - `texture.zig`: `flip_v` / `zstbi.setFlipVerticallyOnLoad` existed for GL's bottom-left

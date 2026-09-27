@@ -22,7 +22,7 @@ pub fn main(init: std.process.Init) !void {
     const window = try zglfw.Window.create(1280, 800, "gpu_caps", null, null);
     defer window.destroy();
 
-    var gpu = try GpuContext.init(window);
+    var gpu = try GpuContext.init(init.gpa, window);
     defer gpu.deinit();
 
     core.gpu_debug.logAdapterLimits(gpu.adapter);
