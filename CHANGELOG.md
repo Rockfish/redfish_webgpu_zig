@@ -2,6 +2,17 @@
 
 ## Recent Changes
 
+### 2026-09-27 - glTF Static Meshes with PBR (Port Step 4)
+- **Design**: `docs/designs/004-gltf-pbr.md`
+- **Core**: `gltf_asset.zig`, `mesh.zig` (canonical vertex format, strided accessor reader, u8→u16 indices), `material.zig` (`PbrMaterial` group 1 bind group, 1×1 default textures), `model.zig` and `model_instance.zig` sharing `Mesh.drawAt`, `animator.zig` (CPU side), `gltf/report.zig`
+- **Textures**: `initFromGltf` with per-asset dedupe, sRGB by usage, glTF samplers; `initFromPixels`
+- **Shaders**: `pbr.wgsl` (no manual gamma, glTF emissive, alpha MASK, one frame light until Step 6); `MaterialKind.pbr`; material flags in the generated WGSL header
+- **demo_app**: ported for static models (model cycling, UI panels)
+- **Fixes**: node `matrix` ignored in bounds (Duck), world transforms missing before the first animation update, report writers writing empty files, texture double upload / leak, alpha mode and double-sided ignored
+- **GpuContext**: handles wgpu-native's `Occluded` surface status without spinning
+- **Assets**: `assets_nas` symlink to `/Volumes/Dev/Assets`
+- **Tests**: 58 pass
+
 ### 2026-09-27 - Textures and All Shapes (Port Step 3b)
 - **Textures**: `texture.zig` (`initFromFile`, RGBA upload, `is_srgb`, `SamplerCache`, per-texture group 1 bind group, `bind(frame)`); `mipmaps.zig` render-pass mip generator for any size, sRGB and linear
 - **Materials**: `MaterialKind` on `Shader` selects the group 1 layout

@@ -11,6 +11,7 @@ const bindings_ = @import("bindings.zig");
 const UniformRing = @import("uniform_ring.zig").UniformRing;
 const SamplerCache = @import("texture.zig").SamplerCache;
 const MipmapGenerator = @import("mipmaps.zig").MipmapGenerator;
+const DefaultTextures = @import("material.zig").DefaultTextures;
 
 const c = wgpu.c;
 const stringView = wgpu.stringView;
@@ -50,6 +51,7 @@ pub const GpuContext = struct {
     bindings: Bindings,
     samplers: SamplerCache,
     mipmaps: MipmapGenerator,
+    default_textures: DefaultTextures = undefined,
 
     const Self = @This();
 
@@ -82,6 +84,7 @@ pub const GpuContext = struct {
             .mipmaps = MipmapGenerator.init(device),
         };
         try self.chooseSurfaceFormat();
+        self.default_textures = try DefaultTextures.init(allocator, &self);
 
         const size = window.getFramebufferSize();
         self.configure(@intCast(size[0]), @intCast(size[1]));
@@ -106,6 +109,12 @@ pub const GpuContext = struct {
             c.WGPUSurfaceGetCurrentTextureStatus_Outdated, c.WGPUSurfaceGetCurrentTextureStatus_Lost => {
                 if (surface_texture.texture != null) c.wgpuTextureRelease(surface_texture.texture);
                 self.configure(width, height);
+                return null;
+            },
+            // wgpu-native (Metal): window hidden or fully covered. The surface stays valid;
+            // wait briefly for events instead of spinning until it's visible again.
+            c.WGPUSurfaceGetCurrentTextureStatus_Occluded => {
+                zglfw.waitEventsTimeout(1.0 / 60.0);
                 return null;
             },
             else => {
@@ -172,6 +181,9 @@ pub const GpuContext = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        self.default_textures.releaseGpuObjects();
+        self.allocator.destroy(self.default_textures.white);
+        self.allocator.destroy(self.default_textures.flat_normal);
         self.mipmaps.releaseGpuObjects();
         self.samplers.releaseGpuObjects();
         self.samplers.deinit();

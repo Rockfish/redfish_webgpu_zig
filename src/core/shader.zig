@@ -27,7 +27,10 @@ const log = std.log.scoped(.shader);
 const common_wgsl = @embedFile("shaders/common.wgsl");
 
 /// Lines before the shader file's own source; naga's line numbers include them.
-const PREPENDED_LINES = std.mem.count(u8, bindings.wgsl_header, "\n") + std.mem.count(u8, common_wgsl, "\n");
+const PREPENDED_LINES = blk: {
+    @setEvalBranchQuota(20_000);
+    break :blk std.mem.count(u8, bindings.wgsl_header, "\n") + std.mem.count(u8, common_wgsl, "\n");
+};
 
 pub const Shader = struct {
     file_path: []const u8,

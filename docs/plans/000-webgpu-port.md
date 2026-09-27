@@ -269,29 +269,51 @@ its hit highlight being commented out. Dead code removed: `Plane.draw`, `shapes/
 **Done:** scene_tree renders with textures and depth; many shapes drawn with different
 transforms in one frame show correct per-draw data.
 
-### Step 4 - glTF Static Meshes with PBR
+### Step 4 - glTF Static Meshes with PBR ✅ 2026-09-27
 
-- `gltf_asset.zig`: GPU objects created at load through the context (device must exist first)
-- `mesh.zig`: per-attribute vertex buffers; u8 indices → u16; 3-component 8/16-bit formats
-  → 4-component; placeholder buffers for missing attributes
-- Texture dedupe per asset; material bind group with 1×1 default textures;
-  glTF samplers through the sampler cache
-- `model.zig`: per-node transform and material factors as per-draw data. `ModelInstance`
-  (Step 5) is replacing `Model` in redfish, mainly to support baked animation; both stay
-  in use until callers migrate. Put the GPU draw path (mesh draw, material bind, per-draw
-  uniforms) where both can share it, so it isn't written twice
-- `pbr.wgsl` from `pbr.vert`/`pbr.frag`; alpha mode and double-sided become pipeline variants
-- Port `examples/demo_app` model cycling, static models only
+Design: `docs/designs/004-gltf-pbr.md`. Split into 4a (core) and 4b (demo_app).
 
-**Fixes:** shared textures uploaded twice and leaked, 2-channel images mapped to RED,
-glTF `alpha_mode` / `double_sided` ignored.
+**4a - core**
+- `animator.zig` (CPU side; its `draw` moved into `ModelInstance`), `gltf_asset.zig` (takes
+  the `GpuContext`; `cleanUp` releases meshes and textures), `gltf/report.zig`
+- `mesh.zig`: every attribute converted to one canonical format through a strided accessor
+  reader (interleaved data needs no special case); defaults for missing attributes; u8
+  indices → u16; index buffers padded to 4 bytes. This replaces the stride-0 placeholder
+  proposal
+- `material.zig`: `PbrMaterial` (group 1: uniforms, five textures, five samplers) per
+  primitive; shared 1×1 `DefaultTextures`; render state from alpha mode and double-sided
+- Textures deduped per asset, sRGB for base color / emissive, glTF samplers through the
+  sampler cache (unset filters are trilinear)
+- `Model` and `ModelInstance` (live animator and none) share `Mesh.drawAt`
+- One point light in `FrameUniforms` until Step 6
+
+**4b - demo_app**: model cycling, UI panels through `core.gui`, `BAKE_ANIMATION` off until
+Step 5; screenshots and the uniform dump wait for Step 8. Checked: Textured Box, Cube,
+Lantern, Damaged Helmet, Flight Helmet (15 textures, blend materials), Duck, Avocado,
+Interleaved Box, Animated Box and Interpolation Test (node animation), all exit cleanly.
+Skinned models (Player, Fox, CesiumMan, BrainStem) load and draw in bind pose.
+
+**Fixes:** shared textures uploaded twice and leaked; 2-channel images mapped to RED; glTF
+`alpha_mode` / `double_sided` ignored; emissive factor ignored without a texture; manual
+gamma; `calculateBoundingBox` ignoring node `matrix` (Duck normalized 100× too small; in
+redfish too); `Animator.init` leaving local transforms where world transforms were expected
+(nested nodes of never-animated models misplaced); `GltfReport` file writers writing empty
+files and `printReport` using the removed `GeneralPurposeAllocator`. Dead code removed:
+`GltfAsset.hideAllNodes` / `showAllNodes` (referenced a field it doesn't have), `flipv` and
+the unread flip / gamma fields.
+
+**Deferred:** `GltfAsset.addCustomTexture` (binds by GL uniform name) returns with its first
+user, animation_example or angrybot, designed for bind groups; until then the Player model
+draws untextured.
 
 **Done:** demo_app's static models render and look correct (color is expected to differ
 from GL due to sRGB).
 
 ### Step 5 - Skinning and Animation
 
-- Joint matrices in a storage buffer (group 2), written once per model instance per frame
+- Joint matrices in a storage buffer (group 2), written once per model instance per frame;
+  `pbr.wgsl` skinning path (skinned primitives carry `MaterialFlags.skin`)
+- `BakedAnimator` + the `baked_animator` variant of `AnimatorImpl`; demo_app `BAKE_ANIMATION`
 - `model_instance.zig` draw path for live, baked, and no animator
 - `baked_animator.zig` + `storage_buffer.zig` replace the TBO; instance matrices likewise
 - `pbr.wgsl` skinning path; `pbr_anim_baked.wgsl`

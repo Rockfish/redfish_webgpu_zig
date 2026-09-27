@@ -68,6 +68,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "gpu_caps", .exe_name = "gpu_caps", .source = "examples/gpu_caps/main.zig" },
         .{ .name = "draw_test", .exe_name = "draw_test", .source = "examples/draw_test/main.zig" },
         .{ .name = "scene_tree", .exe_name = "scene_tree", .source = "examples/scene_tree/main.zig" },
+        .{ .name = "demo_app", .exe_name = "demo_app", .source = "examples/demo_app/main.zig" },
     }) |app| {
         const exe = b.addExecutable(.{
             .name = app.exe_name,

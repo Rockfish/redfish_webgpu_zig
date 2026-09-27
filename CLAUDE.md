@@ -22,7 +22,8 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 depth, and the
 rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`),
-textures / mipmaps / samplers, all shapes, and `scene_tree`.
+textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app
+(static models; skinning is Step 5).
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
@@ -36,6 +37,7 @@ src/
 examples/         # gpu_caps, scene_tree, demo_app, animation_example, bullets, skybox
 games/            # level_01, angrybot (regression reference)
 assets/           # symlink to ../redfish_gl_zig/assets
+assets_nas/       # symlink to /Volumes/Dev/Assets (glTF sample models), as in redfish
 docs/
 ├── STYLE.md
 ├── plans/        # Numbered plans + active-plans.md

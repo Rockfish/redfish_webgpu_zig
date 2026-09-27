@@ -1,0 +1,143 @@
+// glTF metallic-roughness PBR, ported from redfish's pbr.vert / pbr.frag.
+// Changes: no manual gamma (the surface is sRGB), emissive = factor * texture as glTF
+// specifies, alpha MASK discards, one frame light until SceneLights (port Step 6).
+// Skinning (joint matrices in a storage buffer) comes with port Step 5.
+
+@group(GROUP_MATERIAL) @binding(0) var<uniform> material: MaterialUniforms;
+@group(GROUP_MATERIAL) @binding(1) var base_color_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(2) var metallic_roughness_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(3) var normal_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(4) var occlusion_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(5) var emissive_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(6) var base_color_sampler: sampler;
+@group(GROUP_MATERIAL) @binding(7) var metallic_roughness_sampler: sampler;
+@group(GROUP_MATERIAL) @binding(8) var normal_sampler: sampler;
+@group(GROUP_MATERIAL) @binding(9) var occlusion_sampler: sampler;
+@group(GROUP_MATERIAL) @binding(10) var emissive_sampler: sampler;
+
+const PI: f32 = 3.14159265359;
+
+struct VertexInput {
+    @location(LOCATION_POSITION) position: vec3f,
+    @location(LOCATION_TEXCOORD) texcoord: vec2f,
+    @location(LOCATION_NORMAL) normal: vec3f,
+    @location(LOCATION_TANGENT) tangent: vec4f,
+    @location(LOCATION_COLOR) color: vec4f,
+    @location(LOCATION_JOINTS) joints: vec4u,
+    @location(LOCATION_WEIGHTS) weights: vec4f,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4f,
+    @location(0) world_position: vec3f,
+    @location(1) texcoord: vec2f,
+    @location(2) color: vec4f,
+    @location(3) normal: vec3f,
+    @location(4) tangent: vec3f,
+    @location(5) bitangent: vec3f,
+}
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    let world_position = draw.model * vec4f(in.position, 1.0);
+
+    // World-space TBN; the tangent is re-orthogonalized against the normal.
+    let normal = normalize((draw.normal_matrix * vec4f(in.normal, 0.0)).xyz);
+    var tangent = normalize((draw.model * vec4f(in.tangent.xyz, 0.0)).xyz);
+    tangent = normalize(tangent - dot(tangent, normal) * normal);
+    let bitangent = cross(normal, tangent) * in.tangent.w;
+
+    var out: VertexOutput;
+    out.clip_position = frame.projection_view * world_position;
+    out.world_position = world_position.xyz;
+    out.texcoord = in.texcoord;
+    out.color = in.color;
+    out.normal = normal;
+    out.tangent = tangent;
+    out.bitangent = bitangent;
+    return out;
+}
+
+fn hasFlag(flag: u32) -> bool {
+    return (material.flags & flag) != 0u;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    // Sample everything up front: missing textures are 1x1 defaults (white, flat normal),
+    // so the multiplications below are neutral for them.
+    let base_color_sample = textureSample(base_color_texture, base_color_sampler, in.texcoord);
+    let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.texcoord);
+    let normal_sample = textureSample(normal_texture, normal_sampler, in.texcoord).xyz;
+    let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.texcoord).r;
+    let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.texcoord).rgb;
+
+    var base_color = material.base_color_factor * base_color_sample * in.color;
+    if (hasFlag(MATERIAL_FLAG_ALPHA_MASK) && base_color.a < material.alpha_cutoff) {
+        discard;
+    }
+    // Minimum brightness keeps very dark materials visible (as redfish)
+    base_color = vec4f(max(base_color.rgb, vec3f(0.05)), base_color.a);
+
+    // glTF: metallic in blue, roughness in green
+    let metallic = material.metallic_factor * metallic_roughness_sample.b;
+    let roughness = clamp(material.roughness_factor * metallic_roughness_sample.g, 0.1, 0.9);
+
+    var color: vec3f;
+    if (hasFlag(MATERIAL_FLAG_HAS_NORMALS)) {
+        var normal = normalize(in.normal);
+        if (hasFlag(MATERIAL_FLAG_NORMAL_TEXTURE)) {
+            let tbn = mat3x3f(normalize(in.tangent), normalize(in.bitangent), normal);
+            normal = normalize(tbn * (normal_sample * 2.0 - 1.0));
+        }
+        color = directLight(in.world_position, normal, base_color.rgb, metallic, roughness);
+    } else {
+        // Without normals: ambient plus a distance-scaled term (as redfish)
+        let distance = length(frame.light_position - in.world_position);
+        let attenuation = 1.0 / (1.0 + 0.01 * distance + 0.001 * distance * distance);
+        let light_factor = attenuation * frame.light_intensity * 0.001;
+        color = base_color.rgb * (0.3 + frame.light_color * light_factor);
+    }
+
+    color += vec3f(0.15) * base_color.rgb; // ambient
+    color *= occlusion_sample;
+    color += material.emissive_factor * emissive_sample;
+
+    // Reinhard tone mapping; the sRGB surface does the gamma encode
+    color = color / (color + vec3f(1.0));
+    return vec4f(color, base_color.a);
+}
+
+/// Cook-Torrance (GGX, Schlick) for the one frame light, as redfish's pbr.frag.
+fn directLight(world_position: vec3f, normal: vec3f, base_color: vec3f, metallic: f32, roughness: f32) -> vec3f {
+    let to_light = frame.light_position - world_position;
+    let light_dir = normalize(to_light);
+    let view_dir = normalize(frame.view_position - world_position);
+    let half_dir = normalize(light_dir + view_dir);
+
+    let distance = length(to_light);
+    let attenuation = 1.0 / (1.0 + 0.01 * distance + 0.001 * distance * distance);
+    let radiance = frame.light_color * frame.light_intensity * attenuation;
+
+    let n_dot_l = max(dot(normal, light_dir), 0.0);
+    let n_dot_v = max(dot(normal, view_dir), 0.0);
+    let n_dot_h = max(dot(normal, half_dir), 0.0);
+
+    // Fresnel-Schlick
+    let f0 = mix(vec3f(0.04), base_color, metallic);
+    let fresnel = f0 + (1.0 - f0) * pow(1.0 - n_dot_v, 5.0);
+
+    // GGX distribution
+    let alpha = roughness * roughness;
+    let alpha2 = alpha * alpha;
+    let denom = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
+    let distribution = alpha2 / (PI * denom * denom);
+
+    // Schlick-GGX geometry
+    let k = alpha / 2.0;
+    let geometry = (n_dot_v / (n_dot_v * (1.0 - k) + k)) * (n_dot_l / (n_dot_l * (1.0 - k) + k));
+
+    let specular = (fresnel * distribution * geometry) / (4.0 * n_dot_v * n_dot_l + 0.0001);
+    let diffuse = (vec3f(1.0) - fresnel) * (1.0 - metallic) * base_color / PI;
+    return (diffuse + specular) * n_dot_l * radiance;
+}
