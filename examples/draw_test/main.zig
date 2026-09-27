@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
     var gpu = try GpuContext.init(allocator, window);
     defer gpu.deinit();
 
-    const shader = try Shader.init(init.io, allocator, &gpu, "examples/draw_test/shaders/basic_shape.wgsl", &Shape.vertex_buffer_layouts, .none);
+    const shader = try Shader.init(init.io, allocator, &gpu, "examples/draw_test/shaders/basic_shape.wgsl", .{ .vertex_buffers = &Shape.vertex_buffer_layouts, .material = .none });
     defer {
         shader.releaseGpuObjects();
         allocator.destroy(shader);

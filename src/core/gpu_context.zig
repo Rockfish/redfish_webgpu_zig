@@ -9,6 +9,7 @@ const wgpu = @import("wgpu");
 const gpu_debug = @import("gpu_debug.zig");
 const bindings_ = @import("bindings.zig");
 const UniformRing = @import("uniform_ring.zig").UniformRing;
+const VertexRing = @import("uniform_ring.zig").VertexRing;
 const SamplerCache = @import("texture.zig").SamplerCache;
 const MipmapGenerator = @import("mipmaps.zig").MipmapGenerator;
 const DefaultTextures = @import("material.zig").DefaultTextures;
@@ -19,6 +20,13 @@ const Allocator = std.mem.Allocator;
 const Bindings = bindings_.Bindings;
 const BindGroup = bindings_.BindGroup;
 const FrameUniforms = bindings_.FrameUniforms;
+const MaterialKind = bindings_.MaterialKind;
+
+/// A group 1 bind group and the kind of material it is.
+pub const BoundMaterial = struct {
+    bind_group: c.WGPUBindGroup,
+    kind: MaterialKind,
+};
 
 const log = std.log.scoped(.gpu_context);
 
@@ -48,14 +56,15 @@ pub const GpuContext = struct {
     depth_texture: c.WGPUTexture = null,
     depth_view: c.WGPUTextureView = null,
     uniform_ring: UniformRing,
+    vertex_ring: VertexRing,
     bindings: Bindings,
     samplers: SamplerCache,
     mipmaps: MipmapGenerator,
     default_textures: DefaultTextures = undefined,
-    /// Group 1 for `MaterialKind.texture` draws, set by `texture.bind(frame)`. Like GL's
-    /// bound texture, it survives other draws (a PBR draw sets its own group 1 and the
-    /// next shape draw sets this one back). Cleared each frame.
-    bound_texture: c.WGPUBindGroup = null,
+    /// The material shape draws use, set by `texture.bind(frame)` or
+    /// `PbrMaterial.bind(frame)`. Like GL's bound texture, it survives other draws: each
+    /// shape draw sets group 1 from it. Cleared each frame.
+    bound_material: ?BoundMaterial = null,
 
     const Self = @This();
 
@@ -69,6 +78,7 @@ pub const GpuContext = struct {
         gpu_debug.logAdapterInfo(adapter);
 
         const uniform_ring = try UniformRing.init(allocator, device);
+        const vertex_ring = try VertexRing.init(allocator, device);
 
         var self: Self = .{
             .allocator = allocator,
@@ -83,6 +93,7 @@ pub const GpuContext = struct {
             .width = 0,
             .height = 0,
             .uniform_ring = uniform_ring,
+            .vertex_ring = vertex_ring,
             .bindings = Bindings.init(device, c.wgpuDeviceGetQueue(device), uniform_ring.buffer),
             .samplers = SamplerCache.init(allocator),
             .mipmaps = MipmapGenerator.init(device),
@@ -128,7 +139,8 @@ pub const GpuContext = struct {
         }
 
         self.uniform_ring.reset();
-        self.bound_texture = null;
+        self.vertex_ring.reset();
+        self.bound_material = null;
 
         const color_view = c.wgpuTextureCreateView(surface_texture.texture, null);
         const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});
@@ -170,6 +182,7 @@ pub const GpuContext = struct {
 
         const commands = c.wgpuCommandEncoderFinish(frame.encoder, &.{});
         self.uniform_ring.upload(self.queue);
+        self.vertex_ring.upload(self.queue);
         c.wgpuQueueSubmit(self.queue, 1, &commands);
         c.wgpuCommandBufferRelease(commands);
         c.wgpuCommandEncoderRelease(frame.encoder);
@@ -195,6 +208,8 @@ pub const GpuContext = struct {
         self.bindings.releaseGpuObjects();
         self.uniform_ring.releaseGpuObjects();
         self.uniform_ring.deinit(self.allocator);
+        self.vertex_ring.releaseGpuObjects();
+        self.vertex_ring.deinit(self.allocator);
         self.releaseDepthTexture();
         c.wgpuSurfaceUnconfigure(self.surface);
         c.wgpuQueueRelease(self.queue);

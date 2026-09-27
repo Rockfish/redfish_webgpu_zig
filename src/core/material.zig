@@ -75,7 +75,22 @@ pub const PbrMaterial = struct {
         };
     }
 
+    /// Material from textures alone, for shapes (e.g. a floor's diffuse / normal / specular
+    /// maps in the base color / normal / metallic-roughness slots). White, non-metallic,
+    /// fully rough, opaque.
+    pub fn initWithTextures(gpu: *GpuContext, textures: [bindings.PBR_TEXTURE_COUNT]?*const Texture) !Self {
+        var material = defaultMaterial();
+        material.pbr_metallic_roughness.?.roughness_factor = 1.0;
+        return init(gpu, material, textures, .{ .has_normals = true, .has_vertex_colors = false, .has_skin = false });
+    }
+
+    /// The material shape draws with a `.pbr` shader use from here on, this frame.
     pub fn bind(self: *const Self, frame: *const Frame) void {
+        frame.gpu.bound_material = .{ .bind_group = self.bind_group, .kind = .pbr };
+    }
+
+    /// Group 1 for one mesh primitive draw. Doesn't change the frame's bound material.
+    pub fn setBindGroup(self: *const Self, frame: *const Frame) void {
         c.wgpuRenderPassEncoderSetBindGroup(frame.pass, BindGroup.material, self.bind_group, 0, null);
     }
 

@@ -45,6 +45,19 @@ pub const RenderState = packed struct(u4) {
     }
 };
 
+/// Primitive topology of the geometry a shader draws.
+pub const Topology = enum {
+    triangle_list,
+    line_list,
+
+    fn toWgpu(self: Topology) c.WGPUPrimitiveTopology {
+        return switch (self) {
+            .triangle_list => c.WGPUPrimitiveTopology_TriangleList,
+            .line_list => c.WGPUPrimitiveTopology_LineList,
+        };
+    }
+};
+
 /// Everything a pipeline needs except its render state.
 pub const PipelineConfig = struct {
     label: []const u8,
@@ -53,7 +66,10 @@ pub const PipelineConfig = struct {
     vertex_buffers: []const c.WGPUVertexBufferLayout,
     color_format: c.WGPUTextureFormat,
     depth_format: c.WGPUTextureFormat,
-    topology: c.WGPUPrimitiveTopology = c.WGPUPrimitiveTopology_TriangleList,
+    topology: Topology = .triangle_list,
+    /// Overrides `Less` (or `Always` with `no_depth_test`), e.g. `LessEqual` for a skybox
+    /// drawn at depth 1.
+    depth_compare: ?c.WGPUCompareFunction = null,
 };
 
 pub const PipelineVariants = struct {
@@ -96,7 +112,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
     const depth_stencil: c.WGPUDepthStencilState = .{
         .format = config.depth_format,
         .depthWriteEnabled = if (state.no_depth_write) c.WGPUOptionalBool_False else c.WGPUOptionalBool_True,
-        .depthCompare = if (state.no_depth_test) c.WGPUCompareFunction_Always else c.WGPUCompareFunction_Less,
+        .depthCompare = config.depth_compare orelse if (state.no_depth_test) c.WGPUCompareFunction_Always else c.WGPUCompareFunction_Less,
         .stencilFront = keep_stencil,
         .stencilBack = keep_stencil,
     };
@@ -111,7 +127,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
             .buffers = config.vertex_buffers.ptr,
         },
         .primitive = .{
-            .topology = config.topology,
+            .topology = config.topology.toWgpu(),
             .frontFace = c.WGPUFrontFace_CCW,
             .cullMode = if (state.double_sided) c.WGPUCullMode_None else c.WGPUCullMode_Back,
         },

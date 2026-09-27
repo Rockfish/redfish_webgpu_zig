@@ -2,15 +2,36 @@
 // GROUP_*, LOCATION_*, MAX_JOINTS, and DRAW_FLAG_*.
 // Structs mirror src/core/bindings.zig; field names match exactly.
 
+struct DirectionLight {
+    dir: vec3f,
+    color: vec3f,
+}
+
+struct PointLight {
+    world_pos: vec3f,
+    constant: f32,
+    color: vec3f,
+    linear: f32,
+    quadratic: f32,
+    enabled: u32,
+}
+
+// The frame's SceneLights (src/core/lights.zig).
+struct Lights {
+    ambient: vec3f,
+    use_light: u32,
+    direction_light: DirectionLight,
+    point_lights: array<PointLight, MAX_POINT_LIGHTS>,
+    num_point_lights: u32,
+}
+
 struct FrameUniforms {
     projection: mat4x4f,
     view: mat4x4f,
     projection_view: mat4x4f,
     view_position: vec3f,
     time: f32,
-    light_position: vec3f,
-    light_intensity: f32,
-    light_color: vec3f,
+    lights: Lights,
 }
 
 struct DrawUniforms {

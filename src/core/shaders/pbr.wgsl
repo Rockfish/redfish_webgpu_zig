@@ -1,6 +1,6 @@
 // glTF metallic-roughness PBR, ported from redfish's pbr.vert / pbr.frag.
 // Changes: no manual gamma (the surface is sRGB), emissive = factor * texture as glTF
-// specifies, alpha MASK discards, one frame light until SceneLights (port Step 6).
+// specifies, alpha MASK discards, lights from the frame's SceneLights (group 0).
 // Skinning reads `joints` (group 2) from `draw.joint_offset`, for live and baked animation
 // alike; this replaces redfish's separate pbr_anim_baked.vert.
 
@@ -89,23 +89,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let metallic = material.metallic_factor * metallic_roughness_sample.b;
     let roughness = clamp(material.roughness_factor * metallic_roughness_sample.g, 0.1, 0.9);
 
-    var color: vec3f;
-    if (hasFlag(MATERIAL_FLAG_HAS_NORMALS)) {
-        var normal = normalize(in.normal);
-        if (hasFlag(MATERIAL_FLAG_NORMAL_TEXTURE)) {
-            let tbn = mat3x3f(normalize(in.tangent), normalize(in.bitangent), normal);
-            normal = normalize(tbn * (normal_sample * 2.0 - 1.0));
+    let lights = frame.lights;
+    var color = base_color.rgb;
+    if (lights.use_light != 0u) {
+        if (hasFlag(MATERIAL_FLAG_HAS_NORMALS)) {
+            var normal = normalize(in.normal);
+            if (hasFlag(MATERIAL_FLAG_NORMAL_TEXTURE)) {
+                let tbn = mat3x3f(normalize(in.tangent), normalize(in.bitangent), normal);
+                normal = normalize(tbn * (normal_sample * 2.0 - 1.0));
+            }
+            color = sceneLight(in.world_position, normal, base_color.rgb, metallic, roughness);
+        } else {
+            // Without normals there is no direct lighting; a flat base keeps it visible (as redfish)
+            color = base_color.rgb * 0.3;
         }
-        color = directLight(in.world_position, normal, base_color.rgb, metallic, roughness);
-    } else {
-        // Without normals: ambient plus a distance-scaled term (as redfish)
-        let distance = length(frame.light_position - in.world_position);
-        let attenuation = 1.0 / (1.0 + 0.01 * distance + 0.001 * distance * distance);
-        let light_factor = attenuation * frame.light_intensity * 0.001;
-        color = base_color.rgb * (0.3 + frame.light_color * light_factor);
+        color += lights.ambient * base_color.rgb;
     }
-
-    color += vec3f(0.15) * base_color.rgb; // ambient
     color *= occlusion_sample;
     color += material.emissive_factor * emissive_sample;
 
@@ -114,16 +113,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4f(color, base_color.a);
 }
 
-/// Cook-Torrance (GGX, Schlick) for the one frame light, as redfish's pbr.frag.
-fn directLight(world_position: vec3f, normal: vec3f, base_color: vec3f, metallic: f32, roughness: f32) -> vec3f {
-    let to_light = frame.light_position - world_position;
-    let light_dir = normalize(to_light);
+/// The frame's direction light plus its enabled point lights.
+fn sceneLight(world_position: vec3f, normal: vec3f, base_color: vec3f, metallic: f32, roughness: f32) -> vec3f {
+    let lights = frame.lights;
     let view_dir = normalize(frame.view_position - world_position);
-    let half_dir = normalize(light_dir + view_dir);
 
-    let distance = length(to_light);
-    let attenuation = 1.0 / (1.0 + 0.01 * distance + 0.001 * distance * distance);
-    let radiance = frame.light_color * frame.light_intensity * attenuation;
+    var color = brdf(normal, view_dir, normalize(-lights.direction_light.dir), lights.direction_light.color, base_color, metallic, roughness);
+    for (var i = 0u; i < min(lights.num_point_lights, MAX_POINT_LIGHTS); i++) {
+        let light = lights.point_lights[i];
+        if (light.enabled == 0u) {
+            continue;
+        }
+        let to_light = light.world_pos - world_position;
+        let distance = length(to_light);
+        let attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * distance * distance);
+        color += brdf(normal, view_dir, normalize(to_light), light.color * attenuation, base_color, metallic, roughness);
+    }
+    return color;
+}
+
+/// Cook-Torrance (GGX, Schlick) for one light, as redfish's pbr.frag.
+fn brdf(normal: vec3f, view_dir: vec3f, light_dir: vec3f, radiance: vec3f, base_color: vec3f, metallic: f32, roughness: f32) -> vec3f {
+    let half_dir = normalize(light_dir + view_dir);
 
     let n_dot_l = max(dot(normal, light_dir), 0.0);
     let n_dot_v = max(dot(normal, view_dir), 0.0);

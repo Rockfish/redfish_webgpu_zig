@@ -34,6 +34,7 @@ pub const VertexAttr = struct {
 };
 
 pub const MAX_JOINTS = 100;
+pub const MAX_POINT_LIGHTS = 4;
 
 /// What a shader binds at group 1. Picks the pipeline layout's material slot.
 pub const MaterialKind = enum {
@@ -44,6 +45,8 @@ pub const MaterialKind = enum {
     /// glTF metallic-roughness: `MaterialUniforms` at 0, five textures at 1-5 (base color,
     /// metallic-roughness, normal, occlusion, emissive), their samplers at 6-10.
     pbr,
+    /// A cube map and its sampler (skybox): `@binding(0)` texture_cube<f32>, `@binding(1)` sampler.
+    cube_texture,
 };
 
 pub const PBR_TEXTURE_COUNT = 5;
@@ -56,6 +59,43 @@ pub const DrawFlags = struct {
     pub const skinned: u32 = 1 << 1;
 };
 
+/// Mirrors `DirectionLight` in shaders/common.wgsl.
+pub const DirectionLightUniforms = extern struct {
+    dir: Vec3,
+    _pad0: f32 = 0.0,
+    color: Vec3,
+    _pad1: f32 = 0.0,
+};
+
+/// Mirrors `PointLight` in shaders/common.wgsl.
+pub const PointLightUniforms = extern struct {
+    world_pos: Vec3,
+    constant: f32,
+    color: Vec3,
+    linear: f32,
+    quadratic: f32,
+    enabled: u32,
+    _pad: [2]u32 = .{ 0, 0 },
+};
+
+/// Mirrors `Lights` in shaders/common.wgsl. Filled by `SceneLights.uniforms()`; all zero
+/// (no light at all) until an app sets it.
+pub const LightsUniforms = extern struct {
+    ambient: Vec3 = Vec3.init(0.0, 0.0, 0.0),
+    use_light: u32 = 0,
+    direction_light: DirectionLightUniforms = .{ .dir = Vec3.init(0.0, -1.0, 0.0), .color = Vec3.init(0.0, 0.0, 0.0) },
+    point_lights: [MAX_POINT_LIGHTS]PointLightUniforms = @splat(.{
+        .world_pos = Vec3.init(0.0, 0.0, 0.0),
+        .constant = 1.0,
+        .color = Vec3.init(0.0, 0.0, 0.0),
+        .linear = 0.0,
+        .quadratic = 0.0,
+        .enabled = 0,
+    }),
+    num_point_lights: u32 = 0,
+    _pad: [3]u32 = .{ 0, 0, 0 },
+};
+
 /// Mirrors `FrameUniforms` in shaders/common.wgsl (group 0, binding 0).
 pub const FrameUniforms = extern struct {
     projection: Mat4,
@@ -63,11 +103,7 @@ pub const FrameUniforms = extern struct {
     projection_view: Mat4,
     view_position: Vec3,
     time: f32, // fills vec3's 16-byte slot
-    /// One point light until `SceneLights` (port Step 6). Zero intensity means unlit.
-    light_position: Vec3 = Vec3.init(0.0, 0.0, 0.0),
-    light_intensity: f32 = 0.0,
-    light_color: Vec3 = Vec3.init(1.0, 1.0, 1.0),
-    _pad: f32 = 0.0,
+    lights: LightsUniforms = .{},
 };
 
 /// Mirrors `DrawUniforms` in shaders/common.wgsl (group 2, binding 0). One per draw,
@@ -119,7 +155,10 @@ pub const MaterialUniforms = extern struct {
 
 comptime {
     std.debug.assert(@sizeOf(MaterialUniforms) == 48);
-    std.debug.assert(@sizeOf(FrameUniforms) == 240);
+    std.debug.assert(@sizeOf(DirectionLightUniforms) == 32);
+    std.debug.assert(@sizeOf(PointLightUniforms) == 48);
+    std.debug.assert(@sizeOf(LightsUniforms) == 256);
+    std.debug.assert(@sizeOf(FrameUniforms) == 464);
     std.debug.assert(@sizeOf(DrawUniforms) == 160);
 }
 
@@ -138,6 +177,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     \\const LOCATION_JOINTS: u32 = {d}u;
     \\const LOCATION_WEIGHTS: u32 = {d}u;
     \\const MAX_JOINTS: u32 = {d}u;
+    \\const MAX_POINT_LIGHTS: u32 = {d}u;
     \\const DRAW_FLAG_VERTEX_COLOR: u32 = {d}u;
     \\const DRAW_FLAG_SKINNED: u32 = {d}u;
     \\const MATERIAL_FLAG_BASE_COLOR_TEXTURE: u32 = {d}u;
@@ -164,6 +204,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     VertexAttr.joints,
     VertexAttr.weights,
     MAX_JOINTS,
+    MAX_POINT_LIGHTS,
     DrawFlags.vertex_color,
     DrawFlags.skinned,
     MaterialFlags.base_color_texture,
@@ -183,6 +224,7 @@ pub const Bindings = struct {
     empty_layout: c.WGPUBindGroupLayout,
     texture_layout: c.WGPUBindGroupLayout,
     pbr_layout: c.WGPUBindGroupLayout,
+    cube_texture_layout: c.WGPUBindGroupLayout,
     object_layout: c.WGPUBindGroupLayout,
 
     frame_buffer: c.WGPUBuffer,
@@ -200,8 +242,9 @@ pub const Bindings = struct {
         const frame_layout = createUniformLayout(device, "frame layout", @sizeOf(FrameUniforms), false);
         const empty_layout = c.wgpuDeviceCreateBindGroupLayout(device, &.{ .label = stringView("empty layout") });
         const object_layout = createObjectLayout(device);
-        const texture_layout = createTextureLayout(device);
+        const texture_layout = createTextureLayout(device, c.WGPUTextureViewDimension_2D, "texture material layout");
         const pbr_layout = createPbrLayout(device);
+        const cube_texture_layout = createTextureLayout(device, c.WGPUTextureViewDimension_Cube, "cube texture layout");
 
         const no_joints_buffer = c.wgpuDeviceCreateBuffer(device, &.{
             .label = stringView("no joints"),
@@ -221,6 +264,7 @@ pub const Bindings = struct {
             .empty_layout = empty_layout,
             .texture_layout = texture_layout,
             .pbr_layout = pbr_layout,
+            .cube_texture_layout = cube_texture_layout,
             .object_layout = object_layout,
             .frame_buffer = frame_buffer,
             .frame_bind_group = createUniformBindGroup(device, "frame", frame_layout, frame_buffer, @sizeOf(FrameUniforms)),
@@ -238,6 +282,7 @@ pub const Bindings = struct {
             .none => self.empty_layout,
             .texture => self.texture_layout,
             .pbr => self.pbr_layout,
+            .cube_texture => self.cube_texture_layout,
         };
     }
 
@@ -248,6 +293,7 @@ pub const Bindings = struct {
         c.wgpuBindGroupRelease(self.frame_bind_group);
         c.wgpuBufferRelease(self.frame_buffer);
         c.wgpuBindGroupLayoutRelease(self.object_layout);
+        c.wgpuBindGroupLayoutRelease(self.cube_texture_layout);
         c.wgpuBindGroupLayoutRelease(self.pbr_layout);
         c.wgpuBindGroupLayoutRelease(self.texture_layout);
         c.wgpuBindGroupLayoutRelease(self.empty_layout);
@@ -318,13 +364,14 @@ pub fn createObjectBindGroup(
     });
 }
 
-/// `MaterialKind.texture`: filterable 2D texture at binding 0, filtering sampler at 1.
-fn createTextureLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
+/// `MaterialKind.texture` (2D) and `.cube_texture` (cube): filterable texture at binding 0,
+/// filtering sampler at 1.
+fn createTextureLayout(device: c.WGPUDevice, view_dimension: c.WGPUTextureViewDimension, label: []const u8) c.WGPUBindGroupLayout {
     const entries = [_]c.WGPUBindGroupLayoutEntry{
         .{
             .binding = 0,
             .visibility = c.WGPUShaderStage_Fragment,
-            .texture = .{ .sampleType = c.WGPUTextureSampleType_Float, .viewDimension = c.WGPUTextureViewDimension_2D },
+            .texture = .{ .sampleType = c.WGPUTextureSampleType_Float, .viewDimension = view_dimension },
         },
         .{
             .binding = 1,
@@ -333,7 +380,7 @@ fn createTextureLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
         },
     };
     return c.wgpuDeviceCreateBindGroupLayout(device, &.{
-        .label = stringView("texture material layout"),
+        .label = stringView(label),
         .entryCount = entries.len,
         .entries = &entries,
     });

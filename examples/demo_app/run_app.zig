@@ -232,6 +232,22 @@ fn switchModel(gpu: *GpuContext, state: *state_.State, current_scope: **ModelSco
 const camera_position = vec3(0.0, 12.0, 40.0);
 const camera_target = vec3(0.0, 12.0, 0.0);
 
+/// redfish's PBR light: (50, 50, 50), intensity 100, pbr.frag's falloff and 0.15 ambient.
+pub fn demoLights() core.SceneLights {
+    var lights = core.SceneLights.init();
+    lights.ambient = vec3(0.15, 0.15, 0.15);
+    lights.direction_light.color = vec3(0.0, 0.0, 0.0);
+    lights.setPointLight(0, .{
+        .world_pos = vec3(50.0, 50.0, 50.0),
+        .color = vec3(100.0, 100.0, 100.0),
+        .constant = 1.0,
+        .linear = 0.01,
+        .quadratic = 0.001,
+        .enabled = true,
+    });
+    return lights;
+}
+
 /// Baked and live animation draw with the same shader (pbr.wgsl).
 const BAKE_ANIMATION: bool = true;
 
@@ -304,8 +320,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
         context.alloc,
         gpu,
         "src/core/shaders/pbr.wgsl",
-        &MeshPrimitive.vertex_buffer_layouts,
-        .pbr,
+        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr },
     );
 
     std.debug.print("\n--- Build gltf model ----------------------\n\n", .{});
@@ -323,6 +338,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
     positionCameraForModel(current_scope, camera);
 
     std.debug.print("\n----------------------\n", .{});
+
+    const scene_lights = demoLights();
 
     // --- event loop
     const start_time: f32 = @floatCast(glfw.getTime());
@@ -413,9 +430,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
 
         const ctx = state.camera.getRenderContext(state.total_time);
         var frame_uniforms = ctx.frameUniforms();
-        frame_uniforms.light_position = vec3(50.0, 50.0, 50.0);
-        frame_uniforms.light_color = vec3(1.0, 1.0, 1.0);
-        frame_uniforms.light_intensity = 100.0;
+        frame_uniforms.lights = scene_lights.uniforms();
         gpu.writeFrameUniforms(frame_uniforms);
 
         current_scope.getModel().draw(&frame, shader, current_scope.model_transform);

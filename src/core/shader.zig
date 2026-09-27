@@ -21,6 +21,18 @@ const GpuContext = gpu_context.GpuContext;
 const PipelineVariants = pipeline.PipelineVariants;
 const RenderState = pipeline.RenderState;
 const MaterialKind = bindings.MaterialKind;
+const Topology = pipeline.Topology;
+
+/// How a shader's pipelines are built.
+pub const ShaderConfig = struct {
+    /// The vertex layout of the geometry it draws (e.g. `Shape.vertex_buffer_layouts`).
+    vertex_buffers: []const c.WGPUVertexBufferLayout,
+    /// What it binds at group 1.
+    material: MaterialKind = .none,
+    topology: Topology = .triangle_list,
+    /// Replaces the `Less` depth test, e.g. `LessEqual` for a skybox at depth 1.
+    depth_compare: ?c.WGPUCompareFunction = null,
+};
 
 const log = std.log.scoped(.shader);
 
@@ -41,30 +53,29 @@ pub const Shader = struct {
 
     const Self = @This();
 
-    /// `vertex_buffers` is the vertex layout of the geometry this shader draws
-    /// (e.g. `Shape.vertex_buffer_layouts`); `material` is what it binds at group 1.
     pub fn init(
         io: Io,
         allocator: Allocator,
         gpu: *const GpuContext,
         file_path: []const u8,
-        vertex_buffers: []const c.WGPUVertexBufferLayout,
-        material: MaterialKind,
+        config: ShaderConfig,
     ) !*Shader {
         const module = try createModule(io, allocator, gpu, file_path);
-        const pipeline_layout = createPipelineLayout(gpu, material);
+        const pipeline_layout = createPipelineLayout(gpu, config.material);
 
         const shader = try allocator.create(Shader);
         shader.* = .{
             .file_path = try allocator.dupe(u8, file_path),
-            .material = material,
+            .material = config.material,
             .module = module,
             .pipeline_layout = pipeline_layout,
             .variants = PipelineVariants.init(gpu.device, .{
                 .label = file_path,
                 .module = module,
                 .layout = pipeline_layout,
-                .vertex_buffers = vertex_buffers,
+                .vertex_buffers = config.vertex_buffers,
+                .topology = config.topology,
+                .depth_compare = config.depth_compare,
                 .color_format = gpu.surface_format,
                 .depth_format = gpu_context.depth_format,
             }),

@@ -406,6 +406,13 @@ check for later changes.
   converter wrote conjugated quaternions. demo_app entry 9 shows it on its head; scene_tree
   compensates with a 180° X rotation. Fix the converter or re-export the asset.
 
+- **PBR highlights on edges at the shadow side** (redfish too; e.g. panel seams of the
+  spacesuit models). Suspected, not verified: `pbr.wgsl`'s geometry term uses `k = alpha / 2`,
+  so with roughness clamped to 0.1 (`k` = 0.005) `G / (4 NdotV NdotL)` reaches ~1/(4k²) where
+  both dot products are small; and Fresnel uses `NdotV` instead of `VdotH`, which goes to 1 at
+  grazing view. Try Schlick-GGX with `k = (roughness + 1)² / 8` for direct light and
+  Fresnel on `VdotH`, and compare on the same model.
+
 ## Risks
 
 - **Per-draw data design (Step 3a).** Everything later depends on it. Test it with many

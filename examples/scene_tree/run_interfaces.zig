@@ -99,8 +99,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         context.alloc,
         gpu,
         "examples/scene_tree/shaders/basic_model.wgsl",
-        &Shape.vertex_buffer_layouts,
-        .texture,
+        .{ .vertex_buffers = &Shape.vertex_buffer_layouts, .material = .texture },
     );
     defer basic_model_shader.releaseGpuObjects();
 
@@ -166,8 +165,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         context.alloc,
         gpu,
         "src/core/shaders/pbr.wgsl",
-        &MeshPrimitive.vertex_buffer_layouts,
-        .pbr,
+        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr },
     );
     defer pbr_shader.releaseGpuObjects();
 
@@ -354,10 +352,24 @@ fn frameUniforms(st: *State) core.bindings.FrameUniforms {
     render_context.projection = st.projection;
     render_context.projection_view = st.projection.mulMat4(&render_context.view);
     var uniforms = render_context.frameUniforms();
-    // For the PBR model node (demo_app's light); redfish's basic shader was unlit
-    uniforms.light_position = vec3(50.0, 50.0, 50.0);
-    uniforms.light_intensity = 100.0;
+    uniforms.lights = modelLights().uniforms();
     return uniforms;
+}
+
+/// For the PBR model node (demo_app's light); redfish's basic shader is unlit.
+fn modelLights() core.SceneLights {
+    var lights = core.SceneLights.init();
+    lights.ambient = vec3(0.15, 0.15, 0.15);
+    lights.direction_light.color = vec3(0.0, 0.0, 0.0);
+    lights.setPointLight(0, .{
+        .world_pos = vec3(50.0, 50.0, 50.0),
+        .color = vec3(100.0, 100.0, 100.0),
+        .constant = 1.0,
+        .linear = 0.01,
+        .quadratic = 0.001,
+        .enabled = true,
+    });
+    return lights;
 }
 
 pub fn updateSpin(node: *Node, st: *State) void {

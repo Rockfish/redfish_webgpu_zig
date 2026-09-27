@@ -34,6 +34,7 @@ pub const AnimationClip = @import("animator.zig").AnimationClip;
 pub const AnimationRepeatMode = @import("animator.zig").AnimationRepeatMode;
 pub const WeightedAnimation = @import("animator.zig").WeightedAnimation;
 pub const AnimatorImpl = @import("model_instance.zig").AnimatorImpl;
+pub const AnimationStateMachine = @import("animation_fsm.zig").AnimationStateMachine;
 
 pub const BakedAnimation = @import("baked_animator.zig").BakedAnimation;
 pub const BakedAnimator = @import("baked_animator.zig").BakedAnimator;
@@ -60,8 +61,15 @@ pub const RenderContext = render.RenderContext;
 
 pub const shapes = @import("shapes/root.zig");
 
+pub const ResourceManager = @import("resource_manager.zig").ResourceManager;
+
 pub const colors = @import("colors.zig");
 pub const Color = @import("colors.zig").Color;
+
+pub const lights = @import("lights.zig");
+pub const SceneLights = lights.SceneLights;
+pub const PointLight = lights.PointLight;
+pub const DirectionLight = lights.DirectionLight;
 
 test {
     std.testing.refAllDecls(@This());

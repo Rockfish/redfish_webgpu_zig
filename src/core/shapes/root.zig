@@ -6,10 +6,16 @@ pub const Cylinder = @import("cylinder.zig").Cylinder;
 pub const Sphere = @import("sphere.zig").Sphere;
 pub const Square = @import("square.zig").Square;
 pub const Plane = @import("plane.zig").Plane;
+pub const Skybox = @import("skybox.zig").Skybox;
+pub const SkyboxFaces = @import("skybox.zig").SkyboxFaces;
+pub const Lines = @import("lines.zig").Lines;
+pub const LineSegment = @import("lines.zig").LineSegment;
 pub const PlaneConfig = @import("plane.zig").PlaneConfig;
 
 pub const Shape = @import("shape.zig").Shape;
 pub const ShapeBuilder = @import("shape.zig").ShapeBuilder;
+pub const InstanceAttribute = @import("shape.zig").InstanceAttribute;
+pub const InstancedLayouts = @import("shape.zig").InstancedLayouts;
 pub const obj_loader = @import("obj_loader.zig");
 
 pub fn loadOBJ(io: std.Io, allocator: std.mem.Allocator, gpu: *const GpuContext, filepath: []const u8) !*Shape {

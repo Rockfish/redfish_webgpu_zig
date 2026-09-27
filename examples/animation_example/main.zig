@@ -335,7 +335,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_d
         "examples/animation_example/shaders/player.wgsl"
     else
         "src/core/shaders/pbr.wgsl";
-    const shader = try Shader.init(init.io, context.alloc, gpu, shader_path, &MeshPrimitive.vertex_buffer_layouts, .pbr);
+    const shader = try Shader.init(init.io, context.alloc, gpu, shader_path, .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr });
 
     const model_config = blk: {
         for (model_configs) |config| {
@@ -459,6 +459,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_d
         }
     }
 
+    const scene_lights = sceneLights();
+
     log.info("Run starting---", .{});
 
     while (!window.shouldClose()) {
@@ -487,9 +489,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_d
         const frame = gpu.beginFrame(CLEAR_COLOR) orelse continue;
 
         var frame_uniforms = state.camera.getRenderContext(currentFrame).frameUniforms();
-        frame_uniforms.light_position = vec3(0.0, 200.0, 0.0);
-        frame_uniforms.light_color = vec3(1.0, 1.0, 1.0);
-        frame_uniforms.light_intensity = 100.0;
+        frame_uniforms.lights = scene_lights.uniforms();
         gpu.writeFrameUniforms(frame_uniforms);
 
         for (model_transforms) |model_transform| {
@@ -505,6 +505,21 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_d
     model.cleanUp();
     alloc_arena.deinit();
     temp_alloc_arena.deinit();
+}
+
+/// The example's light at (0, 200, 0): for the player shader, its `ambient` (0.8, 0.7, 0.8)
+/// and a white point light; for PBR, redfish's lightIntensity 100 with pbr.frag's falloff.
+fn sceneLights() core.SceneLights {
+    var lights = core.SceneLights.init();
+    lights.direction_light.color = vec3(0.0, 0.0, 0.0);
+    if (SELECTED_MODEL == .player) {
+        lights.ambient = vec3(0.8, 0.7, 0.8);
+        lights.setPointLight(0, .{ .world_pos = vec3(0.0, 200.0, 0.0), .color = vec3(1.0, 1.0, 1.0), .constant = 1.0, .linear = 0.0, .quadratic = 0.0, .enabled = true });
+    } else {
+        lights.ambient = vec3(0.15, 0.15, 0.15);
+        lights.setPointLight(0, .{ .world_pos = vec3(0.0, 200.0, 0.0), .color = vec3(100.0, 100.0, 100.0), .constant = 1.0, .linear = 0.01, .quadratic = 0.001, .enabled = true });
+    }
+    return lights;
 }
 
 fn keyHandler(

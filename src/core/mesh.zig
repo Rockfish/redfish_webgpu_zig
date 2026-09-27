@@ -257,7 +257,7 @@ pub const MeshPrimitive = struct {
         const draw_offset = gpu.uniform_ring.allocate(DrawUniforms, draw_uniforms);
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.material.render_state));
-        self.material.bind(frame);
+        self.material.setBindGroup(frame);
         c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, object_bind_group, 1, &draw_offset);
 
         for (self.vertex_buffers, 0..) |buffer, slot| {

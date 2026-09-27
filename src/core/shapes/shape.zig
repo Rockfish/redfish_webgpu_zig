@@ -134,6 +134,49 @@ pub fn initGpuBuffers(
     return s;
 }
 
+/// One per-instance vertex attribute.
+pub const InstanceAttribute = struct {
+    format: enum { float32x3, float32x4 },
+    location: u32,
+};
+
+/// Vertex layout for instanced shape shaders: the four shape buffers, then one buffer per
+/// instance attribute with `stepMode = Instance`. Use `.layouts` in `ShaderConfig`.
+pub fn InstancedLayouts(comptime attributes: []const InstanceAttribute) type {
+    return struct {
+        const instance_attributes = blk: {
+            var result: [attributes.len]c.WGPUVertexAttribute = undefined;
+            for (&result, attributes) |*out, attribute| {
+                out.* = .{
+                    .format = switch (attribute.format) {
+                        .float32x3 => c.WGPUVertexFormat_Float32x3,
+                        .float32x4 => c.WGPUVertexFormat_Float32x4,
+                    },
+                    .shaderLocation = attribute.location,
+                };
+            }
+            break :blk result;
+        };
+
+        pub const layouts = blk: {
+            var result: [Shape.vertex_buffer_layouts.len + attributes.len]c.WGPUVertexBufferLayout = undefined;
+            for (Shape.vertex_buffer_layouts, 0..) |layout, i| result[i] = layout;
+            for (attributes, 0..) |attribute, i| {
+                result[Shape.vertex_buffer_layouts.len + i] = .{
+                    .stepMode = c.WGPUVertexStepMode_Instance,
+                    .arrayStride = switch (attribute.format) {
+                        .float32x3 => 12,
+                        .float32x4 => 16,
+                    },
+                    .attributeCount = 1,
+                    .attributes = &instance_attributes[i],
+                };
+            }
+            break :blk result;
+        };
+    };
+}
+
 pub const ShapeType = enum {
     square,
     plane,
@@ -185,27 +228,31 @@ pub const Shape = struct {
     };
 
     /// Per-draw values go in `draw_uniforms`, copied into this frame's uniform ring,
-    /// so any number of draws in a frame each see their own. A `.texture` shader draws
-    /// with the texture last bound this frame (`texture.bind(frame)`).
+    /// so any number of draws in a frame each see their own. A shader with a material
+    /// draws with the material last bound this frame (`texture.bind(frame)`, ...).
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, draw_uniforms: DrawUniforms) void {
-        if (!self.is_visible) return;
+        self.drawInstanced(frame, shader, draw_uniforms, &.{}, 1);
+    }
+
+    /// Draw `instance_count` copies. `instance_data` holds one byte slice per instance
+    /// attribute, in the order of the shader's `InstancedLayouts`; each is copied into
+    /// this frame's vertex ring, so every call keeps its own data.
+    pub fn drawInstanced(
+        self: *const Self,
+        frame: *const Frame,
+        shader: *const Shader,
+        draw_uniforms: DrawUniforms,
+        instance_data: []const []const u8,
+        instance_count: u32,
+    ) void {
+        if (!self.is_visible or instance_count == 0) return;
 
         const gpu = frame.gpu;
         const pass = frame.pass;
         const draw_offset = gpu.uniform_ring.allocate(DrawUniforms, draw_uniforms);
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.renderState()));
-        const material_bind_group = switch (shader.material) {
-            .none => gpu.bindings.empty_bind_group,
-            .texture => gpu.bound_texture orelse {
-                log.err("Shape.draw: .texture shader with no texture bound this frame", .{});
-                return;
-            },
-            .pbr => {
-                log.err("Shape.draw: pbr shaders draw glTF meshes, not shapes", .{});
-                return;
-            },
-        };
+        const material_bind_group = materialFor(gpu, shader) orelse return;
         c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.material, material_bind_group, 0, null);
         c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, gpu.bindings.object_bind_group, 1, &draw_offset);
 
@@ -213,8 +260,27 @@ pub const Shape = struct {
         for (buffers, 0..) |buffer, slot| {
             c.wgpuRenderPassEncoderSetVertexBuffer(pass, @intCast(slot), buffer, 0, c.WGPU_WHOLE_SIZE);
         }
+        for (instance_data, buffers.len..) |bytes, slot| {
+            const offset = gpu.vertex_ring.allocateBytes(bytes);
+            c.wgpuRenderPassEncoderSetVertexBuffer(pass, @intCast(slot), gpu.vertex_ring.buffer, offset, bytes.len);
+        }
         c.wgpuRenderPassEncoderSetIndexBuffer(pass, self.index_buffer, c.WGPUIndexFormat_Uint32, 0, c.WGPU_WHOLE_SIZE);
-        c.wgpuRenderPassEncoderDrawIndexed(pass, self.num_indices, 1, 0, 0, 0);
+        c.wgpuRenderPassEncoderDrawIndexed(pass, self.num_indices, instance_count, 0, 0, 0);
+    }
+
+    /// Group 1 for `shader`: empty for `.none`, else the bound material if it's that kind.
+    fn materialFor(gpu: *const GpuContext, shader: *const Shader) ?c.WGPUBindGroup {
+        if (shader.material == .none) return gpu.bindings.empty_bind_group;
+
+        const bound = gpu.bound_material orelse {
+            log.err("Shape.draw: {s} shader with no material bound this frame", .{@tagName(shader.material)});
+            return null;
+        };
+        if (bound.kind != shader.material) {
+            log.err("Shape.draw: {s} shader but a {s} material is bound", .{ @tagName(shader.material), @tagName(bound.kind) });
+            return null;
+        }
+        return bound.bind_group;
     }
 
     pub fn renderState(self: *const Self) RenderState {

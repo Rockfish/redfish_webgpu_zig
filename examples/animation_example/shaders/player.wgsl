@@ -2,7 +2,7 @@
 // Custom textures arrive in the PBR material slots: base color = texture_diffuse,
 // metallic-roughness slot = texture_specular. No shadow map (port Step 9). redfish never
 // set this example's direction light, so the look was ambient x diffuse plus a little
-// specular; here the frame's point light drives the diffuse and specular terms.
+// specular; here the frame's first point light drives the diffuse and specular terms.
 
 @group(GROUP_MATERIAL) @binding(0) var<uniform> material: MaterialUniforms;
 @group(GROUP_MATERIAL) @binding(1) var diffuse_texture: texture_2d<f32>;
@@ -10,8 +10,6 @@
 @group(GROUP_MATERIAL) @binding(6) var diffuse_sampler: sampler;
 @group(GROUP_MATERIAL) @binding(7) var specular_sampler: sampler;
 
-/// animation_example's `ambient` uniform.
-const AMBIENT = vec3f(0.8, 0.7, 0.8);
 const SHININESS: f32 = 24.0;
 
 struct VertexInput {
@@ -56,11 +54,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         color = material.base_color_factor;
     }
 
+    let lights = frame.lights;
+    let light = lights.point_lights[0];
     let normal = normalize(in.normal);
-    let light_dir = normalize(frame.light_position - in.world_position);
+    let light_dir = normalize(light.world_pos - in.world_position);
     let diffuse = max(dot(normal, light_dir), 0.0);
 
-    var lit = AMBIENT * color.rgb + 0.7 * frame.light_color * diffuse * color.rgb;
+    var lit = lights.ambient * color.rgb + 0.7 * light.color * diffuse * color.rgb;
 
     let view_dir = normalize(frame.view_position - in.world_position);
     let reflect_dir = reflect(-light_dir, normal);
@@ -69,7 +69,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if ((material.flags & MATERIAL_FLAG_METALLIC_ROUGHNESS_TEXTURE) != 0u) {
         specular_color = specular_sample.rgb;
     }
-    lit += specular * specular_color * frame.light_color + vec3f(specular * 0.1);
+    lit += specular * specular_color * light.color + vec3f(specular * 0.1);
 
     return vec4f(lit, color.a);
 }

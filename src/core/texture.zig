@@ -119,7 +119,7 @@ pub const Texture = struct {
     /// redfish's `shader.bindTextureAuto(...)`; each shape draw sets group 1 from it, so
     /// draws with other materials in between don't disturb it.
     pub fn bind(self: *const Self, frame: *const Frame) void {
-        frame.gpu.bound_texture = self.bind_group;
+        frame.gpu.bound_material = .{ .bind_group = self.bind_group, .kind = .texture };
     }
 
     pub fn releaseGpuObjects(self: *Self) void {
