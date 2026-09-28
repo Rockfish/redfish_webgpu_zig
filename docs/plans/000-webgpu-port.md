@@ -457,10 +457,12 @@ Done as three commits (design: `docs/designs/009-angrybot.md`):
   planes, so orthographic rays are parallel with an origin that follows the mouse. Callers
   (scene_tree, level_01, angrybot) use its origin instead of the camera position.
 
-- **CesiumMan_converted.gltf is upside down.** Its `Z_UP` and `Armature` rotations have the
-  opposite sign of the original CesiumMan's matrices (+90° X instead of -90°), as if the
-  converter wrote conjugated quaternions. demo_app entry 9 shows it on its head; scene_tree
-  compensates with a 180° X rotation. Fix the converter or re-export the asset.
+- **CesiumMan_converted.gltf is upside down: out of scope.** Its `Z_UP` and `Armature`
+  rotations have the opposite sign of the original CesiumMan's, as if the FBX-to-glTF
+  converter wrote conjugated quaternions. The model itself doesn't matter; the fix belongs
+  in the converter, which will be a separate project so this one never depends on assimp
+  (it only loads glTF). scene_tree compensates with a 180° X rotation; demo_app entry 9
+  shows it upside down.
 
 - **PBR highlights on edges at the shadow side: fixed 2026-09-28.** `pbr.wgsl` now uses
   Fresnel on `VdotH` and the direct-light `k = (roughness + 1)² / 8`; redfish's NdotV Fresnel
