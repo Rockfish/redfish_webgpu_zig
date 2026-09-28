@@ -8,10 +8,11 @@ Hobby project; readability for a returning reader matters more than cleverness.
 
 - **`docs/STYLE.md`**: the style guide. All code follows it; where existing code disagrees,
   the guide wins.
-- **`docs/plans/000-webgpu-port.md`**: the port plan. Work one step at a time, in order.
-- **`docs/plans/active-plans.md`**: the active plan, parked plans, and completed ones.
-  Plans 001-016 came from redfish_gl_zig; `docs/plans/README.md` explains the workflow,
-  including parking a plan with a "where it stands / next step" note.
+- **`docs/plans/active-plans.md`**: start here. The active plan, parked plans (each with
+  its next step), and completed ones. Plans 001-016 came from redfish_gl_zig;
+  `docs/plans/README.md` explains the workflow, including parking a plan with a
+  "where it stands / next step" note. Record design discussions and decisions in the plan.
+- **`docs/plans/000-webgpu-port.md`**: the completed port (steps, decisions, known issues).
 
 ## The Port in One Paragraph
 
@@ -22,14 +23,11 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 
 ## Status
 
-Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 depth, and the
-rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`),
-textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app;
-Step 5 skinning (live and baked, one shader) and `animation_example`; Step 6 lights, lines,
-skybox, instancing, and the `bullets` app; Step 7 `level_01`; Step 8 screenshots
-(`ScreenCapture`) and the uniform dump (`UniformDebug`) in demo_app; Step 9 multi-pass
-frames, shadow map, render targets, zaudio, `angrybot` (the regression check), `skybox`.
-The port is complete; work continues from the imported plans (active: 016 motion patterns).
+The port is complete (plan 000, 2026-09-27): all apps run on wgpu-native, and `angrybot` is
+the regression check. Since then: PBR edge-highlight fixes, orthographic picking, softer
+demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
+phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
+follow camera). Active plan: 016 motion patterns (next: phase 3 `PathFollow`, or park it).
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
