@@ -6,7 +6,7 @@
 - **Screenshots**: `core.ScreenCapture` renders an extra offscreen frame (surface format) and reads it back; demo_app's F12 writes `temp/<timestamp>_screenshot.png` without the UI
 - **Uniform dump**: `core.UniformDebug` on `GpuContext` captures frame, draw, and material uniform structs by field path; G toggles, U prints, F12 writes the JSON
 - **GpuContext**: `beginOffscreenFrame` / `submitFrame`; `PbrMaterial` keeps a CPU copy of its uniforms
-- **Fixes**: `temp/` created without execute permission (GL too); timestamps used the boot clock
+- **Fixes**: `temp/` created without execute permission (GL too); timestamps used the boot clock, now local time via libc `localtime_r` (core links libc)
 - **Tests**: 61 pass
 
 ### 2026-09-27 - level_01 (Port Step 7)

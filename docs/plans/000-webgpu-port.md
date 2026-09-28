@@ -415,7 +415,7 @@ uniform structs by field path, plus redfish's app values; G / U / F12 as in GL. 
 color check: gray 0.5 reads back 127 (exactly 127.5 before rounding). Fixes: the `temp/`
 directory was created with file permissions (no execute bit), so nothing could be written
 into it; timestamps used the boot clock (`.awake`) and dated files 1970, now wall-clock
-UTC. wgpu-native rejects `WGPU_WHOLE_MAP_SIZE` in `wgpuBufferMapAsync`; pass the real size.
+local time (libc `localtime_r`; Zig's std has no time zones). wgpu-native rejects `WGPU_WHOLE_MAP_SIZE` in `wgpuBufferMapAsync`; pass the real size.
 The zgui panels were already complete from Step 4.
 
 ### Step 9 - angrybot and Remaining Examples

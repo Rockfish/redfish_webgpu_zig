@@ -39,23 +39,23 @@ pub fn strchr(str: []const u8, c: u8) ?usize {
     return null;
 }
 
-/// Generate a timestamp string in format: YYYY-MM-DD_HH.MM.SS.mmm (UTC)
+/// Generate a timestamp string in format: YYYY-MM-DD_HH.MM.SS.mmm, local time
 pub fn generateTimestamp(io: std.Io) [23]u8 {
     // Wall clock; `.awake` counts from boot, which dated files in 1970.
-    const millis_since_epoch: u64 = @intCast(std.Io.Timestamp.now(io, .real).toMilliseconds());
-    const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = millis_since_epoch / 1000 };
-    const millis = millis_since_epoch % 1000;
+    const millis_since_epoch = std.Io.Timestamp.now(io, .real).toMilliseconds();
+    const epoch_seconds: c_long = @intCast(@divFloor(millis_since_epoch, 1000));
+    const millis: u32 = @intCast(@mod(millis_since_epoch, 1000));
 
-    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
-    const month_day = year_day.calculateMonthDay();
-    const day_seconds = epoch_seconds.getDaySeconds();
+    // Zig's std has no time zones; libc applies the system's, daylight saving included.
+    var local: Tm = undefined;
+    if (localtime_r(&epoch_seconds, &local) == null) @panic("localtime_r failed");
 
-    const year = year_day.year;
-    const month = month_day.month.numeric();
-    const day = @as(u32, month_day.day_index) + 1;
-    const hour = day_seconds.getHoursIntoDay();
-    const minute = day_seconds.getMinutesIntoHour();
-    const second = day_seconds.getSecondsIntoMinute();
+    const year: u32 = @intCast(local.tm_year + 1900);
+    const month: u32 = @intCast(local.tm_mon + 1);
+    const day: u32 = @intCast(local.tm_mday);
+    const hour: u32 = @intCast(local.tm_hour);
+    const minute: u32 = @intCast(local.tm_min);
+    const second: u32 = @intCast(local.tm_sec);
 
     var result: [23]u8 = undefined;
     _ = std.fmt.bufPrint(
@@ -67,6 +67,32 @@ pub fn generateTimestamp(io: std.Io) [23]u8 {
     return result;
 }
 
+/// libc's `struct tm` (macOS and glibc layout).
+const Tm = extern struct {
+    tm_sec: c_int,
+    tm_min: c_int,
+    tm_hour: c_int,
+    tm_mday: c_int,
+    tm_mon: c_int,
+    tm_year: c_int,
+    tm_wday: c_int,
+    tm_yday: c_int,
+    tm_isdst: c_int,
+    tm_gmtoff: c_long,
+    tm_zone: ?[*:0]const u8,
+};
+
+extern "c" fn localtime_r(timep: *const c_long, result: *Tm) ?*Tm;
+
 test {
     std.testing.refAllDecls(@This());
+}
+
+test "generateTimestamp is local wall-clock time" {
+    const timestamp = generateTimestamp(std.testing.io);
+    try std.testing.expectEqual('-', timestamp[4]);
+    try std.testing.expectEqual('_', timestamp[10]);
+
+    const year = try std.fmt.parseInt(u32, timestamp[0..4], 10);
+    try std.testing.expect(year >= 2025);
 }

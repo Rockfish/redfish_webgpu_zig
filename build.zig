@@ -46,6 +46,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/core/root.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true, // localtime_r for local-time file names
     });
 
     core.addImport("math", math);
