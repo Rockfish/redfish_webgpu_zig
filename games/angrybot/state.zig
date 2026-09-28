@@ -127,8 +127,8 @@ pub fn getMousePointAngle(view: *const Mat4, position: *Vec3) f32 {
     const xz_plane_normal = vec3(0.0, 1.0, 0.0);
 
     const world_point = math.getRayPlaneIntersection(
-        state.game_camera.getPosition(),
-        world_ray,
+        world_ray.origin,
+        world_ray.direction,
         xz_plane_point,
         xz_plane_normal,
     );

@@ -268,15 +268,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         );
 
         main.state.world_point = math.getRayPlaneIntersection(
-            main.state.camera.getPosition(),
-            world_ray, // direction
+            world_ray.origin,
+            world_ray.direction,
             xz_plane_point,
             xz_plane_normal,
         );
 
         const ray = Ray{
-            .origin = main.state.camera.getPosition(),
-            .direction = world_ray,
+            .origin = world_ray.origin,
+            .direction = world_ray.direction,
         };
 
         const picked_id = pickCube(cubeboid, &cube_transforms, ray);

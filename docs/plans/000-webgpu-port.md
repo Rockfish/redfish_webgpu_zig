@@ -452,11 +452,10 @@ Done as three commits (design: `docs/designs/009-angrybot.md`):
 
 ## Known Issues (later)
 
-- **Orthographic mouse picking.** `getWorldRayFromMouse` is perspective-only: with an
-  orthographic projection every ray has the camera's forward direction and only the origin
-  moves with the mouse. In scene_tree, clicking the floor in ortho mode (key 5) moves the
-  cylinder group to the wrong place. Likely never worked in redfish either. Fix with an
-  ortho path that unprojects the mouse to a near-plane origin.
+- **Orthographic mouse picking: fixed 2026-09-28.** `getWorldRayFromMouse` now returns a
+  `MouseRay` (origin and direction) from the mouse unprojected onto the near and far
+  planes, so orthographic rays are parallel with an origin that follows the mouse. Callers
+  (scene_tree, level_01, angrybot) use its origin instead of the camera position.
 
 - **CesiumMan_converted.gltf is upside down.** Its `Z_UP` and `Armature` rotations have the
   opposite sign of the original CesiumMan's matrices (+90° X instead of -90°), as if the

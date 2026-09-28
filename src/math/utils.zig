@@ -16,11 +16,20 @@ pub const Quat = quat_.Quat;
 
 pub const epsilon: f32 = 1.19209290e-07;
 
-/// World-space direction of the ray through a mouse position, for a perspective camera.
-/// Mouse coordinates are window pixels with a top-left origin; NDC y is up, as in WebGPU
-/// and GL alike. Unprojected x and y don't depend on NDC z, so the ray is the same for any
-/// depth convention. Not valid for orthographic projections, where every ray has the
-/// camera's forward direction and only the origin moves.
+/// A world-space ray through a mouse position.
+pub const MouseRay = struct {
+    /// On the near plane under the mouse.
+    origin: Vec3,
+    /// Normalized, away from the camera.
+    direction: Vec3,
+};
+
+/// The ray under a mouse position, for perspective and orthographic projections alike:
+/// the mouse unprojected onto the near (NDC z = 0) and far (z = 1) planes, WebGPU's 0..1
+/// depth. Perspective rays fan out from the eye; orthographic rays are parallel to the view
+/// and their origin moves with the mouse (redfish returned only a perspective direction and
+/// used the camera position as origin, so ortho picking hit the wrong place). Mouse
+/// coordinates are window pixels with a top-left origin; NDC y is up.
 pub fn getWorldRayFromMouse(
     viewport_width: f32,
     viewport_height: f32,
@@ -28,28 +37,20 @@ pub fn getWorldRayFromMouse(
     view_matrix: *const Mat4,
     mouse_x: f32,
     mouse_y: f32,
-) Vec3 {
-
-    // normalize device coordinates
+) MouseRay {
     const ndc_x = (2.0 * mouse_x) / viewport_width - 1.0;
     const ndc_y = 1.0 - (2.0 * mouse_y) / viewport_height;
-    const ndc_z = 0.0; // near plane in WebGPU's 0..1 depth
-    const ndc = Vec4.init(ndc_x, ndc_y, ndc_z, 1.0);
 
-    const projection_inverse = projection.getInverse();
-    const view_inverse = view_matrix.getInverse();
+    const inverse = projection.mulMat4(view_matrix).getInverse();
+    const near = unproject(&inverse, Vec4.init(ndc_x, ndc_y, 0.0, 1.0));
+    const far = unproject(&inverse, Vec4.init(ndc_x, ndc_y, 1.0, 1.0));
 
-    // eye space
-    var ray_eye = projection_inverse.mulVec4(ndc);
-    ray_eye = vec4(ray_eye.x, ray_eye.y, -1.0, 0.0);
+    return .{ .origin = near, .direction = far.sub(near).toNormalized() };
+}
 
-    // world space
-    const ray_world = (view_inverse.mulVec4(ray_eye)).xyz();
-
-    // ray from camera
-    const ray_normalized = ray_world.toNormalized();
-
-    return ray_normalized;
+fn unproject(inverse_projection_view: *const Mat4, ndc: Vec4) Vec3 {
+    const world = inverse_projection_view.mulVec4(ndc);
+    return world.xyz().divScalar(world.w);
 }
 
 pub fn getRayPlaneIntersection(
@@ -69,7 +70,7 @@ pub fn getRayPlaneIntersection(
     return null;
 }
 
-test "getWorldRayFromMouse: center is forward, corners follow the field of view" {
+test "getWorldRayFromMouse: perspective rays start near the eye and follow the field of view" {
     const width = 1600.0;
     const height = 900.0;
     const aspect = width / height;
@@ -81,14 +82,34 @@ test "getWorldRayFromMouse: center is forward, corners follow the field of view"
     const projection = Mat4.perspectiveRhZo(fov, aspect, 0.1, 100.0);
 
     const center = getWorldRayFromMouse(width, height, &projection, &view, width / 2.0, height / 2.0);
-    try expectVec3ApproxEq(vec3(0.0, 0.0, -1.0), center);
+    try expectVec3ApproxEq(vec3(0.0, 0.0, -1.0), center.direction);
+    try expectVec3ApproxEq(vec3(3.0, 2.0, 4.9), center.origin); // on the near plane
 
     // Top-left pixel: left (-x) and up (+y) at the edges of the view frustum
     const top_left = getWorldRayFromMouse(width, height, &projection, &view, 0.0, 0.0);
-    try expectVec3ApproxEq(vec3(-aspect, 1.0, -1.0).toNormalized(), top_left);
+    try expectVec3ApproxEq(vec3(-aspect, 1.0, -1.0).toNormalized(), top_left.direction);
 
     const bottom_right = getWorldRayFromMouse(width, height, &projection, &view, width, height);
-    try expectVec3ApproxEq(vec3(aspect, -1.0, -1.0).toNormalized(), bottom_right);
+    try expectVec3ApproxEq(vec3(aspect, -1.0, -1.0).toNormalized(), bottom_right.direction);
+}
+
+test "getWorldRayFromMouse: orthographic rays are parallel and their origin follows the mouse" {
+    const width = 800.0;
+    const height = 400.0;
+
+    const eye = vec3(3.0, 2.0, 5.0);
+    const target = vec3(3.0, 2.0, 0.0);
+    const view = Mat4.lookAtRhGl(eye, target, vec3(0.0, 1.0, 0.0));
+    const projection = Mat4.orthographicRhZo(-4.0, 4.0, -2.0, 2.0, 0.1, 100.0);
+
+    const center = getWorldRayFromMouse(width, height, &projection, &view, width / 2.0, height / 2.0);
+    try expectVec3ApproxEq(vec3(0.0, 0.0, -1.0), center.direction);
+    try expectVec3ApproxEq(vec3(3.0, 2.0, 4.9), center.origin);
+
+    // Top-left pixel: same direction, origin at the view volume's top-left edge
+    const top_left = getWorldRayFromMouse(width, height, &projection, &view, 0.0, 0.0);
+    try expectVec3ApproxEq(vec3(0.0, 0.0, -1.0), top_left.direction);
+    try expectVec3ApproxEq(vec3(3.0 - 4.0, 2.0 + 2.0, 4.9), top_left.origin);
 }
 
 fn expectVec3ApproxEq(expected: Vec3, actual: Vec3) !void {

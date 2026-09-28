@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-09-28 - Orthographic mouse picking
+- **math.getWorldRayFromMouse**: returns `MouseRay { origin, direction }` unprojected at the near and far planes; works for orthographic projections (redfish's version was perspective-only, so clicking in ortho mode hit the wrong place)
+- **Callers**: scene_tree, level_01, angrybot use the ray's origin; new unit test for orthographic rays
+
 ### 2026-09-28 - Softer demo_app light, optional grazing specular fade
 - **demo_app**: key light 100 → 50 plus a dim fill from the opposite side; backlit bevel edges no longer blow out to white
 - **SceneLights.fade_grazing_specular**: optional, stylistic fade of PBR specular at grazing views (off by default); demo_app toggles it with E

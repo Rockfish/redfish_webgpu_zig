@@ -294,15 +294,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         );
 
         state.world_point = math.getRayPlaneIntersection(
-            state.camera.getPosition(),
-            world_ray, // direction
+            world_ray.origin,
+            world_ray.direction,
             xz_plane_point,
             xz_plane_normal,
         );
 
         const ray = Ray{
-            .origin = state.camera.getPosition(),
-            .direction = world_ray,
+            .origin = world_ray.origin,
+            .direction = world_ray.direction,
         };
 
         if (state.input.mouse_left_button and state.world_point != null) {

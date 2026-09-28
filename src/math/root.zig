@@ -25,6 +25,7 @@ pub const mat3 = mat3_.mat3;
 pub const mat4 = mat4_.mat4;
 
 pub const getWorldRayFromMouse = utils.getWorldRayFromMouse;
+pub const MouseRay = utils.MouseRay;
 pub const getRayPlaneIntersection = utils.getRayPlaneIntersection;
 pub const getRayTriangleIntersection = ray_.getRayTriangleIntersection;
 pub const getRaySphereIntersection = ray_.getRaySphereIntersection;
