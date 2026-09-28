@@ -1,8 +1,8 @@
 # redfish_webgpu_zig
 
 A small 3D engine in Zig for animated glTF models with PBR rendering, on WebGPU through
-wgpu-native. It is a port of redfish_gl_zig (OpenGL 4.1). The engine code is meant to be
-read: most of it is plain Zig with few layers between the application and the GPU.
+wgpu-native. The engine code is meant to be readable: most of it is plain Zig 
+with few layers between the application and the GPU.
 
 Zig 0.16. Tested on macOS arm64 (Metal); wgpu-native is only listed for that platform.
 
@@ -75,4 +75,7 @@ in the author's setup.
 ## Dependencies
 
 - wgpu-native (prebuilt library, `webgpu.h`)
-- zglfw (windows and input), zgui (Dear ImGui), zstbi (image loading), zaudio (sound)
+- zglfw (windows and input) 
+- zgui (Dear ImGui)
+- zstbi (image loading)
+- zaudio (sound)
