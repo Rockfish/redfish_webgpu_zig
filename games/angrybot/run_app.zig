@@ -387,7 +387,9 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
             player_transform = player_transform.mulMat4(&aim_rotation_matrix);
         }
 
-        const projectile_spawn_point = player.getMuzzlePosition(&player_transform);
+        // Bullets, the muzzle flash, and its light all start at the animated gun's muzzle
+        const muzzle_transform = player.getMuzzleTransform(&player_transform);
+        const projectile_spawn_point = muzzle_transform.mulVec4(vec4(0.0, 0.0, 0.0, 1.0)).xyz();
 
         if (player.is_alive and player.is_trying_to_fire and (player.last_fire_time + world.FIRE_INTERVAL) < state.frame_time) {
             player.last_fire_time = state.frame_time;
@@ -408,14 +410,9 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
         try player.update(&state, aim_angle);
 
-        // The flash and its light follow the animated gun (after player.update)
         var use_point_light = false;
-        var muzzle_transform = Mat4.Identity;
-        var muzzle_world_position = Vec3.Zero;
 
         if (muzzle_flash.muzzle_flash_sprites_age.list.items.len != 0) {
-            muzzle_transform = player.getMuzzleTransform(&player_transform);
-            muzzle_world_position = muzzle_transform.mulVec4(vec4(0.0, 0.0, 0.0, 1.0)).xyz();
             const min_age = muzzle_flash.getMinAge();
             use_point_light = min_age < 0.03;
         }
@@ -435,7 +432,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         lights.direction_light = .{ .dir = player_light_dir, .color = light_color };
         lights.ambient = ambient_color;
         if (use_point_light) {
-            lights.setPointLight(0, .{ .world_pos = muzzle_world_position, .color = muzzle_point_light_color, .enabled = true });
+            lights.setPointLight(0, .{ .world_pos = projectile_spawn_point, .color = muzzle_point_light_color, .enabled = true });
         }
 
         // Render after the game update, as redfish; skip the drawing while the window is hidden

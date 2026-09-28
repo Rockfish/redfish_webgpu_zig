@@ -6,6 +6,7 @@
 - **Emission pass**: floor drawn depth-only (`ShaderConfig.color_writes = false`), so bullets below the floor don't bloom through it
 - **Muzzle flash**: follows the animated gun node (`Model.findNode` / `nodeTransform`) with the original's billboard tilt and 0.05 s frames; its light sits at the muzzle
 - **Floor**: lit by the muzzle flash light again, with the original attenuation
+- **Bullets**: spawn from the animated gun muzzle, as the Rust port did (redfish used a fixed offset since the glTF migration)
 
 ### 2026-09-27 - angrybot and skybox (Port Step 9)
 - **Design**: `docs/designs/009-angrybot.md`

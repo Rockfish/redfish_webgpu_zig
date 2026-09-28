@@ -195,9 +195,6 @@ pub const BulletSystem = struct {
     }
 
     pub fn createBullets(self: *Self, aim_theta: f32, projectile_spawn_point: Vec3) !bool {
-        // const muzzle_world_position = muzzle_transform.mulVec4(vec4(0.0, 0.0, 0.0, 1.0));
-        // const projectile_spawn_point = muzzle_world_position.xyz();
-
         const aim_quat = Quat.fromAxisAngle(UP_VEC, aim_theta);
 
         const current_len = self.bullet_positions.items().len;

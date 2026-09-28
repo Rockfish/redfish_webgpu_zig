@@ -203,19 +203,9 @@ pub const Player = struct {
         try self.model.updateWeightedAnimations(&weight_animations, state.frame_time);
     }
 
-    pub fn getMuzzlePosition(self: *Self, player_transform: *const Mat4) Vec3 {
-        _ = self; // Suppress unused parameter warning
-        // Simple muzzle offset - adjust these values as needed for gun positioning
-        const muzzle_offset = vec3(-29, 120, 92); // Forward and up from player center
-        const muzzle_translation = Mat4.fromTranslation(muzzle_offset);
-        const muzzle_world_position = player_transform.mulMat4(&muzzle_translation).mulVec4(vec4(0.0, 0.0, 0.0, 1.0));
-        const projectile_spawn_point = muzzle_world_position.xyz();
-        return projectile_spawn_point;
-    }
-
     /// World transform of the gun muzzle, following the animated gun (the original's
     /// `playerModelTransform * getAnimatedGunTransform() * translate(muzzle point)`).
-    /// For the muzzle flash and its light; bullets spawn from `getMuzzlePosition`.
+    /// Bullets spawn here, and the muzzle flash and its light sit here.
     pub fn getMuzzleTransform(self: *const Self, player_transform: *const Mat4) Mat4 {
         const gun_transform = self.model.nodeTransform(self.gun_node);
         const muzzle_offset = Mat4.fromTranslation(GUN_MUZZLE_POINT);
