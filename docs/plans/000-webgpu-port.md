@@ -395,7 +395,7 @@ model got only its 0.15 ambient. Not ported: `run_animation.zig` and `player_sha
 movement-math print tests. Fixed: the scroll handler set screen dimensions in pixels
 instead of window units.
 
-### Step 8 - demo_app Complete
+### Step 8 - demo_app Complete ✅
 
 - Screenshots: render the scene (no zgui) into an offscreen `rgba8unorm-srgb` texture,
   `wgpuCommandEncoderCopyTextureToBuffer` (256-byte row alignment), map, write PNG with no
@@ -405,6 +405,18 @@ instead of window units.
 - All zgui panels
 
 **Done:** F12 writes a correct PNG and uniform dump; demo_app matches GL feature for feature.
+
+Done as: `core.ScreenCapture` draws one extra frame (`GpuContext.beginOffscreenFrame` /
+`submitFrame`) before the window's, so the window never loses a frame as GL's did. The
+capture texture uses the surface format, not `rgba8unorm-srgb`, so every pipeline can draw
+into it; BGRA is swizzled on readback. The copy is a second submission after the frame's.
+`core.UniformDebug` (on `GpuContext`) records the frame, last draw, and last material
+uniform structs by field path, plus redfish's app values; G / U / F12 as in GL. Clear
+color check: gray 0.5 reads back 127 (exactly 127.5 before rounding). Fixes: the `temp/`
+directory was created with file permissions (no execute bit), so nothing could be written
+into it; timestamps used the boot clock (`.awake`) and dated files 1970, now wall-clock
+UTC. wgpu-native rejects `WGPU_WHOLE_MAP_SIZE` in `wgpuBufferMapAsync`; pass the real size.
+The zgui panels were already complete from Step 4.
 
 ### Step 9 - angrybot and Remaining Examples
 

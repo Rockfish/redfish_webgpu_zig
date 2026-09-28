@@ -43,6 +43,8 @@ pub const PrimitiveAttributes = struct {
 };
 
 pub const PbrMaterial = struct {
+    /// CPU copy of the uniform buffer, for debug dumps.
+    uniforms: MaterialUniforms,
     uniform_buffer: c.WGPUBuffer,
     bind_group: c.WGPUBindGroup,
     render_state: RenderState,
@@ -65,6 +67,7 @@ pub const PbrMaterial = struct {
         c.wgpuQueueWriteBuffer(gpu.queue, uniform_buffer, 0, &uniforms, @sizeOf(MaterialUniforms));
 
         return .{
+            .uniforms = uniforms,
             .uniform_buffer = uniform_buffer,
             .bind_group = try createBindGroup(gpu, uniform_buffer, textures),
             .render_state = .{

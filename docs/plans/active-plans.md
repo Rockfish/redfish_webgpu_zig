@@ -3,7 +3,7 @@
 ## Currently Active
 
 - **[000-webgpu-port.md](000-webgpu-port.md)** - Port redfish_gl_zig to WebGPU (wgpu-native)
-  - Next: **Step 8 - demo_app complete**
+  - Next: **Step 9 - angrybot and remaining examples**
 
 ## Port Progress
 
@@ -18,7 +18,7 @@
 | 5 | Skinning and animation | ✅ 2026-09-27 |
 | 6 | bullets | ✅ 2026-09-27 |
 | 7 | level_01 | ✅ 2026-09-27 |
-| 8 | demo_app complete | |
+| 8 | demo_app complete | ✅ 2026-09-27 |
 | 9 | angrybot and remaining examples | |
 
 ## After the Port

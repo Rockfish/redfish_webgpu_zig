@@ -39,25 +39,23 @@ pub fn strchr(str: []const u8, c: u8) ?usize {
     return null;
 }
 
-/// Generate a timestamp string in format: YYYY-MM-DD_HH.MM.SS.mmm
+/// Generate a timestamp string in format: YYYY-MM-DD_HH.MM.SS.mmm (UTC)
 pub fn generateTimestamp(io: std.Io) [23]u8 {
-    const timestamp = std.Io.Timestamp.now(io, .awake);
-    const epoch_seconds: u64 = @intCast(timestamp.toSeconds());
-    const millis = @mod(std.Io.Timestamp.now(io, .awake).toMilliseconds(), 1000);
+    // Wall clock; `.awake` counts from boot, which dated files in 1970.
+    const millis_since_epoch: u64 = @intCast(std.Io.Timestamp.now(io, .real).toMilliseconds());
+    const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = millis_since_epoch / 1000 };
+    const millis = millis_since_epoch % 1000;
 
-    // Convert to local time structure
-    const epoch_day = epoch_seconds / (24 * 60 * 60);
-    const day_seconds = epoch_seconds % (24 * 60 * 60);
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch_seconds.getDaySeconds();
 
-    const hour = day_seconds / 3600;
-    const minute = (day_seconds % 3600) / 60;
-    const second = day_seconds % 60;
-
-    // Simple date calculation (approximate)
-    const days_since_epoch = epoch_day;
-    const year = 1970 + days_since_epoch / 365;
-    const month = ((days_since_epoch % 365) / 30) + 1;
-    const day = ((days_since_epoch % 365) % 30) + 1;
+    const year = year_day.year;
+    const month = month_day.month.numeric();
+    const day = @as(u32, month_day.day_index) + 1;
+    const hour = day_seconds.getHoursIntoDay();
+    const minute = day_seconds.getMinutesIntoHour();
+    const second = day_seconds.getSecondsIntoMinute();
 
     var result: [23]u8 = undefined;
     _ = std.fmt.bufPrint(

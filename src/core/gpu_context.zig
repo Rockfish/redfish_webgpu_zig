@@ -2,6 +2,7 @@
 //! bindings, and brackets each frame. `beginFrame` acquires the surface texture and opens
 //! the main render pass with group 0 bound; `endFrame` closes it, uploads the frame's
 //! per-draw uniforms, submits, and presents. Parallel to redfish's clear / swapBuffers.
+//! `beginOffscreenFrame` / `submitFrame` draw a frame into another texture (screenshots).
 
 const std = @import("std");
 const zglfw = @import("zglfw");
@@ -13,6 +14,7 @@ const VertexRing = @import("uniform_ring.zig").VertexRing;
 const SamplerCache = @import("texture.zig").SamplerCache;
 const MipmapGenerator = @import("mipmaps.zig").MipmapGenerator;
 const DefaultTextures = @import("material.zig").DefaultTextures;
+const UniformDebug = @import("uniform_debug.zig").UniformDebug;
 
 const c = wgpu.c;
 const stringView = wgpu.stringView;
@@ -35,6 +37,7 @@ pub const depth_format = c.WGPUTextureFormat_Depth32Float;
 /// One frame's GPU objects. Valid between `beginFrame` and `endFrame`.
 pub const Frame = struct {
     gpu: *GpuContext,
+    /// Null for an offscreen frame.
     surface_texture: c.WGPUTexture,
     color_view: c.WGPUTextureView,
     encoder: c.WGPUCommandEncoder,
@@ -65,6 +68,8 @@ pub const GpuContext = struct {
     /// `PbrMaterial.bind(frame)`. Like GL's bound texture, it survives other draws: each
     /// shape draw sets group 1 from it. Cleared each frame.
     bound_material: ?BoundMaterial = null,
+    /// Frame, draw, and material uniforms for debug dumps; off unless enabled.
+    uniform_debug: UniformDebug,
 
     const Self = @This();
 
@@ -97,6 +102,7 @@ pub const GpuContext = struct {
             .bindings = Bindings.init(device, c.wgpuDeviceGetQueue(device), uniform_ring.buffer),
             .samplers = SamplerCache.init(allocator),
             .mipmaps = MipmapGenerator.init(device),
+            .uniform_debug = UniformDebug.init(allocator),
         };
         try self.chooseSurfaceFormat();
         self.default_textures = try DefaultTextures.init(allocator, &self);
@@ -138,45 +144,31 @@ pub const GpuContext = struct {
             },
         }
 
-        self.uniform_ring.reset();
-        self.vertex_ring.reset();
-        self.bound_material = null;
-
         const color_view = c.wgpuTextureCreateView(surface_texture.texture, null);
-        const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});
-
-        const color_attachment: c.WGPURenderPassColorAttachment = .{
-            .view = color_view,
-            .depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED,
-            .loadOp = c.WGPULoadOp_Clear,
-            .storeOp = c.WGPUStoreOp_Store,
-            .clearValue = .{ .r = clear_color[0], .g = clear_color[1], .b = clear_color[2], .a = clear_color[3] },
-        };
-        const depth_attachment: c.WGPURenderPassDepthStencilAttachment = .{
-            .view = self.depth_view,
-            .depthLoadOp = c.WGPULoadOp_Clear,
-            .depthStoreOp = c.WGPUStoreOp_Store,
-            .depthClearValue = 1.0,
-        };
-        const pass = c.wgpuCommandEncoderBeginRenderPass(encoder, &.{
-            .label = stringView("main pass"),
-            .colorAttachmentCount = 1,
-            .colorAttachments = &color_attachment,
-            .depthStencilAttachment = &depth_attachment,
-        });
-
-        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.frame, self.bindings.frame_bind_group, 0, null);
-
-        return .{
-            .gpu = self,
-            .surface_texture = surface_texture.texture,
-            .color_view = color_view,
-            .encoder = encoder,
-            .pass = pass,
-        };
+        return self.beginPass(surface_texture.texture, color_view, clear_color);
     }
 
     pub fn endFrame(self: *Self, frame: Frame) void {
+        self.submitFrame(frame);
+
+        if (c.wgpuSurfacePresent(self.surface) != c.WGPUStatus_Success) log.warn("surface present failed", .{});
+
+        c.wgpuTextureViewRelease(frame.color_view);
+        c.wgpuTextureRelease(frame.surface_texture);
+    }
+
+    /// A frame drawn into `color_view` instead of the surface. The target must have the
+    /// surface's format and size (pipelines and the depth texture are built for those).
+    /// End it with `submitFrame`; the caller keeps the view. Not between another
+    /// frame's begin and end: the frames share the uniform and vertex rings.
+    pub fn beginOffscreenFrame(self: *Self, color_view: c.WGPUTextureView, clear_color: [4]f64) Frame {
+        c.wgpuTextureViewAddRef(color_view);
+        return self.beginPass(null, color_view, clear_color);
+    }
+
+    /// Close the frame's pass, upload its per-draw data, and submit. `endFrame` also
+    /// presents; offscreen frames stop here.
+    pub fn submitFrame(self: *Self, frame: Frame) void {
         c.wgpuRenderPassEncoderEnd(frame.pass);
         c.wgpuRenderPassEncoderRelease(frame.pass);
 
@@ -187,18 +179,17 @@ pub const GpuContext = struct {
         c.wgpuCommandBufferRelease(commands);
         c.wgpuCommandEncoderRelease(frame.encoder);
 
-        if (c.wgpuSurfacePresent(self.surface) != c.WGPUStatus_Success) log.warn("surface present failed", .{});
-
-        c.wgpuTextureViewRelease(frame.color_view);
-        c.wgpuTextureRelease(frame.surface_texture);
+        if (frame.surface_texture == null) c.wgpuTextureViewRelease(frame.color_view);
     }
 
     /// Write this frame's camera and time for group 0. Once per frame, before drawing.
     pub fn writeFrameUniforms(self: *Self, uniforms: FrameUniforms) void {
+        self.uniform_debug.captureStruct("frame", uniforms);
         c.wgpuQueueWriteBuffer(self.queue, self.bindings.frame_buffer, 0, &uniforms, @sizeOf(FrameUniforms));
     }
 
     pub fn deinit(self: *Self) void {
+        self.uniform_debug.deinit();
         self.default_textures.releaseGpuObjects();
         self.allocator.destroy(self.default_textures.white);
         self.allocator.destroy(self.default_textures.flat_normal);
@@ -217,6 +208,45 @@ pub const GpuContext = struct {
         c.wgpuAdapterRelease(self.adapter);
         c.wgpuSurfaceRelease(self.surface);
         c.wgpuInstanceRelease(self.instance);
+    }
+
+    /// Resets the per-frame state and opens the frame's render pass with group 0 bound.
+    fn beginPass(self: *Self, surface_texture: c.WGPUTexture, color_view: c.WGPUTextureView, clear_color: [4]f64) Frame {
+        self.uniform_ring.reset();
+        self.vertex_ring.reset();
+        self.bound_material = null;
+
+        const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});
+
+        const color_attachment: c.WGPURenderPassColorAttachment = .{
+            .view = color_view,
+            .depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED,
+            .loadOp = c.WGPULoadOp_Clear,
+            .storeOp = c.WGPUStoreOp_Store,
+            .clearValue = .{ .r = clear_color[0], .g = clear_color[1], .b = clear_color[2], .a = clear_color[3] },
+        };
+        const depth_attachment: c.WGPURenderPassDepthStencilAttachment = .{
+            .view = self.depth_view,
+            .depthLoadOp = c.WGPULoadOp_Clear,
+            .depthStoreOp = c.WGPUStoreOp_Store,
+            .depthClearValue = 1.0,
+        };
+        const pass = c.wgpuCommandEncoderBeginRenderPass(encoder, &.{
+            .label = stringView(if (surface_texture == null) "offscreen pass" else "main pass"),
+            .colorAttachmentCount = 1,
+            .colorAttachments = &color_attachment,
+            .depthStencilAttachment = &depth_attachment,
+        });
+
+        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.frame, self.bindings.frame_bind_group, 0, null);
+
+        return .{
+            .gpu = self,
+            .surface_texture = surface_texture,
+            .color_view = color_view,
+            .encoder = encoder,
+            .pass = pass,
+        };
     }
 
     /// Prefer an sRGB surface format so shaders write linear color and the hardware

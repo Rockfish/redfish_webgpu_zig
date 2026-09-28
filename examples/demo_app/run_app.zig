@@ -4,6 +4,7 @@ const core = @import("core");
 const math = @import("math");
 const assets_list = @import("assets_list.zig");
 const ui_display = @import("ui_display.zig");
+const screenshot = @import("screenshot.zig");
 
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
@@ -18,6 +19,7 @@ const MeshPrimitive = core.MeshPrimitive;
 const ModelInstance = core.ModelInstance;
 const AnimatorImpl = core.AnimatorImpl;
 
+const Frame = core.Frame;
 const Shader = core.Shader;
 const srgbToLinear = core.colors.srgbToLinear;
 
@@ -39,6 +41,11 @@ const state_ = @import("state.zig");
 
 /// redfish's GL clear gray, converted so it looks the same on the sRGB surface.
 const CLEAR_COLOR = [4]f64{ srgbToLinear(0.5), srgbToLinear(0.5), srgbToLinear(0.5), 1.0 };
+
+const SHADER_PATH = "src/core/shaders/pbr.wgsl";
+
+// Uniform debug dump buffer (U key)
+var debug_dump_buffer: [32 * 1024]u8 = undefined;
 
 var buf1: [1024]u8 = undefined;
 var buf2: [1024]u8 = undefined;
@@ -313,13 +320,14 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
     // Initialize UI system (after initWindowHandlers: zgui chains to those callbacks)
     var ui_state = ui_display.UIState.init(context.io, context.alloc, window, gpu);
 
-    // Screenshots (F12) and the shader uniform dump (G / U) return in port Step 8.
+    // Initialize screenshot system
+    var screenshot_mgr = screenshot.ScreenshotManager.init(context.io, context.alloc);
 
     const shader = try Shader.init(
         context.io,
         context.alloc,
         gpu,
-        "src/core/shaders/pbr.wgsl",
+        SHADER_PATH,
         .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr },
     );
 
@@ -424,16 +432,43 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
 
         glfw.pollEvents();
 
+        const uniform_debug = &gpu.uniform_debug;
+
+        // One-shot screenshot: its own frame, drawn and read back before the window's.
+        // Uniforms are captured for it whether or not shader debug (G) is on.
+        if (state.screenshot_requested) {
+            uniform_debug.enable();
+            uniform_debug.clear();
+
+            const capture_frame = screenshot_mgr.beginCapture(gpu, CLEAR_COLOR);
+            drawScene(&capture_frame, state, shader, current_scope, scene_lights);
+            screenshot_mgr.takeScreenshot(capture_frame, SHADER_PATH) catch |err| {
+                std.debug.print("Screenshot failed: {any}\n", .{err});
+            };
+
+            state.screenshot_requested = false;
+            std.debug.print("Screenshot completed!\n", .{});
+        }
+
+        // Handle regular shader debug state (separate from screenshot)
+        if (state.shader_debug_enabled) {
+            uniform_debug.enable();
+            uniform_debug.clear();
+        } else {
+            uniform_debug.disable();
+        }
+
         // Before the UI frame starts, so a skipped frame never leaves one open
         const frame = gpu.beginFrame(CLEAR_COLOR) orelse continue;
         ui_state.update(window);
 
-        const ctx = state.camera.getRenderContext(state.total_time);
-        var frame_uniforms = ctx.frameUniforms();
-        frame_uniforms.lights = scene_lights.uniforms();
-        gpu.writeFrameUniforms(frame_uniforms);
+        drawScene(&frame, state, shader, current_scope, scene_lights);
 
-        current_scope.getModel().draw(&frame, shader, current_scope.model_transform);
+        // Handle debug dump request
+        if (state.shader_debug_dump_requested) {
+            printUniformDump(uniform_debug);
+            state.shader_debug_dump_requested = false;
+        }
 
         // Draw UI overlay
         ui_state.draw(&frame, current_scope.getModel());
@@ -443,6 +478,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
 
     std.debug.print("\nRun completed.\n\n", .{});
 
+    screenshot_mgr.deinit();
     shader.releaseGpuObjects();
     ui_state.deinit();
     current_scope.cleanUp();
@@ -450,4 +486,40 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
     common_arenas.deinit();
     model_scope_a.deinit();
     model_scope_b.deinit();
+}
+
+/// The scene without the UI: the window's frame and the screenshot frame both draw it.
+fn drawScene(frame: *const Frame, state: *state_.State, shader: *const Shader, scope: *ModelScope, scene_lights: core.SceneLights) void {
+    const gpu = frame.gpu;
+    const ctx = state.camera.getRenderContext(state.total_time);
+    var frame_uniforms = ctx.frameUniforms();
+    frame_uniforms.lights = scene_lights.uniforms();
+    gpu.writeFrameUniforms(frame_uniforms);
+
+    addDebugValues(&gpu.uniform_debug, state);
+
+    scope.getModel().draw(frame, shader, scope.model_transform);
+}
+
+/// App values dumped with the uniforms, as redfish added them.
+fn addDebugValues(uniform_debug: *core.UniformDebug, state: *state_.State) void {
+    if (!uniform_debug.enabled) return;
+
+    var buf: [128]u8 = undefined;
+    uniform_debug.addValue("camera_position", state.camera.getPosition().asString(&buf));
+    uniform_debug.addValue("camera_target", state.camera.getTarget().asString(&buf));
+    uniform_debug.addValue("light_position", state.light_position.asString(&buf));
+    uniform_debug.addValue("frame_time", std.fmt.bufPrint(&buf, "{d:.6}s", .{state.delta_time}) catch "error");
+}
+
+fn printUniformDump(uniform_debug: *core.UniformDebug) void {
+    if (!uniform_debug.enabled) {
+        std.debug.print("Debug not enabled (G toggles it)\n", .{});
+        return;
+    }
+    var writer = std.Io.Writer.fixed(&debug_dump_buffer);
+    uniform_debug.dump(&writer) catch {
+        std.debug.print("(uniform dump truncated)\n", .{});
+    };
+    std.debug.print("\n{s}\n", .{writer.buffered()});
 }
