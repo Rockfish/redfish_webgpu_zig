@@ -9,7 +9,9 @@ Hobby project; readability for a returning reader matters more than cleverness.
 - **`docs/STYLE.md`**: the style guide. All code follows it; where existing code disagrees,
   the guide wins.
 - **`docs/plans/000-webgpu-port.md`**: the port plan. Work one step at a time, in order.
-- **`docs/plans/active-plans.md`**: which step is current.
+- **`docs/plans/active-plans.md`**: the active plan, parked plans, and completed ones.
+  Plans 001-016 came from redfish_gl_zig; `docs/plans/README.md` explains the workflow,
+  including parking a plan with a "where it stands / next step" note.
 
 ## The Port in One Paragraph
 
@@ -27,7 +29,7 @@ Step 5 skinning (live and baked, one shader) and `animation_example`; Step 6 lig
 skybox, instancing, and the `bullets` app; Step 7 `level_01`; Step 8 screenshots
 (`ScreenCapture`) and the uniform dump (`UniformDebug`) in demo_app; Step 9 multi-pass
 frames, shadow map, render targets, zaudio, `angrybot` (the regression check), `skybox`.
-The port is complete.
+The port is complete; work continues from the imported plans (active: 016 motion patterns).
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
