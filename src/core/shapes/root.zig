@@ -16,6 +16,7 @@ pub const Shape = @import("shape.zig").Shape;
 pub const ShapeBuilder = @import("shape.zig").ShapeBuilder;
 pub const InstanceAttribute = @import("shape.zig").InstanceAttribute;
 pub const InstancedLayouts = @import("shape.zig").InstancedLayouts;
+pub const initGpuBuffers = @import("shape.zig").initGpuBuffers;
 pub const obj_loader = @import("obj_loader.zig");
 
 pub fn loadOBJ(io: std.Io, allocator: std.mem.Allocator, gpu: *const GpuContext, filepath: []const u8) !*Shape {

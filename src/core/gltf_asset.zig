@@ -112,6 +112,9 @@ pub const GltfAsset = struct {
 
     // Configuration
     load_textures: bool,
+    /// Base color and emissive maps as sRGB (decoded to linear when sampled). False for
+    /// apps that light in gamma space, as redfish's GL did (angrybot).
+    srgb_color_textures: bool = true,
     normal_generation_mode: NormalGenerationMode,
 
     const Self = @This();
@@ -156,6 +159,12 @@ pub const GltfAsset = struct {
 
     pub fn skipModelTextures(self: *Self) void {
         self.load_textures = false;
+    }
+
+    /// Load color maps unconverted, for shading in gamma space (see `srgb_color_textures`).
+    /// Before `load`.
+    pub fn useGammaSpaceTextures(self: *Self) void {
+        self.srgb_color_textures = false;
     }
 
     /// Assign a texture file (relative to the asset's directory) to the meshes named
@@ -415,7 +424,7 @@ pub const GltfAsset = struct {
         // Custom textures first, so meshes find them. Color space follows the slot.
         for (self.custom_textures.list.items) |*custom_tex| {
             var config = custom_tex.config;
-            config.is_srgb = custom_tex.slot.isSrgb();
+            config.is_srgb = self.srgb_color_textures and custom_tex.slot.isSrgb();
             custom_tex.texture = self.loadTextureFromFile(custom_tex.texture_path, config) catch |err| {
                 log.err("Failed to load custom texture {s}: {any}", .{ custom_tex.texture_path, err });
                 continue;

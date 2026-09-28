@@ -183,6 +183,10 @@ pub const RawImage = struct {
     }
 };
 
+/// `rgba16float`: linear color with headroom above 1, for render targets that later passes
+/// sample (bloom). Also for `ShaderConfig.color_target` of shaders that draw into them.
+pub const hdr_format = c.WGPUTextureFormat_RGBA16Float;
+
 /// A texture passes draw into and later passes sample (bloom, post-processing): a render
 /// attachment with one mip level, a linear clamped sampler, and a `.texture` bind group,
 /// so `bind(frame)` works as for loaded textures. Recreate it to change its size.

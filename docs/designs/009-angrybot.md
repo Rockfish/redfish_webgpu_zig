@@ -85,8 +85,13 @@ gpu.endFrame(frame);                               // ends the open pass, submit
 - The composite samples three targets through a `.pbr` material made from them (base
   color = scene, emissive = blurred emission, metallic-roughness = raw emission), the same
   slot reuse the bullets shaders use. Targets and that material are recreated on resize.
-- Colors are linear throughout and the sRGB surface encodes, as every other port. GL did
-  its math on sRGB-encoded values, so bloom and highlights differ slightly.
+- **Gamma-space shading.** redfish's GL had no sRGB textures or surface, so angrybot's
+  lighting, bloom, and composite constants are tuned for math on sRGB-encoded values.
+  Lighting in linear space (as the other ports do) made the floor about twice as bright.
+  So angrybot loads its textures unconverted (`TextureConfig.is_srgb = false`,
+  `GltfAsset.useGammaSpaceTextures`), its targets hold gamma-space values, and the
+  composite clamps (GL's 8-bit window) and decodes once; the sRGB surface then shows GL's
+  values. The other apps keep linear shading.
 
 ## Per-draw values
 
@@ -105,7 +110,8 @@ vendored miniaudio module. `core.SoundEngine(ClipName, ClipData)` keeps its API
   what the node chain holds. The port uses the asset's node transform and drops the manual
   rotation (a 0.04 unit height offset remains from the node translation).
 - Normals use `draw.normal_matrix` (with the skin). GL used `aimRot × last joint` for the
-  player and a fixed +90° X rotation for enemies, so enemy lighting ignored their heading.
+  player and a fixed +90° X rotation for enemies, so enemy lighting ignored their heading
+  and most eels came out black; here they are lit (green, as their albedo).
 - Floor specular: GL bound the spec map as `texture_spec`, but the shader samples
   `texture_specular`, so it read whatever was in texture unit 0. The port binds the map.
 - GL enabled face culling only after the first bullet draw; the port culls from the start

@@ -317,7 +317,7 @@ fn loadMaterialTextures(gltf_asset: *GltfAsset, material: gltf_types.Material, m
         }
         if (!gltf_asset.load_textures) continue;
         if (material_.textureIndex(material, slot)) |texture_index| {
-            texture.* = try gltf_asset.loadTextureFromGltf(texture_index, slot.isSrgb());
+            texture.* = try gltf_asset.loadTextureFromGltf(texture_index, gltf_asset.srgb_color_textures and slot.isSrgb());
         }
     }
     return textures;
