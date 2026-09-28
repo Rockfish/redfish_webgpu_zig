@@ -186,34 +186,107 @@ pub const MeshPrimitive = struct {
         var vertex_buffers: [ATTRIBUTE_COUNT]c.WGPUBuffer = undefined;
         const reader = AccessorReader{ .gltf_asset = gltf_asset };
 
-        const positions = try reader.readFloats(temp, 3, position_accessor, vertex_count, .{ 0, 0, 0 });
+        const positions = try reader.readFloats(
+            temp,
+            3,
+            position_accessor,
+            vertex_count,
+            .{ 0, 0, 0 },
+        );
         defer temp.free(positions);
-        vertex_buffers[@intFromEnum(Attribute.position)] = createBuffer(gpu, "positions", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(positions));
+        vertex_buffers[@intFromEnum(Attribute.position)] = createBuffer(
+            gpu,
+            "positions",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(positions),
+        );
 
-        const texcoords = try reader.readFloatsOrDefault(temp, 2, attributes.tex_coord_0, vertex_count, .{ 0, 0 });
+        const texcoords = try reader.readFloatsOrDefault(
+            temp,
+            2,
+            attributes.tex_coord_0,
+            vertex_count,
+            .{ 0, 0 },
+        );
         defer temp.free(texcoords);
-        vertex_buffers[@intFromEnum(Attribute.texcoord)] = createBuffer(gpu, "texcoords", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(texcoords));
+        vertex_buffers[@intFromEnum(Attribute.texcoord)] = createBuffer(
+            gpu,
+            "texcoords",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(texcoords),
+        );
 
-        const normals = try readNormals(temp, gltf_asset, reader, attributes.normal, mesh_index, primitive_index, vertex_count);
+        const normals = try readNormals(
+            temp,
+            gltf_asset,
+            reader,
+            attributes.normal,
+            mesh_index,
+            primitive_index,
+            vertex_count,
+        );
         defer temp.free(normals.values);
-        vertex_buffers[@intFromEnum(Attribute.normal)] = createBuffer(gpu, "normals", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(normals.values));
+        vertex_buffers[@intFromEnum(Attribute.normal)] = createBuffer(
+            gpu,
+            "normals",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(normals.values),
+        );
 
-        const tangents = try reader.readFloatsOrDefault(temp, 4, attributes.tangent, vertex_count, .{ 1, 0, 0, 1 });
+        const tangents = try reader.readFloatsOrDefault(
+            temp,
+            4,
+            attributes.tangent,
+            vertex_count,
+            .{ 1, 0, 0, 1 },
+        );
         defer temp.free(tangents);
-        vertex_buffers[@intFromEnum(Attribute.tangent)] = createBuffer(gpu, "tangents", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(tangents));
+        vertex_buffers[@intFromEnum(Attribute.tangent)] = createBuffer(
+            gpu,
+            "tangents",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(tangents),
+        );
 
         // vec3 colors get alpha 1 from the default's fourth component
-        const colors = try reader.readFloatsOrDefault(temp, 4, attributes.color_0, vertex_count, .{ 1, 1, 1, 1 });
+        const colors = try reader.readFloatsOrDefault(
+            temp,
+            4,
+            attributes.color_0,
+            vertex_count,
+            .{ 1, 1, 1, 1 },
+        );
         defer temp.free(colors);
-        vertex_buffers[@intFromEnum(Attribute.color)] = createBuffer(gpu, "colors", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(colors));
+        vertex_buffers[@intFromEnum(Attribute.color)] = createBuffer(
+            gpu,
+            "colors",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(colors),
+        );
 
         const joints = try reader.readUintsOrDefault(temp, attributes.joints_0, vertex_count);
         defer temp.free(joints);
-        vertex_buffers[@intFromEnum(Attribute.joints)] = createBuffer(gpu, "joints", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(joints));
+        vertex_buffers[@intFromEnum(Attribute.joints)] = createBuffer(
+            gpu,
+            "joints",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(joints),
+        );
 
-        const weights = try reader.readFloatsOrDefault(temp, 4, attributes.weights_0, vertex_count, .{ 0, 0, 0, 0 });
+        const weights = try reader.readFloatsOrDefault(
+            temp,
+            4,
+            attributes.weights_0,
+            vertex_count,
+            .{ 0, 0, 0, 0 },
+        );
         defer temp.free(weights);
-        vertex_buffers[@intFromEnum(Attribute.weights)] = createBuffer(gpu, "weights", c.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(weights));
+        vertex_buffers[@intFromEnum(Attribute.weights)] = createBuffer(
+            gpu,
+            "weights",
+            c.WGPUBufferUsage_Vertex,
+            std.mem.sliceAsBytes(weights),
+        );
 
         const has_skin = attributes.joints_0 != null and attributes.weights_0 != null;
         const has_vertex_colors = attributes.color_0 != null;
@@ -228,11 +301,16 @@ pub const MeshPrimitive = struct {
             .has_skin = has_skin,
             .has_normals = normals.is_real,
             .has_vertex_colors = has_vertex_colors,
-            .material = try PbrMaterial.init(gpu, material, try loadMaterialTextures(gltf_asset, material, mesh_name), .{
-                .has_normals = normals.is_real,
-                .has_vertex_colors = has_vertex_colors,
-                .has_skin = has_skin,
-            }),
+            .material = try PbrMaterial.init(
+                gpu,
+                material,
+                try loadMaterialTextures(gltf_asset, material, mesh_name),
+                .{
+                    .has_normals = normals.is_real,
+                    .has_vertex_colors = has_vertex_colors,
+                    .has_skin = has_skin,
+                },
+            ),
         };
 
         if (primitive.indices) |accessor_id| try mesh_primitive.createIndexBuffer(reader, accessor_id);
@@ -260,17 +338,48 @@ pub const MeshPrimitive = struct {
 
         c.wgpuRenderPassEncoderSetPipeline(pass, shader.getPipeline(self.material.render_state));
         self.material.setBindGroup(frame);
-        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.object, object_bind_group, 1, &draw_offset);
+        c.wgpuRenderPassEncoderSetBindGroup(
+            pass,
+            BindGroup.object,
+            object_bind_group,
+            1,
+            &draw_offset,
+        );
 
         for (self.vertex_buffers, 0..) |buffer, slot| {
-            c.wgpuRenderPassEncoderSetVertexBuffer(pass, @intCast(slot), buffer, 0, c.WGPU_WHOLE_SIZE);
+            c.wgpuRenderPassEncoderSetVertexBuffer(
+                pass,
+                @intCast(slot),
+                buffer,
+                0,
+                c.WGPU_WHOLE_SIZE,
+            );
         }
 
         if (self.index_buffer != null) {
-            c.wgpuRenderPassEncoderSetIndexBuffer(pass, self.index_buffer, self.index_format, 0, c.WGPU_WHOLE_SIZE);
-            c.wgpuRenderPassEncoderDrawIndexed(pass, self.indices_count, 1, 0, 0, 0);
+            c.wgpuRenderPassEncoderSetIndexBuffer(
+                pass,
+                self.index_buffer,
+                self.index_format,
+                0,
+                c.WGPU_WHOLE_SIZE,
+            );
+            c.wgpuRenderPassEncoderDrawIndexed(
+                pass,
+                self.indices_count,
+                1,
+                0,
+                0,
+                0,
+            );
         } else {
-            c.wgpuRenderPassEncoderDraw(pass, self.vertex_count, 1, 0, 0);
+            c.wgpuRenderPassEncoderDraw(
+                pass,
+                self.vertex_count,
+                1,
+                0,
+                0,
+            );
         }
     }
 
@@ -291,12 +400,22 @@ pub const MeshPrimitive = struct {
             const indices = try reader.readIndices(u32, temp, accessor_id);
             defer temp.free(indices);
             self.index_format = c.WGPUIndexFormat_Uint32;
-            self.index_buffer = createBuffer(gltf_asset.gpu, "indices", c.WGPUBufferUsage_Index, std.mem.sliceAsBytes(indices));
+            self.index_buffer = createBuffer(
+                gltf_asset.gpu,
+                "indices",
+                c.WGPUBufferUsage_Index,
+                std.mem.sliceAsBytes(indices),
+            );
         } else {
             const indices = try reader.readIndices(u16, temp, accessor_id);
             defer temp.free(indices);
             self.index_format = c.WGPUIndexFormat_Uint16;
-            self.index_buffer = createBuffer(gltf_asset.gpu, "indices", c.WGPUBufferUsage_Index, std.mem.sliceAsBytes(indices));
+            self.index_buffer = createBuffer(
+                gltf_asset.gpu,
+                "indices",
+                c.WGPUBufferUsage_Index,
+                std.mem.sliceAsBytes(indices),
+            );
         }
     }
 };
@@ -304,7 +423,11 @@ pub const MeshPrimitive = struct {
 /// Loads (or reuses) each texture the material references; custom textures added for
 /// this mesh name override their slot. With `skipModelTextures`, only custom textures
 /// are used and the other slots bind the defaults.
-fn loadMaterialTextures(gltf_asset: *GltfAsset, material: gltf_types.Material, mesh_name: ?[]const u8) ![bindings.PBR_TEXTURE_COUNT]?*const Texture {
+fn loadMaterialTextures(
+    gltf_asset: *GltfAsset,
+    material: gltf_types.Material,
+    mesh_name: ?[]const u8,
+) ![bindings.PBR_TEXTURE_COUNT]?*const Texture {
     var textures: [bindings.PBR_TEXTURE_COUNT]?*const Texture = @splat(null);
 
     for (&textures, 0..) |*texture, i| {
@@ -317,7 +440,10 @@ fn loadMaterialTextures(gltf_asset: *GltfAsset, material: gltf_types.Material, m
         }
         if (!gltf_asset.load_textures) continue;
         if (material_.textureIndex(material, slot)) |texture_index| {
-            texture.* = try gltf_asset.loadTextureFromGltf(texture_index, gltf_asset.srgb_color_textures and slot.isSrgb());
+            texture.* = try gltf_asset.loadTextureFromGltf(
+                texture_index,
+                gltf_asset.srgb_color_textures and slot.isSrgb(),
+            );
         }
     }
     return textures;
@@ -339,12 +465,23 @@ fn readNormals(
     vertex_count: u32,
 ) !Normals {
     if (accessor_id) |id| {
-        return .{ .values = try reader.readFloats(temp, 3, id, vertex_count, .{ 0, 1, 0 }), .is_real = true };
+        return .{
+            .values = try reader.readFloats(
+                temp,
+                3,
+                id,
+                vertex_count,
+                .{ 0, 1, 0 },
+            ),
+            .is_real = true,
+        };
     }
 
     const values = try temp.alloc([3]f32, vertex_count);
     if (gltf_asset.getGeneratedNormals(@intCast(mesh_index), @intCast(primitive_index))) |generated| {
-        for (values, generated) |*value, normal| value.* = .{ normal.x, normal.y, normal.z };
+        for (values, generated) |*value, normal| {
+            value.* = .{ normal.x, normal.y, normal.z };
+        }
         return .{ .values = values, .is_real = true };
     }
     @memset(values, .{ 0, 1, 0 });
@@ -358,7 +495,14 @@ const AccessorReader = struct {
 
     const Self = @This();
 
-    fn readFloatsOrDefault(self: Self, allocator: Allocator, comptime N: usize, accessor_id: ?u32, count: u32, default: [N]f32) ![][N]f32 {
+    fn readFloatsOrDefault(
+        self: Self,
+        allocator: Allocator,
+        comptime N: usize,
+        accessor_id: ?u32,
+        count: u32,
+        default: [N]f32,
+    ) ![][N]f32 {
         if (accessor_id) |id| return self.readFloats(allocator, N, id, count, default);
         const values = try allocator.alloc([N]f32, count);
         @memset(values, default);
@@ -366,7 +510,14 @@ const AccessorReader = struct {
     }
 
     /// Components beyond the accessor's type size come from `default`.
-    fn readFloats(self: Self, allocator: Allocator, comptime N: usize, accessor_id: u32, count: u32, default: [N]f32) ![][N]f32 {
+    fn readFloats(
+        self: Self,
+        allocator: Allocator,
+        comptime N: usize,
+        accessor_id: u32,
+        count: u32,
+        default: [N]f32,
+    ) ![][N]f32 {
         const view = try self.elementView(accessor_id);
         if (view.accessor.count != count) return error.AccessorCountMismatch;
 
@@ -376,14 +527,24 @@ const AccessorReader = struct {
             value.* = default;
             const element = view.element(i);
             for (0..components) |k| {
-                value[k] = readComponentFloat(element, view.accessor.component_type, k, view.accessor.normalized);
+                value[k] = readComponentFloat(
+                    element,
+                    view.accessor.component_type,
+                    k,
+                    view.accessor.normalized,
+                );
             }
         }
         return values;
     }
 
     /// Joint indices as u32x4, or zeros when the primitive has none.
-    fn readUintsOrDefault(self: Self, allocator: Allocator, accessor_id: ?u32, count: u32) ![][4]u32 {
+    fn readUintsOrDefault(
+        self: Self,
+        allocator: Allocator,
+        accessor_id: ?u32,
+        count: u32,
+    ) ![][4]u32 {
         const values = try allocator.alloc([4]u32, count);
         @memset(values, .{ 0, 0, 0, 0 });
         const id = accessor_id orelse return values;
@@ -393,13 +554,24 @@ const AccessorReader = struct {
         const components = @min(4, typeSize(view.accessor.accessor_type));
         for (values, 0..) |*value, i| {
             const element = view.element(i);
-            for (0..components) |k| value[k] = readComponentUint(element, view.accessor.component_type, k);
+            for (0..components) |k| {
+                value[k] = readComponentUint(
+                    element,
+                    view.accessor.component_type,
+                    k,
+                );
+            }
         }
         return values;
     }
 
     /// Index data as `T`; the result's byte size is padded to a multiple of 4.
-    fn readIndices(self: Self, comptime T: type, allocator: Allocator, accessor_id: u32) ![]T {
+    fn readIndices(
+        self: Self,
+        comptime T: type,
+        allocator: Allocator,
+        accessor_id: u32,
+    ) ![]T {
         const view = try self.elementView(accessor_id);
         const count = view.accessor.count;
         const padded_count = std.mem.alignForward(usize, count * @sizeOf(T), 4) / @sizeOf(T);
@@ -407,7 +579,9 @@ const AccessorReader = struct {
         const indices = try allocator.alloc(T, padded_count);
         @memset(indices, 0);
         for (indices[0..count], 0..) |*index, i| {
-            index.* = @intCast(readComponentUint(view.element(i), view.accessor.component_type, 0));
+            index.* = @intCast(
+                readComponentUint(view.element(i), view.accessor.component_type, 0),
+            );
         }
         return indices;
     }
@@ -427,7 +601,12 @@ const AccessorReader = struct {
         const end = start + stride * (accessor.count -| 1) + element_size;
         if (accessor.count > 0 and end > buffer.len) return error.AccessorOutOfBounds;
 
-        return .{ .accessor = accessor, .data = buffer[start..@max(start, end)], .stride = stride, .element_size = element_size };
+        return .{
+            .accessor = accessor,
+            .data = buffer[start..@max(start, end)],
+            .stride = stride,
+            .element_size = element_size,
+        };
     }
 };
 
@@ -491,14 +670,25 @@ fn typeSize(accessor_type: gltf_types.AccessorType) usize {
     };
 }
 
-fn createBuffer(gpu: *gpu_context.GpuContext, label: []const u8, usage: c.WGPUBufferUsage, data: []const u8) c.WGPUBuffer {
+fn createBuffer(
+    gpu: *gpu_context.GpuContext,
+    label: []const u8,
+    usage: c.WGPUBufferUsage,
+    data: []const u8,
+) c.WGPUBuffer {
     std.debug.assert(data.len % 4 == 0);
     const buffer = c.wgpuDeviceCreateBuffer(gpu.device, &.{
         .label = stringView(label),
         .usage = usage | c.WGPUBufferUsage_CopyDst,
         .size = @max(data.len, 4),
     });
-    if (data.len > 0) c.wgpuQueueWriteBuffer(gpu.queue, buffer, 0, data.ptr, data.len);
+    if (data.len > 0) c.wgpuQueueWriteBuffer(
+        gpu.queue,
+        buffer,
+        0,
+        data.ptr,
+        data.len,
+    );
     return buffer;
 }
 

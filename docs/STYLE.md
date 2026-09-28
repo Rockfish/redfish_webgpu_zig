@@ -99,7 +99,21 @@ pub fn draw(self: *Model, pass: c.WGPURenderPassEncoder, frame: *const FrameData
 
 ## 5. Control Flow
 
-- `if` / `else` always use braces, even for one line.
+- `if`, `else`, `for`, and `while` statements always use braces, even for one trivial
+  statement (an early `return`, a `continue`, one assignment). Braces break up the code
+  and make every branch and loop body stand out.
+
+  ```zig
+  if (!gltf_asset.load_textures) {
+      continue;
+  }
+  for (values, generated) |*value, normal| {
+      value.* = .{ normal.x, normal.y, normal.z };
+  }
+  ```
+
+- Exception: an `if` used as an expression to pick a value, like `?:` in C, stays on one
+  line without braces: `const scale = if (is_hit) 1.2 else 1.0;`
 - Prefer early return over deep nesting.
 - Unwrap optionals with `if (x) |value|` or `orelse`; use `.?` only where null is a bug.
 - `switch` over enums and tagged unions; no `else` branch unless it's truly a default,
@@ -205,7 +219,20 @@ Correctness rules. They exist because WebGPU works differently from GL.
 
 - Run `zig fmt` on every Zig file you edit. Only on `.zig` files.
 - Never `zig fmt` or edit vendored/fetched dependency code.
-- For multi-line `{}` lists, put a comma after the last item so `zig fmt` folds it one per line.
+- A long call, function signature, or struct/array literal ends its last item with a comma,
+  so `zig fmt` puts one item per line. Use it when the line gets long (roughly past 100
+  columns) or when there are several arguments whose meaning isn't obvious at a glance
+  (`c.wgpuRenderPassEncoderDraw(pass, count, 1, 0, 0)`). Short calls with a few clear
+  arguments stay on one line.
+
+  ```zig
+  vertex_buffers[@intFromEnum(Attribute.position)] = createBuffer(
+      gpu,
+      "positions",
+      c.WGPUBufferUsage_Vertex,
+      std.mem.sliceAsBytes(positions),
+  );
+  ```
 - Zig lazy analysis compiles unreferenced functions without checking them. "It builds"
   proves nothing about uncalled code: call new public functions from somewhere, or
   cover them with a `test`.
