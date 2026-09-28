@@ -69,7 +69,7 @@ fn hasFlag(flag: u32) -> bool {
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
     // Sample everything up front: missing textures are 1x1 defaults (white, flat normal),
     // so the multiplications below are neutral for them.
     let base_color_sample = textureSample(base_color_texture, base_color_sampler, in.texcoord);
@@ -98,6 +98,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
                 let tbn = mat3x3f(normalize(in.tangent), normalize(in.bitangent), normal);
                 normal = normalize(tbn * (normal_sample * 2.0 - 1.0));
             }
+            normal = viewFacingNormal(normal, in.world_position, front_facing);
             color = sceneLight(in.world_position, normal, base_color.rgb, metallic, roughness);
         } else {
             // Without normals there is no direct lighting; a flat base keeps it visible (as redfish)
@@ -111,6 +112,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Reinhard tone mapping; the sRGB surface does the gamma encode
     color = color / (color + vec3f(1.0));
     return vec4f(color, base_color.a);
+}
+
+/// The shading normal of the visible side. Back faces (double-sided materials) use the
+/// flipped normal, as glTF requires; redfish lit them with the front's, so the underside of
+/// a bevel caught the light above it. A smoothed normal that still turns away from the
+/// viewer at a silhouette is bent back just past perpendicular, so the surface isn't lit
+/// as if seen from behind.
+fn viewFacingNormal(normal_in: vec3f, world_position: vec3f, front_facing: bool) -> vec3f {
+    var normal = select(-normal_in, normal_in, front_facing);
+    let view_dir = normalize(frame.view_position - world_position);
+    let n_dot_v = dot(normal, view_dir);
+    if (n_dot_v < 0.0) {
+        normal = normalize(normal - view_dir * (n_dot_v * 1.01));
+    }
+    return normal;
 }
 
 /// The frame's direction light plus its enabled point lights.
