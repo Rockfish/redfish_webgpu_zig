@@ -17,6 +17,8 @@ const Shader = shader_mod.Shader;
 const ShaderConfig = shader_mod.ShaderConfig;
 const ModelInstance = @import("model_instance.zig").ModelInstance;
 const Shape = shapes.Shape;
+const PbrMaterial = @import("material.zig").PbrMaterial;
+const PBR_TEXTURE_COUNT = @import("bindings.zig").PBR_TEXTURE_COUNT;
 
 /// Tracks the GPU resources a scene creates so `cleanUp` can release them all before the
 /// scene's arena resets.
@@ -28,6 +30,7 @@ pub const ResourceManager = struct {
     textures: ManagedArrayList(*Texture),
     model_instances: ManagedArrayList(*ModelInstance),
     obj_shapes: ManagedArrayList(*Shape),
+    materials: ManagedArrayList(*PbrMaterial),
 
     const Self = @This();
 
@@ -40,6 +43,7 @@ pub const ResourceManager = struct {
             .textures = ManagedArrayList(*Texture).init(context.alloc),
             .model_instances = ManagedArrayList(*ModelInstance).init(context.alloc),
             .obj_shapes = ManagedArrayList(*Shape).init(context.alloc),
+            .materials = ManagedArrayList(*PbrMaterial).init(context.alloc),
         };
         return rm;
     }
@@ -55,6 +59,15 @@ pub const ResourceManager = struct {
         const tex = try Texture.initFromFile(self.context, self.gpu, path, config);
         try self.textures.append(tex);
         return tex;
+    }
+
+    /// A `.pbr`-layout material from textures (slots: base color, metallic-roughness,
+    /// normal, occlusion, emissive; null binds the default), for shapes.
+    pub fn createMaterial(self: *Self, textures: [PBR_TEXTURE_COUNT]?*const Texture) !*PbrMaterial {
+        const material = try self.context.alloc.create(PbrMaterial);
+        material.* = try PbrMaterial.initWithTextures(self.gpu, textures);
+        try self.materials.append(material);
+        return material;
     }
 
     pub fn loadModel(self: *Self, name: []const u8, path: []const u8) !*ModelInstance {
@@ -99,6 +112,10 @@ pub const ResourceManager = struct {
 
         for (self.obj_shapes.items()) |shape| {
             shape.releaseGpuObjects();
+        }
+
+        for (self.materials.items()) |material| {
+            material.releaseGpuObjects();
         }
 
         for (self.textures.items()) |tex| {

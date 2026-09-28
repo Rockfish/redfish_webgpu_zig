@@ -344,20 +344,40 @@ group 1 bound (found when scene_tree's model came back).
 **Done:** Fox, CesiumMan, and the other animated demo models play live and baked;
 animation_example runs.
 
-### Step 6 - bullets
+### Step 6 - bullets ✅ 2026-09-27
 
-Where new work happens, so it moves ahead of level_01.
+Where new work happens, so it moves ahead of level_01. Design: `docs/designs/006-bullets.md`.
 
-- `build.zig.zon` adds zaudio; `sound_engine.zig` moves onto it
-- `lines.zig` (1px), `skybox.zig` (cube texture, `LessEqual` depth pipeline, binds its own shader)
-- Instanced bullets: per-instance vertex buffers with `stepMode = .instance`; the same for
-  animation_example's grid if wanted
-- `lights.zig`: `SceneLights` as a uniform struct in group 0, used by basic and PBR shaders
-- Scene switching through `cleanUp()` then arena reset; `ResourceManager`
-- Port all three scenes, cannon, turret, bullet systems
+**6a - core**
+- `lights.zig`: `SceneLights` in the frame uniforms (group 0), read by the basic shaders and
+  `pbr.wgsl` (direction light, point lights with their falloff, ambient); existing apps set
+  lights equivalent to their old single light
+- Vertex ring (`uniform_ring.zig` is now a generic `FrameRing`) for per-frame vertex data;
+  `Shape.drawInstanced` + `InstancedLayouts`; `lines.zig` (1 px, colors through
+  `srgbToLinear`); `skybox.zig` (own shader and `LessEqual` pipeline, 6-layer cube texture)
+- `ShaderConfig` (vertex buffers, material, topology, depth compare); bound material
+  (texture or pbr kind) for shapes; `PbrMaterial.initWithTextures`; `MaterialKind.cube_texture`
+- `resource_manager.zig` (`createShader` / `createMaterial` / ...), `animation_fsm.zig`
+- zaudio and `sound_engine.zig` move to Step 9 (angrybot is the only app with sound)
 
-**Fixes:** bullet instance buffers never freed, skybox cleanup never called,
-`lights.apply` being a no-op for PBR shaders, dead `ResourceManager.loadGltfAsset` / `buildModel`.
+**6b - bullets app**
+- All three scenes, cannon, turret, bullet system, spacesuit and toon soldier (core
+  `pbr.wgsl`; level_01's `animated_pbr` is the same shader), skybox, floor, axis lines
+- WGSL ports of basic_texture, basic_model, the instanced bullet shader, and lines
+- `--scene <debug|ruins_gallery|toon_gallery>` to start in a scene
+- Not ported (dead): `scene_object.zig` (imported a missing file), empty `grid.zig` /
+  `spheres.zig`, `bullet_simple.zig` / `sprite_sheet.zig` (unused, didn't compile),
+  `SimpleLines`, `AxisLines.drawLocalAxis`, `BulletSystem`'s unused plain cube
+
+**Fixes:** bullet instance buffers never freed (now ring slices), skybox cleanup never
+called and its draw never binding its shader, the floor's plane textures never released,
+`lights.apply` being a no-op for PBR shaders, dead `ResourceManager.loadGltfAsset` /
+`buildModel`. Found in testing: the cannon washed out white (basic_texture's ambient used
+the diffuse map, white by default here, and its GL-era part colors weren't converted);
+spacesuit / soldier walking a fixed step per frame (redfish ran with vsync off), now units
+per second; the ruins gallery ignoring the OBJ's MTL colors (redfish forced a flat gray)
+and now drawing them. The trees stay near white: their MTL colors are Blender's default
+0.64 gray, saturated by the gallery lights.
 
 **Done:** all three scenes run, PageUp/PageDown switches cleanly, cannon fires.
 

@@ -2,6 +2,15 @@
 
 ## Recent Changes
 
+### 2026-09-27 - bullets (Port Step 6)
+- **Design**: `docs/designs/006-bullets.md`
+- **Lights**: `SceneLights` in group 0 for every shader; PBR reads direction and point lights; existing apps keep their look
+- **Core**: per-frame vertex ring (`FrameRing`), `Shape.drawInstanced`, `Lines`, `Skybox` (own LessEqual pipeline, cube texture), `ShaderConfig`, bound materials for shapes, `ResourceManager`, `animation_fsm`
+- **bullets**: all three scenes, cannon, turret, instanced bullets, skybox, floor, spacesuit and toon soldier; `--scene` option; dead files not ported
+- **Fixes**: bullet buffers, skybox cleanup and shader binding, floor texture release, PBR lights, washed-out cannon, frame-rate-dependent walking, ruins OBJs now show MTL colors
+- **zaudio** moves to Step 9
+- **Tests**: 60 pass
+
 ### 2026-09-27 - Skinning and Animation (Port Step 5)
 - **Design**: `docs/designs/005-skinning.md`
 - **Skinning**: joint matrices in a group 2 storage buffer; `DrawUniforms.joint_offset` and `DrawFlags.skinned`; one `pbr.wgsl` for live and baked (moved to `src/core/shaders/`); `skinMatrix` in `common.wgsl`

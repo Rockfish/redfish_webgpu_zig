@@ -70,6 +70,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "scene_tree", .exe_name = "scene_tree", .source = "examples/scene_tree/main.zig" },
         .{ .name = "demo_app", .exe_name = "demo_app", .source = "examples/demo_app/main.zig" },
         .{ .name = "animation", .exe_name = "animation_example", .source = "examples/animation_example/main.zig" },
+        .{ .name = "bullets", .exe_name = "bullets", .source = "examples/bullets/main.zig" },
     }) |app| {
         const exe = b.addExecutable(.{
             .name = app.exe_name,

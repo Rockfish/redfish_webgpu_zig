@@ -3,7 +3,7 @@
 ## Currently Active
 
 - **[000-webgpu-port.md](000-webgpu-port.md)** - Port redfish_gl_zig to WebGPU (wgpu-native)
-  - Next: **Step 6 - bullets**
+  - Next: **Step 7 - level_01**
 
 ## Port Progress
 
@@ -16,7 +16,7 @@
 | 3b | Textures and all shapes, scene_tree | ✅ 2026-09-27 |
 | 4 | glTF static meshes with PBR | ✅ 2026-09-27 |
 | 5 | Skinning and animation | ✅ 2026-09-27 |
-| 6 | bullets | |
+| 6 | bullets | ✅ 2026-09-27 |
 | 7 | level_01 | |
 | 8 | demo_app complete | |
 | 9 | angrybot and remaining examples | |
