@@ -60,6 +60,8 @@ pub const State = struct {
     output_position_requested: bool = false,
     ui_help_visible: bool = false,
     ui_camera_info_visible: bool = true,
+    /// E: SceneLights.fade_grazing_specular (stylistic; off is physically based)
+    fade_grazing_specular: bool = false,
     animation_reset_requested: bool = false,
     animation_next_requested: bool = false,
     animation_prev_requested: bool = false,
@@ -343,6 +345,12 @@ pub fn processKeys() void {
                 if (!state.input.key_processed.contains(.c)) {
                     state.ui_camera_info_visible = !state.ui_camera_info_visible;
                     std.debug.print("Camera info display: {}\n", .{state.ui_camera_info_visible});
+                }
+            },
+            .e => {
+                if (!state.input.key_processed.contains(.e)) {
+                    state.fade_grazing_specular = !state.fade_grazing_specular;
+                    std.debug.print("Fade grazing specular: {}\n", .{state.fade_grazing_specular});
                 }
             },
             .g => {

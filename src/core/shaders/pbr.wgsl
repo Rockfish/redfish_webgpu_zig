@@ -17,6 +17,8 @@
 @group(GROUP_MATERIAL) @binding(10) var emissive_sampler: sampler;
 
 const PI: f32 = 3.14159265359;
+/// NdotV below which specular fades out when `frame.lights.fade_grazing_specular` is on.
+const GRAZING_FADE_END: f32 = 0.3;
 
 struct VertexInput {
     @location(LOCATION_POSITION) position: vec3f,
@@ -175,7 +177,11 @@ fn brdf(normal: vec3f, view_dir: vec3f, light_dir: vec3f, radiance: vec3f, base_
     let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
     let geometry = (n_dot_v / (n_dot_v * (1.0 - k) + k)) * (n_dot_l / (n_dot_l * (1.0 - k) + k));
 
-    let specular = (fresnel * distribution * geometry) / (4.0 * n_dot_v * n_dot_l + 0.0001);
+    var specular = (fresnel * distribution * geometry) / (4.0 * n_dot_v * n_dot_l + 0.0001);
+    // Optional, stylistic: no glancing glare on edges seen edge-on (SceneLights)
+    if (frame.lights.fade_grazing_specular != 0u) {
+        specular *= smoothstep(0.0, GRAZING_FADE_END, n_dot_v);
+    }
     let diffuse = (vec3f(1.0) - fresnel) * (1.0 - metallic) * base_color / PI;
     return (diffuse + specular) * n_dot_l * radiance;
 }

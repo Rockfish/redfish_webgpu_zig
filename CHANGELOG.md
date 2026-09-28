@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-09-28 - Softer demo_app light, optional grazing specular fade
+- **demo_app**: key light 100 → 50 plus a dim fill from the opposite side; backlit bevel edges no longer blow out to white
+- **SceneLights.fade_grazing_specular**: optional, stylistic fade of PBR specular at grazing views (off by default); demo_app toggles it with E
+- **pbr.wgsl**: back faces of double-sided materials use the flipped normal (glTF); shading normals are kept facing the viewer
+
 ### 2026-09-28 - PBR edge highlights
 - **pbr.wgsl**: Fresnel on VdotH instead of NdotV, Schlick-GGX `k = (roughness + 1)² / 8` for direct light; the white rims on shadow-side edges (redfish too) are gone, backlit specular remains
 

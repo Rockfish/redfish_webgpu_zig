@@ -324,6 +324,7 @@ pub const UIState = struct {
             zgui.textColored(.{ 1.0, 0.8, 0.4, 1.0 }, "Display Toggles:", .{});
             zgui.text("  H       Toggle help", .{});
             zgui.text("  C       Toggle camera info", .{});
+            zgui.text("  E       Fade grazing specular", .{});
 
             zgui.separator();
 

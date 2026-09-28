@@ -239,14 +239,19 @@ fn switchModel(gpu: *GpuContext, state: *state_.State, current_scope: **ModelSco
 const camera_position = vec3(0.0, 12.0, 40.0);
 const camera_target = vec3(0.0, 12.0, 0.0);
 
-/// redfish's PBR light: (50, 50, 50), intensity 100, pbr.frag's falloff and 0.15 ambient.
+/// A key light at (50, 50, 50) with pbr.frag's falloff, a dim fill from the opposite side,
+/// and 0.15 ambient. redfish's key light alone was intensity 100 (about 10x radiance at the
+/// model), which blew backlit edges out to white; now 50 plus the fill.
 pub fn demoLights() core.SceneLights {
     var lights = core.SceneLights.init();
     lights.ambient = vec3(0.15, 0.15, 0.15);
-    lights.direction_light.color = vec3(0.0, 0.0, 0.0);
+    lights.direction_light = .{
+        .dir = vec3(1.0, -0.5, 1.0).toNormalized(),
+        .color = vec3(0.5, 0.5, 0.55),
+    };
     lights.setPointLight(0, .{
         .world_pos = vec3(50.0, 50.0, 50.0),
-        .color = vec3(100.0, 100.0, 100.0),
+        .color = vec3(50.0, 50.0, 50.0),
         .constant = 1.0,
         .linear = 0.01,
         .quadratic = 0.001,
@@ -493,7 +498,9 @@ fn drawScene(frame: *const Frame, state: *state_.State, shader: *const Shader, s
     const gpu = frame.gpu;
     const ctx = state.camera.getRenderContext(state.total_time);
     var frame_uniforms = ctx.frameUniforms();
-    frame_uniforms.lights = scene_lights.uniforms();
+    var lights = scene_lights;
+    lights.fade_grazing_specular = state.fade_grazing_specular;
+    frame_uniforms.lights = lights.uniforms();
     gpu.writeFrameUniforms(frame_uniforms);
 
     addDebugValues(&gpu.uniform_debug, state);

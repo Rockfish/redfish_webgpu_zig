@@ -467,8 +467,10 @@ Done as three commits (design: `docs/designs/009-angrybot.md`):
   Fresnel on `VdotH` and the direct-light `k = (roughness + 1)² / 8`; redfish's NdotV Fresnel
   and `k = alpha / 2` blew specular out at grazing views. On the modular Spacesuit from its
   shadow side, the near-white edge pixels halved (1,719 to 857; 722 with no specular at
-  all). What remains is real backlit specular: looking toward demo_app's strong point light
+  all). What remained was real backlit specular: looking toward demo_app's strong point light
   (about 10× radiance at the model), glossy bevels facing it reflect at grazing angles.
+  demo_app's light is now softer (50 plus a fill), and `SceneLights.fade_grazing_specular`
+  (E in demo_app) optionally fades specular at grazing views.
 
 ## Risks
 

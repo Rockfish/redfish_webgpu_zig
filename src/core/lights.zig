@@ -32,6 +32,10 @@ pub const SceneLights = struct {
     direction_light: DirectionLight,
     point_lights: [MAX_POINT_LIGHTS]PointLight,
     num_point_lights: i32,
+    /// Fade PBR specular toward zero as the view grazes a surface. A stylistic option,
+    /// not physically based: it keeps backlit edges seen edge-on from blowing out to white
+    /// under a strong light. Off by default.
+    fade_grazing_specular: bool = false,
 
     const Self = @This();
 
@@ -80,6 +84,7 @@ pub const SceneLights = struct {
             .use_light = @intFromBool(self.use_light),
             .direction_light = .{ .dir = self.direction_light.dir, .color = self.direction_light.color },
             .num_point_lights = @intCast(@max(self.num_point_lights, 0)),
+            .fade_grazing_specular = @intFromBool(self.fade_grazing_specular),
         };
         for (self.point_lights, &result.point_lights) |light, *out| {
             out.* = .{

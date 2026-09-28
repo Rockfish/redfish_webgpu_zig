@@ -100,7 +100,9 @@ pub const LightsUniforms = extern struct {
         .enabled = 0,
     }),
     num_point_lights: u32 = 0,
-    _pad: [3]u32 = .{ 0, 0, 0 },
+    /// Nonzero: fade specular at grazing views (see `SceneLights.fade_grazing_specular`).
+    fade_grazing_specular: u32 = 0,
+    _pad: [2]u32 = .{ 0, 0 },
 };
 
 /// Mirrors `FrameUniforms` in shaders/common.wgsl (group 0, binding 0).

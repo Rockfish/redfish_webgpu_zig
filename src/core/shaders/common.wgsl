@@ -23,6 +23,7 @@ struct Lights {
     direction_light: DirectionLight,
     point_lights: array<PointLight, MAX_POINT_LIGHTS>,
     num_point_lights: u32,
+    fade_grazing_specular: u32,
 }
 
 struct FrameUniforms {
