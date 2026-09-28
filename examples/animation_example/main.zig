@@ -602,7 +602,9 @@ pub fn processKeys() void {
 /// aspect in step.
 fn framebufferSizeHandler(window: *glfw.Window, width: i32, height: i32) callconv(.c) void {
     _ = window;
-    if (width == 0 or height == 0) return;
+    if (width == 0 or height == 0) {
+        return;
+    }
     state.camera.setScreenDimensions(@floatFromInt(width), @floatFromInt(height));
 }
 

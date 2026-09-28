@@ -205,7 +205,9 @@ pub const RuinsGalleryScene = struct {
         const gray = math.vec4(gray_level, gray_level, gray_level, 1.0);
         for (self.shapes, 0..) |shape, i| {
             var draw_uniforms = DrawUniforms.init(self.model_matrices[i], gray);
-            if (shape.has_vertex_colors) draw_uniforms.flags |= core.bindings.DrawFlags.vertex_color;
+            if (shape.has_vertex_colors) {
+                draw_uniforms.flags |= core.bindings.DrawFlags.vertex_color;
+            }
             shape.draw(frame, self.shader, draw_uniforms);
         }
 

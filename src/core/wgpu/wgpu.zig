@@ -23,6 +23,8 @@ pub fn stringView(text: []const u8) c.WGPUStringView {
 /// `WGPU_STRLEN` "null-terminated" length.
 pub fn sliceFromView(view: c.WGPUStringView) []const u8 {
     const data = view.data orelse return "";
-    if (view.length == c.WGPU_STRLEN) return std.mem.span(@as([*:0]const u8, @ptrCast(data)));
+    if (view.length == c.WGPU_STRLEN) {
+        return std.mem.span(@as([*:0]const u8, @ptrCast(data)));
+    }
     return data[0..view.length];
 }

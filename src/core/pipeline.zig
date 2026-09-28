@@ -112,7 +112,9 @@ pub const PipelineVariants = struct {
     }
 
     pub fn releaseGpuObjects(self: *Self) void {
-        for (self.pipelines) |pipeline| c.wgpuRenderPipelineRelease(pipeline);
+        for (self.pipelines) |pipeline| {
+            c.wgpuRenderPipelineRelease(pipeline);
+        }
     }
 };
 

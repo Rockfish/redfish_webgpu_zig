@@ -22,7 +22,9 @@ pub fn bufCopyZ(buf: []u8, source: []const u8) [:0]const u8 {
 // Cheap string hash
 pub fn stringHash(str: []const u8, seed: u32) u32 {
     var hash: u32 = seed;
-    if (str.len == 0) return hash;
+    if (str.len == 0) {
+        return hash;
+    }
 
     for (str) |char| {
         hash = ((hash << 5) - hash) + @as(u32, @intCast(char));
@@ -48,7 +50,9 @@ pub fn generateTimestamp(io: std.Io) [23]u8 {
 
     // Zig's std has no time zones; libc applies the system's, daylight saving included.
     var local: Tm = undefined;
-    if (localtime_r(&epoch_seconds, &local) == null) @panic("localtime_r failed");
+    if (localtime_r(&epoch_seconds, &local) == null) {
+        @panic("localtime_r failed");
+    }
 
     const year: u32 = @intCast(local.tm_year + 1900);
     const month: u32 = @intCast(local.tm_mon + 1);

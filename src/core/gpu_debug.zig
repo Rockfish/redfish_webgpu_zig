@@ -42,7 +42,9 @@ pub fn popValidationScope(instance: c.WGPUInstance, device: c.WGPUDevice) ?Scope
         .callback = onPopErrorScope,
         .userdata1 = &result,
     });
-    while (!result.done) c.wgpuInstanceProcessEvents(instance);
+    while (!result.done) {
+        c.wgpuInstanceProcessEvents(instance);
+    }
     return result.scope_error;
 }
 
@@ -70,7 +72,9 @@ pub fn logAdapterLimits(adapter: c.WGPUAdapter) void {
 
     log.info("limits:", .{});
     inline for (@typeInfo(c.WGPULimits).@"struct".fields) |field| {
-        if (comptime std.mem.eql(u8, field.name, "nextInChain")) continue;
+        if (comptime std.mem.eql(u8, field.name, "nextInChain")) {
+            continue;
+        }
         log.info("  {s}: {d}", .{ field.name, @field(limits, field.name) });
     }
 }
@@ -93,7 +97,9 @@ fn onPopErrorScope(
         log.err("popErrorScope failed ({d}): {s}", .{ status, sliceFromView(message) });
         return;
     }
-    if (error_type == c.WGPUErrorType_NoError) return;
+    if (error_type == c.WGPUErrorType_NoError) {
+        return;
+    }
 
     var scope_error: ScopeError = .{ .error_type = error_type };
     const text = sliceFromView(message);
@@ -119,7 +125,9 @@ fn onDeviceLost(
     _: ?*anyopaque,
     _: ?*anyopaque,
 ) callconv(.c) void {
-    if (reason == c.WGPUDeviceLostReason_Destroyed or reason == c.WGPUDeviceLostReason_CallbackCancelled) return;
+    if (reason == c.WGPUDeviceLostReason_Destroyed or reason == c.WGPUDeviceLostReason_CallbackCancelled) {
+        return;
+    }
     log.err("device lost ({d}): {s}", .{ reason, sliceFromView(message) });
 }
 

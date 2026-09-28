@@ -61,7 +61,9 @@ pub fn FrameRing(comptime usage: c.WGPUBufferUsage, comptime alignment: u32, com
         }
 
         pub fn upload(self: *Self, queue: c.WGPUQueue) void {
-            if (self.used == 0) return;
+            if (self.used == 0) {
+                return;
+            }
             c.wgpuQueueWriteBuffer(queue, self.buffer, 0, self.staging.ptr, self.used);
         }
 

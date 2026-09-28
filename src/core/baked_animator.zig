@@ -154,9 +154,13 @@ pub const BakedAnimator = struct {
     }
 
     fn getFrame(self: *Self, delta_time: f32) u32 {
-        if (self.headers.len == 0) return 0;
+        if (self.headers.len == 0) {
+            return 0;
+        }
         const header = self.headers[self.anim_id];
-        if (header.num_frames == 1) return 0;
+        if (header.num_frames == 1) {
+            return 0;
+        }
 
         self.current_time += delta_time;
 

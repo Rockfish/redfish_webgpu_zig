@@ -137,7 +137,9 @@ fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path:
     });
     if (gpu_debug.popValidationScope(gpu.instance, gpu.device)) |scope_error| {
         log.err("{s} (subtract {d} from naga's line numbers): {s}", .{ file_path, PREPENDED_LINES, scope_error.message() });
-        if (module != null) c.wgpuShaderModuleRelease(module);
+        if (module != null) {
+            c.wgpuShaderModuleRelease(module);
+        }
         return error.ShaderCompile;
     }
     return module;

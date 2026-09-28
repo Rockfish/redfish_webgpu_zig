@@ -30,7 +30,9 @@ pub fn removeRange(comptime T: type, list: *containers.ManagedArrayList(T), star
 test "removeRange removes values and closes the gap" {
     var list = containers.ManagedArrayList(u32).init(testing.allocator);
     defer list.deinit();
-    for (0..10) |i| try list.append(@intCast(i));
+    for (0..10) |i| {
+        try list.append(@intCast(i));
+    }
 
     try removeRange(u32, &list, 2, 5);
 
@@ -62,7 +64,9 @@ test "removeRange deinits removed pointers" {
     try testing.expectEqual(@as(u32, 0), list.list.items[0].value);
     try testing.expectEqual(@as(u32, 3), list.list.items[1].value);
     try testing.expectEqual(@as(u32, 4), list.list.items[2].value);
-    for (list.list.items) |item| item.deinit();
+    for (list.list.items) |item| {
+        item.deinit();
+    }
 }
 
 test "removeRange rejects an empty or out-of-bounds range" {

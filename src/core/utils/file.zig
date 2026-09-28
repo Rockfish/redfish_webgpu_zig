@@ -12,7 +12,9 @@ pub fn readFileToEnd(io: Io, allocator: Allocator, file_path: []const u8) ![]u8 
     errdefer allocator.free(buf);
 
     const n = try file.readPositionalAll(io, buf, 0);
-    if (n != buf.len) return error.UnexpectedEndOfFile;
+    if (n != buf.len) {
+        return error.UnexpectedEndOfFile;
+    }
     return buf;
 }
 
@@ -25,6 +27,8 @@ pub fn readFileToEndZ(io: Io, allocator: Allocator, file_path: []const u8) ![:0]
     errdefer allocator.free(buf);
 
     const n = try file.readPositionalAll(io, buf, 0);
-    if (n != buf.len) return error.UnexpectedEndOfFile;
+    if (n != buf.len) {
+        return error.UnexpectedEndOfFile;
+    }
     return buf;
 }

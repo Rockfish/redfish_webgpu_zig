@@ -22,10 +22,12 @@ pub const Sphere = struct {
         var polyCountX = poly_countX;
         var polyCountY = poly_countY;
 
-        if (polyCountX < 2)
+        if (polyCountX < 2) {
             polyCountX = 2;
-        if (polyCountY < 2)
+        }
+        if (polyCountY < 2) {
             polyCountY = 2;
+        }
 
         while (polyCountX * polyCountY > 32767) // prevent u16 overflow
         {

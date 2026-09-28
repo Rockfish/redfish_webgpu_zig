@@ -264,7 +264,9 @@ pub const BulletSystem = struct {
     }
 
     pub fn draw(self: *Self, frame: *const Frame) void {
-        if (self.is_lines_visible) self.drawLines(frame);
+        if (self.is_lines_visible) {
+            self.drawLines(frame);
+        }
         self.drawBullets(frame);
     }
 };

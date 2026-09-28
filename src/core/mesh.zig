@@ -104,7 +104,9 @@ pub const Mesh = struct {
         node_matrix: Mat4,
         skin: ?SkinBinding,
     ) void {
-        if (!self.is_visible) return;
+        if (!self.is_visible) {
+            return;
+        }
         const white = math.vec4(1.0, 1.0, 1.0, 1.0);
         const unskinned = DrawUniforms.init(model_transform.mulMat4(&node_matrix), white);
         const default_object = frame.gpu.bindings.object_bind_group;
@@ -313,7 +315,9 @@ pub const MeshPrimitive = struct {
             ),
         };
 
-        if (primitive.indices) |accessor_id| try mesh_primitive.createIndexBuffer(reader, accessor_id);
+        if (primitive.indices) |accessor_id| {
+            try mesh_primitive.createIndexBuffer(reader, accessor_id);
+        }
 
         return mesh_primitive;
     }
@@ -385,8 +389,12 @@ pub const MeshPrimitive = struct {
 
     pub fn releaseGpuObjects(self: *Self) void {
         self.material.releaseGpuObjects();
-        for (self.vertex_buffers) |buffer| c.wgpuBufferRelease(buffer);
-        if (self.index_buffer != null) c.wgpuBufferRelease(self.index_buffer);
+        for (self.vertex_buffers) |buffer| {
+            c.wgpuBufferRelease(buffer);
+        }
+        if (self.index_buffer != null) {
+            c.wgpuBufferRelease(self.index_buffer);
+        }
     }
 
     /// u8 indices widen to u16 (WebGPU has no 8-bit index format); u16 and u32 are kept.
@@ -438,7 +446,9 @@ fn loadMaterialTextures(
                 continue;
             }
         }
-        if (!gltf_asset.load_textures) continue;
+        if (!gltf_asset.load_textures) {
+            continue;
+        }
         if (material_.textureIndex(material, slot)) |texture_index| {
             texture.* = try gltf_asset.loadTextureFromGltf(
                 texture_index,
@@ -503,7 +513,9 @@ const AccessorReader = struct {
         count: u32,
         default: [N]f32,
     ) ![][N]f32 {
-        if (accessor_id) |id| return self.readFloats(allocator, N, id, count, default);
+        if (accessor_id) |id| {
+            return self.readFloats(allocator, N, id, count, default);
+        }
         const values = try allocator.alloc([N]f32, count);
         @memset(values, default);
         return values;
@@ -519,7 +531,9 @@ const AccessorReader = struct {
         default: [N]f32,
     ) ![][N]f32 {
         const view = try self.elementView(accessor_id);
-        if (view.accessor.count != count) return error.AccessorCountMismatch;
+        if (view.accessor.count != count) {
+            return error.AccessorCountMismatch;
+        }
 
         const values = try allocator.alloc([N]f32, count);
         const components = @min(N, typeSize(view.accessor.accessor_type));
@@ -550,7 +564,9 @@ const AccessorReader = struct {
         const id = accessor_id orelse return values;
 
         const view = try self.elementView(id);
-        if (view.accessor.count != count) return error.AccessorCountMismatch;
+        if (view.accessor.count != count) {
+            return error.AccessorCountMismatch;
+        }
         const components = @min(4, typeSize(view.accessor.accessor_type));
         for (values, 0..) |*value, i| {
             const element = view.element(i);
@@ -589,7 +605,9 @@ const AccessorReader = struct {
     fn elementView(self: Self, accessor_id: u32) !ElementView {
         const gltf = self.gltf_asset.gltf;
         const accessor = gltf.accessors.?[accessor_id];
-        if (accessor.sparse != null) log.warn("sparse accessor {d} not supported; using base values", .{accessor_id});
+        if (accessor.sparse != null) {
+            log.warn("sparse accessor {d} not supported; using base values", .{accessor_id});
+        }
 
         const buffer_view_id = accessor.buffer_view orelse return error.AccessorWithoutBufferView;
         const buffer_view = gltf.buffer_views.?[buffer_view_id];
@@ -599,7 +617,9 @@ const AccessorReader = struct {
         const stride = buffer_view.byte_stride orelse @as(u32, @intCast(element_size));
         const start = buffer_view.byte_offset + accessor.byte_offset;
         const end = start + stride * (accessor.count -| 1) + element_size;
-        if (accessor.count > 0 and end > buffer.len) return error.AccessorOutOfBounds;
+        if (accessor.count > 0 and end > buffer.len) {
+            return error.AccessorOutOfBounds;
+        }
 
         return .{
             .accessor = accessor,
@@ -645,7 +665,9 @@ fn readComponentUint(element: []const u8, component_type: gltf_types.ComponentTy
 
 fn normalize(comptime T: type, value: T, normalized: bool) f32 {
     const f: f32 = @floatFromInt(value);
-    if (!normalized) return f;
+    if (!normalized) {
+        return f;
+    }
     const max: f32 = @floatFromInt(std.math.maxInt(T));
     return @max(f / max, -1.0);
 }

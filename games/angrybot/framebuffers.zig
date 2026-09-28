@@ -54,7 +54,9 @@ pub const FrameBuffers = struct {
 
     /// Recreate the targets if the window's size changed (redfish's framebufferUpdate).
     pub fn update(self: *Self, gpu: *GpuContext) !void {
-        if (self.width == gpu.width and self.height == gpu.height) return;
+        if (self.width == gpu.width and self.height == gpu.height) {
+            return;
+        }
         self.releaseGpuObjects();
         self.* = try init(self.allocator, gpu);
     }

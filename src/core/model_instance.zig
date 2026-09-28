@@ -91,7 +91,9 @@ pub const ModelInstance = struct {
     }
 
     pub fn cleanUp(self: *Self) void {
-        if (self.joint_buffer) |*joint_buffer| joint_buffer.releaseGpuObjects();
+        if (self.joint_buffer) |*joint_buffer| {
+            joint_buffer.releaseGpuObjects();
+        }
         switch (self.animator_impl) {
             .baked_animator => |obj| obj.releaseGpuObjects(),
             else => {},

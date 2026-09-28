@@ -32,7 +32,9 @@ pub fn main(init: std.process.Init) !void {
 
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        if (window.getKey(.escape) == .press) window.setShouldClose(true);
+        if (window.getKey(.escape) == .press) {
+            window.setShouldClose(true);
+        }
 
         const frame = gpu.beginFrame(CLEAR_COLOR) orelse continue;
 

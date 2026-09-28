@@ -127,7 +127,9 @@ pub const Vec3 = extern struct {
     pub fn normalize(v: *Vec3) void {
         const length_squared = v.lengthSquared();
 
-        if (length_squared == 0.0) return;
+        if (length_squared == 0.0) {
+            return;
+        }
 
         const magnitude = std.math.sqrt(length_squared);
 
@@ -141,7 +143,9 @@ pub const Vec3 = extern struct {
 
         const length_squared = v.lengthSquared();
 
-        if (length_squared == 0.0) return result;
+        if (length_squared == 0.0) {
+            return result;
+        }
 
         const magnitude = std.math.sqrt(length_squared);
 
@@ -185,7 +189,9 @@ pub const Vec3 = extern struct {
 
         const length_squared = v.lengthSquared();
 
-        if (length_squared == 0.0) return v;
+        if (length_squared == 0.0) {
+            return v;
+        }
 
         const magnitude = std.math.sqrt(length_squared);
 
@@ -336,7 +342,9 @@ pub const Vec4 = extern struct {
     pub fn normalize(v: *Vec4) void {
         const length_squared = v.lengthSquared();
 
-        if (length_squared == 0.0) return;
+        if (length_squared == 0.0) {
+            return;
+        }
 
         const magnitude = std.math.sqrt(length_squared);
         v.x = v.x / magnitude;
@@ -350,7 +358,9 @@ pub const Vec4 = extern struct {
 
         const length_squared = v.lengthSquared();
 
-        if (length_squared == 0.0) return result;
+        if (length_squared == 0.0) {
+            return result;
+        }
 
         const magnitude = std.math.sqrt(length_squared);
 

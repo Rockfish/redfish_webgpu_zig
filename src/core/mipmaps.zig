@@ -169,7 +169,9 @@ pub const MipmapGenerator = struct {
 
     pub fn releaseGpuObjects(self: *Self) void {
         c.wgpuSamplerRelease(self.sampler);
-        for (self.pipelines) |pipeline| c.wgpuRenderPipelineRelease(pipeline);
+        for (self.pipelines) |pipeline| {
+            c.wgpuRenderPipelineRelease(pipeline);
+        }
         c.wgpuPipelineLayoutRelease(self.pipeline_layout);
         c.wgpuBindGroupLayoutRelease(self.layout);
         c.wgpuShaderModuleRelease(self.module);
@@ -177,7 +179,9 @@ pub const MipmapGenerator = struct {
 
     fn pipelineFor(self: *const Self, format: c.WGPUTextureFormat) ?c.WGPURenderPipeline {
         for (formats, self.pipelines) |candidate, pipeline| {
-            if (candidate == format) return pipeline;
+            if (candidate == format) {
+                return pipeline;
+            }
         }
         return null;
     }

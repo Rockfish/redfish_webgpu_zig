@@ -409,7 +409,9 @@ pub const Animator = struct {
 
     /// Play all animations in the model simultaneously (for InterpolationTest)
     pub fn playAllAnimations(self: *Self) !void {
-        if (self.animations.len == 0) return;
+        if (self.animations.len == 0) {
+            return;
+        }
 
         self.active_animations.clearRetainingCapacity();
 
@@ -433,7 +435,9 @@ pub const Animator = struct {
         self.active_animations.clearRetainingCapacity();
 
         for (animation_indices) |animation_index| {
-            if (animation_index >= self.animations.len) continue;
+            if (animation_index >= self.animations.len) {
+                continue;
+            }
             const animation = self.animations[animation_index];
             const anim_state = AnimationState.init(
                 animation_index,
@@ -499,7 +503,10 @@ pub const Animator = struct {
 
     fn updateNodeTransformationsWeighted(self: *Self, weighted_animations: []const WeightedAnimation, frame_time: f32) void {
         for (weighted_animations) |weighted| {
-            if (weighted.weight <= 0.05) continue; // Skip animations with < 5% influence
+            // Skip animations with < 5% influence
+            if (weighted.weight <= 0.05) {
+                continue;
+            }
 
             const time_range = weighted.end_time - weighted.start_time;
 
@@ -548,7 +555,9 @@ pub const Animator = struct {
 
     /// Calculate world transforms for all nodes using Transform operations
     fn calculateWorldTransforms(self: *Self) void {
-        if (self.gltf_asset.gltf.nodes == null) return;
+        if (self.gltf_asset.gltf.nodes == null) {
+            return;
+        }
 
         // Calculate world transforms by traversing the scene hierarchy
         for (self.root_nodes) |root_node_index| {
@@ -650,7 +659,9 @@ fn getAnimatedScale(scale_data: ?NodeScaleData, current_time: f32) ?Vec3 {
 fn interpolateVec3Linear(data: Vec3LinearData, current_time: f32) Vec3 {
     const keyframe_info = findKeyframeIndices(data.keyframe_times, current_time);
 
-    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) return vec3(0.0, 0.0, 0.0);
+    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) {
+        return vec3(0.0, 0.0, 0.0);
+    }
 
     const start_value = data.values[keyframe_info.start_index];
     const end_value = if (keyframe_info.end_index < data.values.len) data.values[keyframe_info.end_index] else start_value;
@@ -665,7 +676,9 @@ fn interpolateVec3Linear(data: Vec3LinearData, current_time: f32) Vec3 {
 fn interpolateQuatLinear(data: QuatLinearData, current_time: f32) Quat {
     const keyframe_info = findKeyframeIndices(data.keyframe_times, current_time);
 
-    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) return quat(0.0, 0.0, 0.0, 1.0);
+    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) {
+        return quat(0.0, 0.0, 0.0, 1.0);
+    }
 
     const start_value = data.values[keyframe_info.start_index];
     const end_value = if (keyframe_info.end_index < data.values.len) data.values[keyframe_info.end_index] else start_value;
@@ -680,7 +693,9 @@ fn interpolateQuatLinear(data: QuatLinearData, current_time: f32) Quat {
 fn interpolateScalarLinear(data: ScalarLinearData, current_time: f32) f32 {
     const keyframe_info = findKeyframeIndices(data.keyframe_times, current_time);
 
-    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) return 0.0;
+    if (data.values.len == 0 or keyframe_info.start_index >= data.values.len) {
+        return 0.0;
+    }
 
     const start_value = data.values[keyframe_info.start_index];
     const end_value = if (keyframe_info.end_index < data.values.len) data.values[keyframe_info.end_index] else start_value;
@@ -815,8 +830,12 @@ fn getLastKeyframeTime(keyframe_times: []const f32) f32 {
 
 /// Find interpolation factor and surrounding keyframe indices
 fn findKeyframeIndices(times: []const f32, current_time: f32) KeyframeInfo {
-    if (times.len == 0) return .{ .start_index = 0, .end_index = 0, .factor = 0.0 };
-    if (times.len == 1) return .{ .start_index = 0, .end_index = 0, .factor = 0.0 };
+    if (times.len == 0) {
+        return .{ .start_index = 0, .end_index = 0, .factor = 0.0 };
+    }
+    if (times.len == 1) {
+        return .{ .start_index = 0, .end_index = 0, .factor = 0.0 };
+    }
 
     // Find the keyframes that surround the current time
     for (0..times.len - 1) |i| {

@@ -177,12 +177,22 @@ fn materialUniforms(
         MaterialFlags.emissive_texture,
     };
     for (textures, texture_flags) |texture, flag| {
-        if (texture != null) flags |= flag;
+        if (texture != null) {
+            flags |= flag;
+        }
     }
-    if (attributes.has_normals) flags |= MaterialFlags.has_normals;
-    if (attributes.has_vertex_colors) flags |= MaterialFlags.vertex_colors;
-    if (attributes.has_skin) flags |= MaterialFlags.skin;
-    if (material.alpha_mode == .mask) flags |= MaterialFlags.alpha_mask;
+    if (attributes.has_normals) {
+        flags |= MaterialFlags.has_normals;
+    }
+    if (attributes.has_vertex_colors) {
+        flags |= MaterialFlags.vertex_colors;
+    }
+    if (attributes.has_skin) {
+        flags |= MaterialFlags.skin;
+    }
+    if (material.alpha_mode == .mask) {
+        flags |= MaterialFlags.alpha_mask;
+    }
 
     return .{
         .base_color_factor = pbr.base_color_factor,

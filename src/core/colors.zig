@@ -310,7 +310,9 @@ pub const Color = enum {
 /// displayed values as-is: convert them before giving them to a linear, sRGB-surface
 /// pipeline, or they come out lighter.
 pub fn srgbToLinear(value: f32) f32 {
-    if (value <= 0.04045) return value / 12.92;
+    if (value <= 0.04045) {
+        return value / 12.92;
+    }
     return std.math.pow(f32, (value + 0.055) / 1.055, 2.4);
 }
 

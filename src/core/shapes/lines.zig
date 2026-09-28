@@ -68,7 +68,9 @@ pub const Lines = struct {
     }
 
     pub fn draw(self: *Self, frame: *const Frame, segments: []const LineSegment) void {
-        if (segments.len == 0) return;
+        if (segments.len == 0) {
+            return;
+        }
         if (segments.len > self.max_lines) {
             log.warn("drawing {d} lines but max is {d}; drawing the first {d}", .{ segments.len, self.max_lines, self.max_lines });
         }

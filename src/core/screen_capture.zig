@@ -73,14 +73,22 @@ pub const ScreenCapture = struct {
     }
 
     pub fn releaseGpuObjects(self: *Self) void {
-        if (self.readback != null) c.wgpuBufferRelease(self.readback);
-        if (self.view != null) c.wgpuTextureViewRelease(self.view);
-        if (self.texture != null) c.wgpuTextureRelease(self.texture);
+        if (self.readback != null) {
+            c.wgpuBufferRelease(self.readback);
+        }
+        if (self.view != null) {
+            c.wgpuTextureViewRelease(self.view);
+        }
+        if (self.texture != null) {
+            c.wgpuTextureRelease(self.texture);
+        }
         self.* = .{};
     }
 
     fn ensureSize(self: *Self, gpu: *GpuContext) void {
-        if (self.texture != null and self.width == gpu.width and self.height == gpu.height) return;
+        if (self.texture != null and self.width == gpu.width and self.height == gpu.height) {
+            return;
+        }
         self.releaseGpuObjects();
 
         self.width = gpu.width;
@@ -113,7 +121,9 @@ pub const ScreenCapture = struct {
             .callback = onMapped,
             .userdata1 = &request,
         });
-        while (!request.done) c.wgpuInstanceProcessEvents(gpu.instance);
+        while (!request.done) {
+            c.wgpuInstanceProcessEvents(gpu.instance);
+        }
 
         if (request.status != c.WGPUMapAsyncStatus_Success) {
             log.err("readback map failed: status {d}", .{request.status});
@@ -137,7 +147,9 @@ pub const ScreenCapture = struct {
         const is_bgra = format == c.WGPUTextureFormat_BGRA8UnormSrgb or format == c.WGPUTextureFormat_BGRA8Unorm;
         if (is_bgra) {
             var i: usize = 0;
-            while (i < pixels.len) : (i += 4) std.mem.swap(u8, &pixels[i], &pixels[i + 2]);
+            while (i < pixels.len) : (i += 4) {
+                std.mem.swap(u8, &pixels[i], &pixels[i + 2]);
+            }
         }
 
         return .{ .pixels = pixels, .width = self.width, .height = self.height };

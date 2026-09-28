@@ -77,7 +77,9 @@ pub fn main(init: std.process.Init) !void {
 
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        if (window.getKey(.escape) == .press) window.setShouldClose(true);
+        if (window.getKey(.escape) == .press) {
+            window.setShouldClose(true);
+        }
 
         const frame = gpu.beginFrame(CLEAR_COLOR) orelse continue;
         const time: f32 = @floatCast(zglfw.getTime());
@@ -102,7 +104,9 @@ pub fn main(init: std.process.Init) !void {
 /// Optional first argument picks the starting shape: `zig build draw_test-run -- sphere`.
 fn shapeFromArgs(init: std.process.Init) !ShapeKind {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len < 2) return .cube;
+    if (args.len < 2) {
+        return .cube;
+    }
     return std.meta.stringToEnum(ShapeKind, args[1]) orelse {
         log.err("unknown shape '{s}'", .{args[1]});
         return error.UnknownShape;
@@ -142,7 +146,9 @@ fn drawGrid(frame: *const Frame, shader: *const Shader, shape: *const Shape, set
             const model = Mat4.fromTranslation(position).mulMat4(&rotation).mulMat4(&Mat4.fromScale(vec3(fit_scale, fit_scale, fit_scale)));
 
             var draw_uniforms = DrawUniforms.init(model, vec4(u, 0.35, v, alpha));
-            if (shape.has_vertex_colors) draw_uniforms.flags |= core.bindings.DrawFlags.vertex_color;
+            if (shape.has_vertex_colors) {
+                draw_uniforms.flags |= core.bindings.DrawFlags.vertex_color;
+            }
             shape.draw(frame, shader, draw_uniforms);
         }
     }

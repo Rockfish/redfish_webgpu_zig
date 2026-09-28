@@ -361,13 +361,27 @@ fn parseComponentType(value: i64) !gltf_types.ComponentType {
 }
 
 fn parseAccessorType(type_str: []const u8) !gltf_types.AccessorType {
-    if (std.mem.eql(u8, type_str, "SCALAR")) return gltf_types.AccessorType.scalar;
-    if (std.mem.eql(u8, type_str, "VEC2")) return gltf_types.AccessorType.vec2;
-    if (std.mem.eql(u8, type_str, "VEC3")) return gltf_types.AccessorType.vec3;
-    if (std.mem.eql(u8, type_str, "VEC4")) return gltf_types.AccessorType.vec4;
-    if (std.mem.eql(u8, type_str, "MAT2")) return gltf_types.AccessorType.mat2;
-    if (std.mem.eql(u8, type_str, "MAT3")) return gltf_types.AccessorType.mat3;
-    if (std.mem.eql(u8, type_str, "MAT4")) return gltf_types.AccessorType.mat4;
+    if (std.mem.eql(u8, type_str, "SCALAR")) {
+        return gltf_types.AccessorType.scalar;
+    }
+    if (std.mem.eql(u8, type_str, "VEC2")) {
+        return gltf_types.AccessorType.vec2;
+    }
+    if (std.mem.eql(u8, type_str, "VEC3")) {
+        return gltf_types.AccessorType.vec3;
+    }
+    if (std.mem.eql(u8, type_str, "VEC4")) {
+        return gltf_types.AccessorType.vec4;
+    }
+    if (std.mem.eql(u8, type_str, "MAT2")) {
+        return gltf_types.AccessorType.mat2;
+    }
+    if (std.mem.eql(u8, type_str, "MAT3")) {
+        return gltf_types.AccessorType.mat3;
+    }
+    if (std.mem.eql(u8, type_str, "MAT4")) {
+        return gltf_types.AccessorType.mat4;
+    }
     return ParseError.InvalidEnum;
 }
 
@@ -393,9 +407,15 @@ fn parseTarget(value: i64) !gltf_types.Target {
 }
 
 fn parseAlphaMode(alpha_str: []const u8) gltf_types.AlphaMode {
-    if (std.mem.eql(u8, alpha_str, "OPAQUE")) return gltf_types.AlphaMode.opaque_mode;
-    if (std.mem.eql(u8, alpha_str, "MASK")) return gltf_types.AlphaMode.mask;
-    if (std.mem.eql(u8, alpha_str, "BLEND")) return gltf_types.AlphaMode.blend;
+    if (std.mem.eql(u8, alpha_str, "OPAQUE")) {
+        return gltf_types.AlphaMode.opaque_mode;
+    }
+    if (std.mem.eql(u8, alpha_str, "MASK")) {
+        return gltf_types.AlphaMode.mask;
+    }
+    if (std.mem.eql(u8, alpha_str, "BLEND")) {
+        return gltf_types.AlphaMode.blend;
+    }
     return gltf_types.AlphaMode.opaque_mode;
 }
 
@@ -1257,10 +1277,18 @@ fn parseAnimationChannelTarget(target_json: json.Value) !gltf_types.AnimationCha
 }
 
 fn parseTargetProperty(path_str: []const u8) gltf_types.TargetProperty {
-    if (std.mem.eql(u8, path_str, "translation")) return gltf_types.TargetProperty.translation;
-    if (std.mem.eql(u8, path_str, "rotation")) return gltf_types.TargetProperty.rotation;
-    if (std.mem.eql(u8, path_str, "scale")) return gltf_types.TargetProperty.scale;
-    if (std.mem.eql(u8, path_str, "weights")) return gltf_types.TargetProperty.weights;
+    if (std.mem.eql(u8, path_str, "translation")) {
+        return gltf_types.TargetProperty.translation;
+    }
+    if (std.mem.eql(u8, path_str, "rotation")) {
+        return gltf_types.TargetProperty.rotation;
+    }
+    if (std.mem.eql(u8, path_str, "scale")) {
+        return gltf_types.TargetProperty.scale;
+    }
+    if (std.mem.eql(u8, path_str, "weights")) {
+        return gltf_types.TargetProperty.weights;
+    }
     return gltf_types.TargetProperty.translation;
 }
 
@@ -1296,9 +1324,15 @@ fn parseAnimationSampler(sampler_json: json.Value) !gltf_types.AnimationSampler 
 }
 
 fn parseInterpolation(interp_str: []const u8) gltf_types.Interpolation {
-    if (std.mem.eql(u8, interp_str, "LINEAR")) return gltf_types.Interpolation.linear;
-    if (std.mem.eql(u8, interp_str, "STEP")) return gltf_types.Interpolation.step;
-    if (std.mem.eql(u8, interp_str, "CUBICSPLINE")) return gltf_types.Interpolation.cubic_spline;
+    if (std.mem.eql(u8, interp_str, "LINEAR")) {
+        return gltf_types.Interpolation.linear;
+    }
+    if (std.mem.eql(u8, interp_str, "STEP")) {
+        return gltf_types.Interpolation.step;
+    }
+    if (std.mem.eql(u8, interp_str, "CUBICSPLINE")) {
+        return gltf_types.Interpolation.cubic_spline;
+    }
     return gltf_types.Interpolation.linear;
 }
 

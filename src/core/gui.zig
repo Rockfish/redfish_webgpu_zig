@@ -22,7 +22,9 @@ pub fn init(allocator: std.mem.Allocator, window: *zglfw.Window, gpu: *const Gpu
         .render_target_format = gpu.surface_format,
         .depth_stencil_format = gpu_context.depth_format,
     };
-    if (!ImGui_ImplWGPU_Init(&info)) @panic("ImGui_ImplWGPU_Init failed");
+    if (!ImGui_ImplWGPU_Init(&info)) {
+        @panic("ImGui_ImplWGPU_Init failed");
+    }
 }
 
 pub fn newFrame() void {

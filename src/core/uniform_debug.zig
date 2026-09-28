@@ -50,14 +50,18 @@ pub const UniformDebug = struct {
     /// An app value that isn't a uniform (camera position, frame time), as redfish's
     /// `addDebugValue`.
     pub fn addValue(self: *Self, key: []const u8, value: []const u8) void {
-        if (!self.enabled) return;
+        if (!self.enabled) {
+            return;
+        }
         self.put(key, value) catch |err| std.log.warn("uniform debug: {any}", .{err});
     }
 
     /// Records every field of a uniform struct under `prefix`. Padding fields (`_pad`)
     /// are skipped.
     pub fn captureStruct(self: *Self, comptime prefix: []const u8, value: anytype) void {
-        if (!self.enabled) return;
+        if (!self.enabled) {
+            return;
+        }
         self.captureValue(prefix, value);
     }
 

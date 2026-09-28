@@ -56,7 +56,9 @@ fn slotForUniformName(uniform_name: []const u8) ?TextureSlot {
         .{ "texture_emissive", .emissive },
     };
     for (names) |entry| {
-        if (std.mem.eql(u8, entry[0], uniform_name)) return entry[1];
+        if (std.mem.eql(u8, entry[0], uniform_name)) {
+            return entry[1];
+        }
     }
     return null;
 }
@@ -153,7 +155,9 @@ pub const GltfAsset = struct {
         }
 
         for (self.custom_textures.list.items) |custom_tex| {
-            if (custom_tex.texture) |tex| tex.releaseGpuObjects();
+            if (custom_tex.texture) |tex| {
+                tex.releaseGpuObjects();
+            }
         }
     }
 
@@ -171,7 +175,9 @@ pub const GltfAsset = struct {
     /// `mesh_name`, in the material slot `uniform_name` maps to (see `slotForUniformName`).
     /// Overrides the glTF material's texture in that slot. Before `load`.
     pub fn addCustomTexture(self: *Self, mesh_name: []const u8, uniform_name: []const u8, texture_path: []const u8, config: texture.TextureConfig) !void {
-        if (self.is_loaded) log.err("Cannot add texture to already loaded asset", .{});
+        if (self.is_loaded) {
+            log.err("Cannot add texture to already loaded asset", .{});
+        }
 
         const slot = slotForUniformName(uniform_name) orelse {
             log.err("addCustomTexture: no material slot for '{s}'", .{uniform_name});
@@ -190,7 +196,9 @@ pub const GltfAsset = struct {
     /// The custom texture for a mesh and slot, if one was added.
     pub fn getCustomTexture(self: *const Self, mesh_name: []const u8, slot: TextureSlot) ?*texture.Texture {
         for (self.custom_textures.list.items) |custom_tex| {
-            if (custom_tex.slot == slot and std.mem.eql(u8, custom_tex.mesh_name, mesh_name)) return custom_tex.texture;
+            if (custom_tex.slot == slot and std.mem.eql(u8, custom_tex.mesh_name, mesh_name)) {
+                return custom_tex.texture;
+            }
         }
         return null;
     }
@@ -444,7 +452,9 @@ pub const GltfAsset = struct {
     }
 
     pub fn buildModel(self: *Self) !*Model {
-        if (!self.is_loaded) try self.load();
+        if (!self.is_loaded) {
+            try self.load();
+        }
 
         // Create animator
         const animator = try Animator.init(self.context, self);

@@ -187,8 +187,12 @@ pub const GpuContext = struct {
         const size = self.window.getFramebufferSize();
         const width: u32 = @intCast(size[0]);
         const height: u32 = @intCast(size[1]);
-        if (width == 0 or height == 0) return null;
-        if (width != self.width or height != self.height) self.configure(width, height);
+        if (width == 0 or height == 0) {
+            return null;
+        }
+        if (width != self.width or height != self.height) {
+            self.configure(width, height);
+        }
 
         var surface_texture: c.WGPUSurfaceTexture = .{};
         c.wgpuSurfaceGetCurrentTexture(self.surface, &surface_texture);
@@ -197,7 +201,9 @@ pub const GpuContext = struct {
             c.WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal,
             => {},
             c.WGPUSurfaceGetCurrentTextureStatus_Outdated, c.WGPUSurfaceGetCurrentTextureStatus_Lost => {
-                if (surface_texture.texture != null) c.wgpuTextureRelease(surface_texture.texture);
+                if (surface_texture.texture != null) {
+                    c.wgpuTextureRelease(surface_texture.texture);
+                }
                 self.configure(width, height);
                 return null;
             },
@@ -220,7 +226,9 @@ pub const GpuContext = struct {
     pub fn endFrame(self: *Self, frame: Frame) void {
         self.submitFrame(frame);
 
-        if (c.wgpuSurfacePresent(self.surface) != c.WGPUStatus_Success) log.warn("surface present failed", .{});
+        if (c.wgpuSurfacePresent(self.surface) != c.WGPUStatus_Success) {
+            log.warn("surface present failed", .{});
+        }
 
         c.wgpuTextureViewRelease(frame.color_view);
         c.wgpuTextureRelease(frame.surface_texture);
@@ -241,7 +249,9 @@ pub const GpuContext = struct {
     /// presents; offscreen frames stop here.
     pub fn submitFrame(self: *Self, frame: Frame) void {
         var last = frame;
-        if (last.pass != null) last.endPass();
+        if (last.pass != null) {
+            last.endPass();
+        }
 
         const commands = c.wgpuCommandEncoderFinish(frame.encoder, &.{});
         self.uniform_ring.upload(self.queue);
@@ -250,7 +260,9 @@ pub const GpuContext = struct {
         c.wgpuCommandBufferRelease(commands);
         c.wgpuCommandEncoderRelease(frame.encoder);
 
-        if (frame.surface_texture == null) c.wgpuTextureViewRelease(frame.color_view);
+        if (frame.surface_texture == null) {
+            c.wgpuTextureViewRelease(frame.color_view);
+        }
     }
 
     /// Write this frame's camera and time for group 0. Once per frame, before drawing.
@@ -303,16 +315,22 @@ pub const GpuContext = struct {
             return error.SurfaceCapabilities;
         }
         defer c.wgpuSurfaceCapabilitiesFreeMembers(caps);
-        if (caps.formatCount == 0) return error.NoSurfaceFormats;
+        if (caps.formatCount == 0) {
+            return error.NoSurfaceFormats;
+        }
 
         const formats = caps.formats[0..caps.formatCount];
         self.surface_format = for (formats) |format| {
-            if (format == c.WGPUTextureFormat_BGRA8UnormSrgb or format == c.WGPUTextureFormat_RGBA8UnormSrgb) break format;
+            if (format == c.WGPUTextureFormat_BGRA8UnormSrgb or format == c.WGPUTextureFormat_RGBA8UnormSrgb) {
+                break format;
+            }
         } else blk: {
             log.warn("no sRGB surface format; colors will be too dark", .{});
             break :blk formats[0];
         };
-        if (caps.alphaModeCount > 0) self.alpha_mode = caps.alphaModes[0];
+        if (caps.alphaModeCount > 0) {
+            self.alpha_mode = caps.alphaModes[0];
+        }
 
         log.info("surface format {d} (of {d} offered)", .{ self.surface_format, formats.len });
     }
@@ -347,8 +365,12 @@ pub const GpuContext = struct {
     }
 
     fn releaseDepthTexture(self: *Self) void {
-        if (self.depth_view != null) c.wgpuTextureViewRelease(self.depth_view);
-        if (self.depth_texture != null) c.wgpuTextureRelease(self.depth_texture);
+        if (self.depth_view != null) {
+            c.wgpuTextureViewRelease(self.depth_view);
+        }
+        if (self.depth_texture != null) {
+            c.wgpuTextureRelease(self.depth_texture);
+        }
         self.depth_view = null;
         self.depth_texture = null;
     }
@@ -392,7 +414,9 @@ fn requestAdapter(instance: c.WGPUInstance, surface: c.WGPUSurface) !c.WGPUAdapt
         .callback = onAdapter,
         .userdata1 = &request,
     });
-    while (!request.done) c.wgpuInstanceProcessEvents(instance);
+    while (!request.done) {
+        c.wgpuInstanceProcessEvents(instance);
+    }
 
     return request.result orelse {
         log.err("requestAdapter failed: {s}", .{request.message[0..request.message_len]});
@@ -408,7 +432,9 @@ fn onAdapter(
     _: ?*anyopaque,
 ) callconv(.c) void {
     const request: *Request(c.WGPUAdapter) = @ptrCast(@alignCast(userdata1));
-    if (status == c.WGPURequestAdapterStatus_Success) request.result = adapter;
+    if (status == c.WGPURequestAdapterStatus_Success) {
+        request.result = adapter;
+    }
     request.setMessage(message);
     request.done = true;
 }
@@ -424,7 +450,9 @@ fn requestDevice(instance: c.WGPUInstance, adapter: c.WGPUAdapter) !c.WGPUDevice
         .callback = onDevice,
         .userdata1 = &request,
     });
-    while (!request.done) c.wgpuInstanceProcessEvents(instance);
+    while (!request.done) {
+        c.wgpuInstanceProcessEvents(instance);
+    }
 
     return request.result orelse {
         log.err("requestDevice failed: {s}", .{request.message[0..request.message_len]});
@@ -440,7 +468,9 @@ fn onDevice(
     _: ?*anyopaque,
 ) callconv(.c) void {
     const request: *Request(c.WGPUDevice) = @ptrCast(@alignCast(userdata1));
-    if (status == c.WGPURequestDeviceStatus_Success) request.result = device;
+    if (status == c.WGPURequestDeviceStatus_Success) {
+        request.result = device;
+    }
     request.setMessage(message);
     request.done = true;
 }

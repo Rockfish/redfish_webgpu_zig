@@ -184,7 +184,9 @@ fn loadCubemap(io: Io, allocator: Allocator, gpu: *GpuContext, faces: SkyboxFace
     for (face_paths, 0..) |path, layer| {
         var image = try zstbi.Image.loadFromFile(path, 4);
         defer image.deinit();
-        if (faces.mirrored) utils.flipImageHorizontal(&image);
+        if (faces.mirrored) {
+            utils.flipImageHorizontal(&image);
+        }
 
         if (texture == null) {
             face_size = .{ image.width, image.height };

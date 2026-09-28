@@ -83,7 +83,9 @@ pub const Scene = struct {
     // render_gui()
 
     pub fn castTo(self: *Self, comptime T: type) ?*T {
-        if (self.dispatch.type_id != typeId(T)) return null;
+        if (self.dispatch.type_id != typeId(T)) {
+            return null;
+        }
         return @as(*T, @ptrCast(@alignCast(self.dispatch.obj_ptr)));
     }
 

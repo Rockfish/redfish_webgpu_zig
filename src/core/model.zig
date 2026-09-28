@@ -54,7 +54,9 @@ pub const Model = struct {
     }
 
     pub fn cleanUp(self: *Self) void {
-        if (self.joint_buffer) |*joint_buffer| joint_buffer.releaseGpuObjects();
+        if (self.joint_buffer) |*joint_buffer| {
+            joint_buffer.releaseGpuObjects();
+        }
         self.gltf_asset.cleanUp();
     }
 
@@ -103,7 +105,9 @@ pub const Model = struct {
         node: gltf_types.Node,
         node_index: usize,
     ) void {
-        if (!self.animator.nodes[node_index].is_visible) return;
+        if (!self.animator.nodes[node_index].is_visible) {
+            return;
+        }
 
         if (node.mesh) |mesh_index| {
             const transform = self.animator.nodes[node_index].calculated_transform.?;
@@ -127,7 +131,9 @@ pub const Model = struct {
     pub fn findNode(self: *const Self, name: []const u8) ?usize {
         for (self.animator.nodes, 0..) |node, i| {
             if (node.name) |node_name| {
-                if (std.mem.eql(u8, node_name, name)) return i;
+                if (std.mem.eql(u8, node_name, name)) {
+                    return i;
+                }
             }
         }
         return null;
@@ -234,7 +240,9 @@ pub fn debugMatrixMultiplication() void {
 fn debugPrintNode(gltf_asset: *GltfAsset, node: gltf_types.Node, node_index: usize, depth: usize) void {
     var indent_buf: [20]u8 = undefined;
     for (0..depth * 2) |i| {
-        if (i < indent_buf.len) indent_buf[i] = ' ';
+        if (i < indent_buf.len) {
+            indent_buf[i] = ' ';
+        }
     }
     const indent = indent_buf[0..@min(depth * 2, indent_buf.len)];
 

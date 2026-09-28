@@ -160,7 +160,9 @@ pub fn InstancedLayouts(comptime attributes: []const InstanceAttribute) type {
 
         pub const layouts = blk: {
             var result: [Shape.vertex_buffer_layouts.len + attributes.len]c.WGPUVertexBufferLayout = undefined;
-            for (Shape.vertex_buffer_layouts, 0..) |layout, i| result[i] = layout;
+            for (Shape.vertex_buffer_layouts, 0..) |layout, i| {
+                result[i] = layout;
+            }
             for (attributes, 0..) |attribute, i| {
                 result[Shape.vertex_buffer_layouts.len + i] = .{
                     .stepMode = c.WGPUVertexStepMode_Instance,
@@ -245,7 +247,9 @@ pub const Shape = struct {
         instance_data: []const []const u8,
         instance_count: u32,
     ) void {
-        if (!self.is_visible or instance_count == 0) return;
+        if (!self.is_visible or instance_count == 0) {
+            return;
+        }
 
         const gpu = frame.gpu;
         const pass = frame.pass;
@@ -270,7 +274,9 @@ pub const Shape = struct {
 
     /// Group 1 for `shader`: empty for `.none`, else the bound material if it's that kind.
     fn materialFor(gpu: *const GpuContext, shader: *const Shader) ?c.WGPUBindGroup {
-        if (shader.material == .none) return gpu.bindings.empty_bind_group;
+        if (shader.material == .none) {
+            return gpu.bindings.empty_bind_group;
+        }
 
         const bound = gpu.bound_material orelse {
             log.err("Shape.draw: {s} shader with no material bound this frame", .{@tagName(shader.material)});
@@ -312,7 +318,9 @@ fn vertexBufferLayout(attribute: *const c.WGPUVertexAttribute, stride: u64) c.WG
 
 /// `values` if it has one entry per vertex; otherwise a new slice of `default`.
 fn orDefault(comptime T: type, allocator: Allocator, values: []const T, vertex_count: usize, default: T) ![]const T {
-    if (values.len == vertex_count) return values;
+    if (values.len == vertex_count) {
+        return values;
+    }
     std.debug.assert(values.len == 0);
 
     const filled = try allocator.alloc(T, vertex_count);

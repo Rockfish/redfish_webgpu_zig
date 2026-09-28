@@ -373,13 +373,17 @@ pub const SamplerCache = struct {
 
     pub fn get(self: *Self, device: c.WGPUDevice, key: SamplerKey) !c.WGPUSampler {
         const entry = try self.samplers.getOrPut(key);
-        if (!entry.found_existing) entry.value_ptr.* = createSampler(device, key);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = createSampler(device, key);
+        }
         return entry.value_ptr.*;
     }
 
     pub fn releaseGpuObjects(self: *Self) void {
         var it = self.samplers.valueIterator();
-        while (it.next()) |sampler| c.wgpuSamplerRelease(sampler.*);
+        while (it.next()) |sampler| {
+            c.wgpuSamplerRelease(sampler.*);
+        }
     }
 
     pub fn deinit(self: *Self) void {

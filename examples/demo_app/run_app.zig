@@ -510,7 +510,9 @@ fn drawScene(frame: *const Frame, state: *state_.State, shader: *const Shader, s
 
 /// App values dumped with the uniforms, as redfish added them.
 fn addDebugValues(uniform_debug: *core.UniformDebug, state: *state_.State) void {
-    if (!uniform_debug.enabled) return;
+    if (!uniform_debug.enabled) {
+        return;
+    }
 
     var buf: [128]u8 = undefined;
     uniform_debug.addValue("camera_position", state.camera.getPosition().asString(&buf));

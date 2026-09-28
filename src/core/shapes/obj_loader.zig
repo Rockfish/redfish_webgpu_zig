@@ -44,7 +44,9 @@ pub fn loadOBJ(io: Io, allocator: Allocator, gpu: *const GpuContext, filepath: [
     var lines_iter = std.mem.splitScalar(u8, file_data, '\n');
     while (lines_iter.next()) |raw_line| {
         const line = std.mem.trim(u8, raw_line, "\r");
-        if (line.len == 0) continue;
+        if (line.len == 0) {
+            continue;
+        }
 
         if (std.mem.startsWith(u8, line, "v ")) {
             const pos = parseVec3(line[2..]) orelse continue;
@@ -90,7 +92,9 @@ fn parseFace(
 
     var tokens = std.mem.tokenizeAny(u8, face_line, " \t");
     while (tokens.next()) |token| {
-        if (face_count >= face_buf.len) break;
+        if (face_count >= face_buf.len) {
+            break;
+        }
         const vert = parseFaceVertex(token, positions, normals, texcoords) orelse continue;
         const idx = try builder.addVertex(vert.pos, vert.normal, vert.tc);
         try builder.colors.append(color);
@@ -100,7 +104,9 @@ fn parseFace(
 
     // Fan triangulation: (v0, v1, v2), (v0, v2, v3), ...
     const verts = face_buf[0..face_count];
-    if (verts.len < 3) return;
+    if (verts.len < 3) {
+        return;
+    }
     for (2..verts.len) |i| {
         try builder.addIndex(verts[0]);
         try builder.addIndex(verts[i - 1]);
@@ -126,7 +132,9 @@ fn parseFaceVertex(
     const norm_str = parts.next() orelse "";
 
     const pos_idx = parseObjIndex(pos_str) orelse return null;
-    if (pos_idx >= positions.len) return null;
+    if (pos_idx >= positions.len) {
+        return null;
+    }
 
     var result = FaceVertex{
         .pos = positions[pos_idx],
@@ -153,7 +161,9 @@ fn parseFaceVertex(
 
 fn parseObjIndex(str: []const u8) ?usize {
     const val = std.fmt.parseInt(i32, str, 10) catch return null;
-    if (val <= 0) return null;
+    if (val <= 0) {
+        return null;
+    }
     return @intCast(val - 1);
 }
 
@@ -224,7 +234,9 @@ fn parseMtlFile(
     var lines_iter = std.mem.splitScalar(u8, file_data, '\n');
     while (lines_iter.next()) |raw_line| {
         const line = std.mem.trim(u8, raw_line, "\r");
-        if (line.len == 0) continue;
+        if (line.len == 0) {
+            continue;
+        }
 
         if (std.mem.startsWith(u8, line, "newmtl ")) {
             const name = std.mem.trim(u8, line[7..], " \t");

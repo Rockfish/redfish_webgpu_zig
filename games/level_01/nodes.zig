@@ -91,7 +91,9 @@ pub const Node = struct {
     pub fn addChild(self: *Node, child: *Node) !void {
         assert(self != child);
         if (child.parent) |p| {
-            if (p == self) return;
+            if (p == self) {
+                return;
+            }
 
             // Leave old parent
             for (p.children.list.items, 0..) |_c, idx| {
@@ -99,7 +101,9 @@ pub const Node = struct {
                     _ = p.children.list.swapRemove(idx);
                     break;
                 }
-            } else unreachable;
+            } else {
+                unreachable;
+            }
         }
 
         child.parent = self;
@@ -109,14 +113,18 @@ pub const Node = struct {
     /// Remove child
     pub fn removeChild(self: *Node, child: *Node) void {
         if (child.parent) |p| {
-            if (p != self) return;
+            if (p != self) {
+                return;
+            }
 
             for (self.children.list.items, 0..) |_c, idx| {
                 if (_c == child) {
                     _ = self.children.list.swapRemove(idx);
                     break;
                 }
-            } else unreachable;
+            } else {
+                unreachable;
+            }
         }
 
         child.parent = null;
@@ -131,7 +139,9 @@ pub const Node = struct {
                     _ = p.children.list.swapRemove(idx);
                     break;
                 }
-            } else unreachable;
+            } else {
+                unreachable;
+            }
 
             self.parent = null;
         }
@@ -185,7 +195,9 @@ pub const Node = struct {
     }
 
     pub fn castTo(self: *Self, comptime T: type) ?T {
-        if (self.dispatch.type_id != typeId(T)) return null;
+        if (self.dispatch.type_id != typeId(T)) {
+            return null;
+        }
         return @as(T, @ptrCast(@alignCast(self.dispatch.obj_ptr)));
     }
 

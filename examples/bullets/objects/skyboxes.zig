@@ -25,7 +25,9 @@ pub const SkyBoxDirections = struct {
     }
 
     pub fn draw(self: *Self, frame: *const Frame) void {
-        if (!self.is_visible) return;
+        if (!self.is_visible) {
+            return;
+        }
         self.skybox.draw(frame);
     }
 

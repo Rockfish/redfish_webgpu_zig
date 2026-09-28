@@ -16,7 +16,9 @@ test "analyze all public declarations" {
 /// Like `std.testing.refAllDecls`, but also descends into public struct, enum, and union
 /// declarations. `depth` stops re-export cycles.
 fn refAllDeclsRecursive(comptime T: type, comptime depth: u32) void {
-    if (depth == 0) return;
+    if (depth == 0) {
+        return;
+    }
 
     inline for (comptime std.meta.declarations(T)) |decl| {
         // Taking the address is what forces a function body to be analyzed.

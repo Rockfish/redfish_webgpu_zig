@@ -117,7 +117,9 @@ fn writeSceneInfo(allocating: *std.Io.Writer.Allocating, gltf_asset: *const Gltf
 }
 
 fn writeNodeHierarchy(allocating: *std.Io.Writer.Allocating, gltf_asset: *const GltfAsset, node_idx: u32, indent: u32) !void {
-    if (gltf_asset.gltf.nodes == null or node_idx >= gltf_asset.gltf.nodes.?.len) return;
+    if (gltf_asset.gltf.nodes == null or node_idx >= gltf_asset.gltf.nodes.?.len) {
+        return;
+    }
 
     const node = gltf_asset.gltf.nodes.?[node_idx];
     try writeIndent(allocating, indent);
@@ -369,10 +371,14 @@ fn writeDetailedAnimationInfo(allocating: *std.Io.Writer.Allocating, allocator: 
 }
 
 fn writeAnimationKeyframes(allocating: *std.Io.Writer.Allocating, allocator: Allocator, gltf_asset: *const GltfAsset, sampler: gltf_types.AnimationSampler, target_path: gltf_types.TargetProperty, indent: u32, limit: ?u32) !void {
-    if (gltf_asset.gltf.accessors == null) return;
+    if (gltf_asset.gltf.accessors == null) {
+        return;
+    }
 
     const accessors = gltf_asset.gltf.accessors.?;
-    if (sampler.input >= accessors.len or sampler.output >= accessors.len) return;
+    if (sampler.input >= accessors.len or sampler.output >= accessors.len) {
+        return;
+    }
 
     const input_accessor = accessors[sampler.input];
     const output_accessor = accessors[sampler.output];
@@ -407,7 +413,9 @@ fn writeAnimationKeyframes(allocating: *std.Io.Writer.Allocating, allocator: All
             }
 
             for (0..max_frames) |frame_idx| {
-                if (frame_idx >= input_data.?.len) break;
+                if (frame_idx >= input_data.?.len) {
+                    break;
+                }
 
                 const time = input_data.?[frame_idx];
                 try writeIndent(allocating, indent + 2);
@@ -430,7 +438,9 @@ fn writeAnimationKeyframes(allocating: *std.Io.Writer.Allocating, allocator: All
             }
 
             for (0..max_frames) |frame_idx| {
-                if (frame_idx >= input_data.?.len) break;
+                if (frame_idx >= input_data.?.len) {
+                    break;
+                }
 
                 const time = input_data.?[frame_idx];
                 try writeIndent(allocating, indent + 2);
@@ -453,7 +463,9 @@ fn writeAnimationKeyframes(allocating: *std.Io.Writer.Allocating, allocator: All
             }
 
             for (0..max_frames) |frame_idx| {
-                if (frame_idx >= input_data.?.len) break;
+                if (frame_idx >= input_data.?.len) {
+                    break;
+                }
 
                 const time = input_data.?[frame_idx];
                 try writeIndent(allocating, indent + 2);

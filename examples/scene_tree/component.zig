@@ -16,7 +16,9 @@ pub const Component = struct {
     }
 
     pub fn cast(self: Component, comptime T: type) ?*T {
-        if (self.type_id != typeId(T)) return null;
+        if (self.type_id != typeId(T)) {
+            return null;
+        }
         return @ptrCast(@alignCast(self.ptr));
     }
 

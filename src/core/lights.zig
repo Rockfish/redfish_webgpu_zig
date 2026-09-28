@@ -66,7 +66,9 @@ pub const SceneLights = struct {
     }
 
     pub fn setPointLight(self: *Self, index: usize, light: PointLight) void {
-        if (index >= MAX_POINT_LIGHTS) return;
+        if (index >= MAX_POINT_LIGHTS) {
+            return;
+        }
         self.point_lights[index] = light;
         // Recalculate num_point_lights from highest enabled index + 1
         self.num_point_lights = 0;

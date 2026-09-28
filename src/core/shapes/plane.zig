@@ -60,9 +60,15 @@ pub const Plane = struct {
 
     pub fn cleanUp(self: *Self) void {
         self.shape.releaseGpuObjects();
-        if (self.texture_diffuse) |texture| texture.releaseGpuObjects();
-        if (self.texture_normal) |texture| texture.releaseGpuObjects();
-        if (self.texture_spec) |texture| texture.releaseGpuObjects();
+        if (self.texture_diffuse) |texture| {
+            texture.releaseGpuObjects();
+        }
+        if (self.texture_normal) |texture| {
+            texture.releaseGpuObjects();
+        }
+        if (self.texture_spec) |texture| {
+            texture.releaseGpuObjects();
+        }
     }
 
     fn loadTextures(self: *Self, context: Context, gpu: *GpuContext, config: PlaneConfig) !void {

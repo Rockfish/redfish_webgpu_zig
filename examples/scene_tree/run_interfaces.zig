@@ -337,8 +337,12 @@ fn pickCube(cubeboid: *const Shape, cube_transforms: []const Mat4, ray: Ray) ?us
 fn updateViewSize(st: *State) void {
     const width = st.input.window_width;
     const height = st.input.window_height;
-    if (width == st.scaled_width and height == st.scaled_height) return;
-    if (width == 0 or height == 0) return;
+    if (width == st.scaled_width and height == st.scaled_height) {
+        return;
+    }
+    if (width == 0 or height == 0) {
+        return;
+    }
 
     st.scaled_width = width;
     st.scaled_height = height;
