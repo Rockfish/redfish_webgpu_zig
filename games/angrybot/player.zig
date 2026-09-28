@@ -93,8 +93,13 @@ pub const AnimationWeights = struct {
     }
 };
 
+/// The gun muzzle in the Gun node's space (the original AngryGL's muzzle point).
+const GUN_MUZZLE_POINT = vec3(197.0, 76.143, -3.054);
+
 pub const Player = struct {
     model: *Model,
+    /// The Gun node, which the run animations sway; the muzzle flash follows it.
+    gun_node: usize,
     position: Vec3,
     direction: Vec2,
     speed: f32,
@@ -144,6 +149,7 @@ pub const Player = struct {
         const player = try context.alloc.create(Player);
         player.* = Player{
             .model = model,
+            .gun_node = model.findNode("Gun") orelse return error.PlayerGunNodeMissing,
             .last_fire_time = 0.0,
             .is_trying_to_fire = false,
             .is_alive = true,
@@ -205,6 +211,15 @@ pub const Player = struct {
         const muzzle_world_position = player_transform.mulMat4(&muzzle_translation).mulVec4(vec4(0.0, 0.0, 0.0, 1.0));
         const projectile_spawn_point = muzzle_world_position.xyz();
         return projectile_spawn_point;
+    }
+
+    /// World transform of the gun muzzle, following the animated gun (the original's
+    /// `playerModelTransform * getAnimatedGunTransform() * translate(muzzle point)`).
+    /// For the muzzle flash and its light; bullets spawn from `getMuzzlePosition`.
+    pub fn getMuzzleTransform(self: *const Self, player_transform: *const Mat4) Mat4 {
+        const gun_transform = self.model.nodeTransform(self.gun_node);
+        const muzzle_offset = Mat4.fromTranslation(GUN_MUZZLE_POINT);
+        return player_transform.mulMat4(&gun_transform.mulMat4(&muzzle_offset));
     }
 
     fn updateAnimationWeights(self: *Self, direction: Vec2, aim_theta: f32, frame_time: f32) [6]WeightedAnimation {

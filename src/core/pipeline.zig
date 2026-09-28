@@ -85,6 +85,8 @@ pub const PipelineConfig = struct {
     /// Null: no depth attachment.
     depth_format: ?c.WGPUTextureFormat,
     constants: []const OverrideConstant = &.{},
+    /// False: depth only into a pass that has a color attachment (GL's glColorMask off).
+    color_writes: bool = true,
     topology: Topology = .triangle_list,
     /// Overrides `Less` (or `Always` with `no_depth_test`), e.g. `LessEqual` for a skybox
     /// drawn at depth 1.
@@ -126,7 +128,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
     const color_target: c.WGPUColorTargetState = .{
         .format = config.color_format orelse c.WGPUTextureFormat_Undefined,
         .blend = if (state.transparent) &alpha_blend else null,
-        .writeMask = c.WGPUColorWriteMask_All,
+        .writeMask = if (config.color_writes) c.WGPUColorWriteMask_All else c.WGPUColorWriteMask_None,
     };
     const fragment: c.WGPUFragmentState = .{
         .module = config.module,

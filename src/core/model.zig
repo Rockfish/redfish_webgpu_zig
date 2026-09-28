@@ -122,6 +122,24 @@ pub const Model = struct {
     pub fn updateAnimation(self: *Self, delta_time: f32) !void {
         try self.animator.updateAnimation(delta_time);
     }
+
+    /// Index of the first node named `name`, for `nodeTransform`.
+    pub fn findNode(self: *const Self, name: []const u8) ?usize {
+        for (self.animator.nodes, 0..) |node, i| {
+            if (node.name) |node_name| {
+                if (std.mem.eql(u8, node_name, name)) return i;
+            }
+        }
+        return null;
+    }
+
+    /// A node's transform in model space as of the last animation update, e.g. to attach
+    /// an effect to an animated part.
+    pub fn nodeTransform(self: *const Self, node_index: usize) Mat4 {
+        const node = self.animator.nodes[node_index];
+        const transform = node.calculated_transform orelse node.initial_transform;
+        return transform.toMatrix();
+    }
 };
 
 // Debug functions for model analysis

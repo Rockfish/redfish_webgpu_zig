@@ -140,6 +140,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .color_target = render_target,
     });
 
+    // The floor as a depth-only occluder in the emission pass (the original's glColorMask off)
+    const floor_depth_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/floor_shader.wgsl", .{
+        .vertex_buffers = shape_layouts,
+        .material = .pbr,
+        .pass = .shadow,
+        .color_target = render_target,
+        .color_writes = false,
+    });
+
     // bullets - instanced quaternion rotations and positions
     const instanced_matrix_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/instanced_quat.wgsl", .{
         .vertex_buffers = &bullet_system_.vertex_buffer_layouts,
@@ -178,6 +187,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     defer enemy_shader.releaseGpuObjects();
     defer enemy_shadow_shader.releaseGpuObjects();
     defer floor_shader.releaseGpuObjects();
+    defer floor_depth_shader.releaseGpuObjects();
     defer instanced_matrix_shader.releaseGpuObjects();
     defer sprite_shader.releaseGpuObjects();
     defer basic_texture_shader.releaseGpuObjects();
@@ -398,9 +408,14 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
         try player.update(&state, aim_angle);
 
+        // The flash and its light follow the animated gun (after player.update)
         var use_point_light = false;
+        var muzzle_transform = Mat4.Identity;
+        var muzzle_world_position = Vec3.Zero;
 
         if (muzzle_flash.muzzle_flash_sprites_age.list.items.len != 0) {
+            muzzle_transform = player.getMuzzleTransform(&player_transform);
+            muzzle_world_position = muzzle_transform.mulVec4(vec4(0.0, 0.0, 0.0, 1.0)).xyz();
             const min_age = muzzle_flash.getMinAge();
             use_point_light = min_age < 0.03;
         }
@@ -414,12 +429,13 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         const light_view = Mat4.lookAtRhGl(player.position.sub(player_light_dir.mulScalar(20)), player.position, Vec3.World_Up);
         const light_space_matrix = light_projection.mulMat4(&light_view);
 
-        // The player's and enemies' lights (redfish set them as shader uniforms)
+        // The player's and enemies' lights (redfish set them as shader uniforms); the
+        // muzzle light also lights the floor
         var lights = SceneLights.init();
         lights.direction_light = .{ .dir = player_light_dir, .color = light_color };
         lights.ambient = ambient_color;
         if (use_point_light) {
-            lights.setPointLight(0, .{ .world_pos = projectile_spawn_point, .color = muzzle_point_light_color, .enabled = true });
+            lights.setPointLight(0, .{ .world_pos = muzzle_world_position, .color = muzzle_point_light_color, .enabled = true });
         }
 
         // Render after the game update, as redfish; skip the drawing while the window is hidden
@@ -446,6 +462,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.emission, "emission pass", EMISSION_CLEAR_COLOR, true));
         shadow_map.bind(&frame);
         player.draw(&frame, player_emissive_shader, player_transform);
+        // Depth only: bullets that dipped below the floor don't glow through it
+        floor.draw(&frame, floor_depth_shader);
         bullet_system.drawBullets(&frame, instanced_matrix_shader);
         frame.endPass();
 
@@ -457,7 +475,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
         floor.draw(&frame, floor_shader);
         player.draw(&frame, player_shader, player_transform);
-        muzzle_flash.draw(&frame, sprite_shader, projectile_spawn_point);
+        muzzle_flash.draw(&frame, sprite_shader, muzzle_transform, aim_angle);
         enemy_system.drawEnemies(&frame, enemy_shader, &state);
         state.burn_marks.drawMarks(&frame, basic_texture_shader, state.delta_time);
         bullet_system.drawBulletImpacts(&frame, sprite_shader);

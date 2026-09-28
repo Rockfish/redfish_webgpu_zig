@@ -40,6 +40,9 @@ pub const ShaderConfig = struct {
     color_target: ColorTarget = .surface,
     /// False for passes without a depth attachment (full-screen post-processing).
     depth: bool = true,
+    /// False: the pipelines write depth but no color, e.g. an occluder in a pass whose
+    /// color it shouldn't change (GL's glColorMask off).
+    color_writes: bool = true,
     /// What the shader binds at group 3.
     pass: PassKind = .none,
     /// Values for the shader's `override` constants, e.g. `DEPTH_MODE` for a shadow
@@ -96,6 +99,7 @@ pub const Shader = struct {
                 },
                 .depth_format = if (config.depth) gpu_context.depth_format else null,
                 .constants = config.constants,
+                .color_writes = config.color_writes,
             }),
         };
         return shader;

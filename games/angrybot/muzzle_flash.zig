@@ -42,10 +42,11 @@ pub const MuzzleFlash = struct {
             texture_config,
         );
 
+        // 0.05 s per sprite, as the original AngryGL (redfish: 0.03)
         const muzzle_flash_impact_sprite = SpriteSheet.init(
             texture_muzzle_flash_sprite_sheet,
             6,
-            0.03,
+            0.05,
         );
 
         return .{
@@ -93,7 +94,9 @@ pub const MuzzleFlash = struct {
         try self.muzzle_flash_sprites_age.append(sprite_age);
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, sprite_shader: *const Shader, projectile_spawn_point: Vec3) void {
+    /// At the animated gun muzzle (`Player.getMuzzleTransform`), turned toward the camera
+    /// with the original AngryGL's aim-dependent approximation.
+    pub fn draw(self: *const Self, frame: *const Frame, sprite_shader: *const Shader, muzzle_transform: Mat4, aim_theta: f32) void {
         if (self.muzzle_flash_sprites_age.list.items.len == 0) {
             return;
         }
@@ -102,11 +105,20 @@ pub const MuzzleFlash = struct {
 
         const scale: f32 = 50.0;
 
-        var model = Mat4.fromTranslation(projectile_spawn_point).mulMat4(&Mat4.fromScale(vec3(scale, scale, scale)));
-
+        var model = muzzle_transform.mulMat4(&Mat4.fromScale(vec3(scale, scale, scale)));
         model = model.mulMat4(&Mat4.fromRotationX(math.degreesToRadians(-90.0)));
-        model = model.mulMat4(&Mat4.fromRotationZ(math.degreesToRadians(-90.0)));
-        model = model.mulMat4(&Mat4.fromTranslation(vec3(0.7, -0.5, -0.7))); // adjust for position in the texture
+        model = model.mulMat4(&Mat4.fromTranslation(vec3(0.7, 0.0, 0.0))); // the flash's position in the texture
+
+        // Tilt the sprite about its long axis so it faces the camera across aim angles
+        const tip = model.mulVec4(Vec4.init(0.0, 0.0, 1.0, 1.0));
+        const y_rot = math.acos(math.clamp(tip.y, -1.0, 1.0));
+        const t = if (aim_theta >= 0.0) aim_theta else aim_theta + 2.0 * math.pi;
+        const bb_rad: f32 = 0.5;
+        const bb = if (aim_theta >= 0.0 and aim_theta <= math.pi)
+            bb_rad - 2.0 * bb_rad * t / math.pi
+        else
+            -3.0 * bb_rad + 2.0 * bb_rad * t / math.pi;
+        model = model.mulMat4(&Mat4.fromRotationX(bb - y_rot + 0.94));
 
         for (self.muzzle_flash_sprites_age.list.items) |sprite_age| {
             if (sprite_age) |s_age| {

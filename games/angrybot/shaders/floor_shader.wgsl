@@ -5,8 +5,9 @@
 // The floor's light is its own, not the frame's: run_app.zig's floor_light_dir /
 // floor_light_color / floor_ambient_color, which redfish set as floor_shader uniforms.
 // As redfish: the tangent-space normal map is used as a world-space normal, and the PCF
-// sum is divided by 7 and scaled by 0.7. Not ported: the point light branch, which
-// redfish always turned off for the floor.
+// sum is divided by 7 and scaled by 0.7. The muzzle flash light, frame.lights.point_lights[0]
+// while num_point_lights > 0, lights the floor as in the original AngryGL (redfish turned
+// it off), with the original's fixed attenuation.
 
 const SHADOW_BIAS: f32 = 0.001;
 const SPEC_SHININESS: f32 = 0.7;
@@ -19,6 +20,10 @@ const FLOOR_LIGHT_COLOR = vec3f(0.35, 0.35, 0.35);
 const FLOOR_AMBIENT = vec3f(0.08575, 0.08575, 0.1225);
 // normalize(-3, 0, -1)
 const SPEC_LIGHT_DIR = vec3f(-0.9486833, 0.0, -0.31622777);
+// floor_shader.frag's point light attenuation
+const POINT_CONSTANT: f32 = 0.0;
+const POINT_LINEAR: f32 = 0.5;
+const POINT_QUADRATIC: f32 = 3.0;
 
 @group(GROUP_MATERIAL) @binding(0) var<uniform> material: MaterialUniforms;
 @group(GROUP_MATERIAL) @binding(1) var diffuse_texture: texture_2d<f32>;
@@ -83,6 +88,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let view_dir = normalize(frame.view_position - in.world_position);
     let spec = pow(max(dot(view_dir, reflect_dir), 0.0), SPEC_SHININESS);
     color += spec * specular * light_color;
+
+    // Muzzle flash light
+    let lights = frame.lights;
+    if (lights.num_point_lights > 0u) {
+        let point_light = lights.point_lights[0];
+        let point_dir = normalize(point_light.world_pos - in.world_position);
+        let point_diff = max(dot(vec3f(0.0, 1.0, 0.0), point_dir), 0.0);
+        let distance = length(point_light.world_pos - in.world_position);
+        let attenuation = 1.0 / (POINT_CONSTANT + POINT_LINEAR * distance + POINT_QUADRATIC * distance * distance);
+        let point_color = point_light.color * point_diff * diffuse.rgb * attenuation;
+        color += vec4f(point_color, 1.0);
+    }
 
     return color;
 }

@@ -118,3 +118,11 @@ vendored miniaudio module. `core.SoundEngine(ClipName, ClipData)` keeps its API
   (materials say double-sided where needed).
 - The player model is drawn in three passes per frame; its joint buffer gets the same pose
   each time, which is safe (the once-per-frame rule is about different poses).
+
+## Restored from the original AngryGL (C++)
+
+Comparing with the original showed three behaviours lost in the Rust / Zig ports, now back:
+the floor as a depth-only occluder in the emission pass (`color_writes = false`), the muzzle
+flash attached to the animated Gun node (muzzle point (197, 76.143, -3.054) in its space),
+and the muzzle flash light on the floor. The lit eels and the bound floor spec map also
+match the original, which bound `texture_spec` and rotated eel normals with their heading.
