@@ -183,6 +183,53 @@ pub const RawImage = struct {
     }
 };
 
+/// A texture passes draw into and later passes sample (bloom, post-processing): a render
+/// attachment with one mip level, a linear clamped sampler, and a `.texture` bind group,
+/// so `bind(frame)` works as for loaded textures. Recreate it to change its size.
+pub fn initRenderTarget(
+    allocator: Allocator,
+    gpu: *GpuContext,
+    width: u32,
+    height: u32,
+    format: c.WGPUTextureFormat,
+    label: []const u8,
+) !*Texture {
+    const gpu_texture = c.wgpuDeviceCreateTexture(gpu.device, &.{
+        .label = stringView(label),
+        .usage = c.WGPUTextureUsage_RenderAttachment | c.WGPUTextureUsage_TextureBinding,
+        .dimension = c.WGPUTextureDimension_2D,
+        .size = .{ .width = width, .height = height, .depthOrArrayLayers = 1 },
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    });
+    const view = c.wgpuTextureCreateView(gpu_texture, null);
+    const sampler = try gpu.samplers.get(gpu.device, SamplerKey.fromConfig(.{ .filter = .Linear, .wrap = .Clamp }));
+
+    const entries = [_]c.WGPUBindGroupEntry{
+        .{ .binding = 0, .textureView = view },
+        .{ .binding = 1, .sampler = sampler },
+    };
+
+    const texture = try allocator.create(Texture);
+    texture.* = .{
+        .gltf_texture_id = 0,
+        .texture = gpu_texture,
+        .view = view,
+        .sampler = sampler,
+        .bind_group = c.wgpuDeviceCreateBindGroup(gpu.device, &.{
+            .label = stringView(label),
+            .layout = gpu.bindings.texture_layout,
+            .entryCount = entries.len,
+            .entries = &entries,
+        }),
+        .width = width,
+        .height = height,
+        .is_srgb = false,
+    };
+    return texture;
+}
+
 /// Upload RGBA8 pixels with a full mip chain.
 pub fn initFromPixels(
     allocator: Allocator,

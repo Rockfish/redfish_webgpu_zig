@@ -32,6 +32,8 @@ struct FrameUniforms {
     view_position: vec3f,
     time: f32,
     lights: Lights,
+    // Projection x view of the shadow-casting light (redfish's lightSpaceMatrix).
+    light_space: mat4x4f,
 }
 
 struct DrawUniforms {
@@ -40,6 +42,8 @@ struct DrawUniforms {
     color: vec4f,
     flags: u32,
     joint_offset: u32,
+    // Shader-specific per-draw values, documented by the shader that reads them.
+    params: vec4f,
 }
 
 // Group 1 uniforms of `pbr` materials.
@@ -72,4 +76,12 @@ fn skinMatrix(joint_ids: vec4u, weights: vec4f) -> mat4x4f {
 fn jointMatrix(joint: u32) -> mat4x4f {
     let index = min(draw.joint_offset + joint, arrayLength(&joints) - 1u);
     return joints[index];
+}
+
+/// Shadow map coordinates of a position in the light's clip space: uv with WebGPU's
+/// top-left texture origin (y flipped from NDC) and depth as is (0..1 already). The
+/// result's xy outside 0..1 is off the map.
+fn shadowCoords(light_clip: vec4f) -> vec3f {
+    let ndc = light_clip.xyz / light_clip.w;
+    return vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
 }

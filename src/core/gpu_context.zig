@@ -2,7 +2,11 @@
 //! bindings, and brackets each frame. `beginFrame` acquires the surface texture and opens
 //! the main render pass with group 0 bound; `endFrame` closes it, uploads the frame's
 //! per-draw uniforms, submits, and presents. Parallel to redfish's clear / swapBuffers.
-//! `beginOffscreenFrame` / `submitFrame` draw a frame into another texture (screenshots).
+//!
+//! Frames with several passes (shadow map, render targets) start with `acquireFrame` and
+//! open each pass with `frame.beginPass` / `frame.endPass`, the window's last with
+//! `frame.beginSurfacePass`. `beginOffscreenFrame` / `submitFrame` draw a frame into
+//! another texture (screenshots).
 
 const std = @import("std");
 const zglfw = @import("zglfw");
@@ -34,14 +38,70 @@ const log = std.log.scoped(.gpu_context);
 
 pub const depth_format = c.WGPUTextureFormat_Depth32Float;
 
-/// One frame's GPU objects. Valid between `beginFrame` and `endFrame`.
+/// Where a pass draws. Null `color` is a depth-only pass (shadow map); null `depth` a pass
+/// without depth (full-screen post-processing). Both are cleared when the pass begins.
+pub const PassTarget = struct {
+    label: []const u8,
+    color: c.WGPUTextureView = null,
+    depth: c.WGPUTextureView = null,
+    clear_color: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
+};
+
+/// One frame's GPU objects. Valid between `beginFrame` / `acquireFrame` and `endFrame`.
 pub const Frame = struct {
     gpu: *GpuContext,
     /// Null for an offscreen frame.
     surface_texture: c.WGPUTexture,
     color_view: c.WGPUTextureView,
     encoder: c.WGPUCommandEncoder,
-    pass: c.WGPURenderPassEncoder,
+    /// The open pass draws record into; null between passes.
+    pass: c.WGPURenderPassEncoder = null,
+
+    /// The frame's own color view (the window, or the offscreen target) with the shared
+    /// depth texture.
+    pub fn beginSurfacePass(self: *Frame, clear_color: [4]f64) void {
+        self.beginPass(.{
+            .label = if (self.surface_texture == null) "offscreen pass" else "main pass",
+            .color = self.color_view,
+            .depth = self.gpu.depth_view,
+            .clear_color = clear_color,
+        });
+    }
+
+    /// Opens a pass with group 0 bound. The previous pass must be ended. Bind groups
+    /// don't carry over between passes, so group 3 (a shadow map) is bound after this.
+    pub fn beginPass(self: *Frame, target: PassTarget) void {
+        std.debug.assert(self.pass == null);
+
+        const clear = target.clear_color;
+        const color_attachment: c.WGPURenderPassColorAttachment = .{
+            .view = target.color,
+            .depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED,
+            .loadOp = c.WGPULoadOp_Clear,
+            .storeOp = c.WGPUStoreOp_Store,
+            .clearValue = .{ .r = clear[0], .g = clear[1], .b = clear[2], .a = clear[3] },
+        };
+        const depth_attachment: c.WGPURenderPassDepthStencilAttachment = .{
+            .view = target.depth,
+            .depthLoadOp = c.WGPULoadOp_Clear,
+            .depthStoreOp = c.WGPUStoreOp_Store,
+            .depthClearValue = 1.0,
+        };
+        self.pass = c.wgpuCommandEncoderBeginRenderPass(self.encoder, &.{
+            .label = stringView(target.label),
+            .colorAttachmentCount = if (target.color != null) 1 else 0,
+            .colorAttachments = if (target.color != null) &color_attachment else null,
+            .depthStencilAttachment = if (target.depth != null) &depth_attachment else null,
+        });
+
+        c.wgpuRenderPassEncoderSetBindGroup(self.pass, BindGroup.frame, self.gpu.bindings.frame_bind_group, 0, null);
+    }
+
+    pub fn endPass(self: *Frame) void {
+        c.wgpuRenderPassEncoderEnd(self.pass);
+        c.wgpuRenderPassEncoderRelease(self.pass);
+        self.pass = null;
+    }
 };
 
 pub const GpuContext = struct {
@@ -112,9 +172,18 @@ pub const GpuContext = struct {
         return self;
     }
 
-    /// Returns null when there is nothing to draw into this frame (minimized window,
-    /// surface just reconfigured). Skip the frame's rendering in that case.
+    /// The window's frame with its main pass open. Returns null when there is nothing to
+    /// draw into this frame (minimized window, surface just reconfigured); skip the
+    /// frame's rendering in that case.
     pub fn beginFrame(self: *Self, clear_color: [4]f64) ?Frame {
+        var frame = self.acquireFrame() orelse return null;
+        frame.beginSurfacePass(clear_color);
+        return frame;
+    }
+
+    /// The window's frame with no pass open, for frames with several passes. Null as
+    /// `beginFrame`.
+    pub fn acquireFrame(self: *Self) ?Frame {
         const size = self.window.getFramebufferSize();
         const width: u32 = @intCast(size[0]);
         const height: u32 = @intCast(size[1]);
@@ -145,7 +214,7 @@ pub const GpuContext = struct {
         }
 
         const color_view = c.wgpuTextureCreateView(surface_texture.texture, null);
-        return self.beginPass(surface_texture.texture, color_view, clear_color);
+        return self.startFrame(surface_texture.texture, color_view);
     }
 
     pub fn endFrame(self: *Self, frame: Frame) void {
@@ -163,14 +232,16 @@ pub const GpuContext = struct {
     /// frame's begin and end: the frames share the uniform and vertex rings.
     pub fn beginOffscreenFrame(self: *Self, color_view: c.WGPUTextureView, clear_color: [4]f64) Frame {
         c.wgpuTextureViewAddRef(color_view);
-        return self.beginPass(null, color_view, clear_color);
+        var frame = self.startFrame(null, color_view);
+        frame.beginSurfacePass(clear_color);
+        return frame;
     }
 
-    /// Close the frame's pass, upload its per-draw data, and submit. `endFrame` also
+    /// Close the frame's open pass, upload its per-draw data, and submit. `endFrame` also
     /// presents; offscreen frames stop here.
     pub fn submitFrame(self: *Self, frame: Frame) void {
-        c.wgpuRenderPassEncoderEnd(frame.pass);
-        c.wgpuRenderPassEncoderRelease(frame.pass);
+        var last = frame;
+        if (last.pass != null) last.endPass();
 
         const commands = c.wgpuCommandEncoderFinish(frame.encoder, &.{});
         self.uniform_ring.upload(self.queue);
@@ -210,42 +281,17 @@ pub const GpuContext = struct {
         c.wgpuInstanceRelease(self.instance);
     }
 
-    /// Resets the per-frame state and opens the frame's render pass with group 0 bound.
-    fn beginPass(self: *Self, surface_texture: c.WGPUTexture, color_view: c.WGPUTextureView, clear_color: [4]f64) Frame {
+    /// Resets the per-frame state and creates the frame's command encoder.
+    fn startFrame(self: *Self, surface_texture: c.WGPUTexture, color_view: c.WGPUTextureView) Frame {
         self.uniform_ring.reset();
         self.vertex_ring.reset();
         self.bound_material = null;
-
-        const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{});
-
-        const color_attachment: c.WGPURenderPassColorAttachment = .{
-            .view = color_view,
-            .depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED,
-            .loadOp = c.WGPULoadOp_Clear,
-            .storeOp = c.WGPUStoreOp_Store,
-            .clearValue = .{ .r = clear_color[0], .g = clear_color[1], .b = clear_color[2], .a = clear_color[3] },
-        };
-        const depth_attachment: c.WGPURenderPassDepthStencilAttachment = .{
-            .view = self.depth_view,
-            .depthLoadOp = c.WGPULoadOp_Clear,
-            .depthStoreOp = c.WGPUStoreOp_Store,
-            .depthClearValue = 1.0,
-        };
-        const pass = c.wgpuCommandEncoderBeginRenderPass(encoder, &.{
-            .label = stringView(if (surface_texture == null) "offscreen pass" else "main pass"),
-            .colorAttachmentCount = 1,
-            .colorAttachments = &color_attachment,
-            .depthStencilAttachment = &depth_attachment,
-        });
-
-        c.wgpuRenderPassEncoderSetBindGroup(pass, BindGroup.frame, self.bindings.frame_bind_group, 0, null);
 
         return .{
             .gpu = self,
             .surface_texture = surface_texture,
             .color_view = color_view,
-            .encoder = encoder,
-            .pass = pass,
+            .encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &.{}),
         };
     }
 

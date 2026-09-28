@@ -49,6 +49,13 @@ pub const MaterialKind = enum {
     cube_texture,
 };
 
+/// What a shader binds at group 3, pass-specific resources.
+pub const PassKind = enum {
+    none,
+    /// A shadow map: `@binding(0)` texture_depth_2d, `@binding(1)` sampler_comparison.
+    shadow,
+};
+
 pub const PBR_TEXTURE_COUNT = 5;
 
 /// `DrawUniforms.flags` bits.
@@ -104,6 +111,9 @@ pub const FrameUniforms = extern struct {
     view_position: Vec3,
     time: f32, // fills vec3's 16-byte slot
     lights: LightsUniforms = .{},
+    /// Projection x view of the shadow-casting light (redfish's `lightSpaceMatrix`), for
+    /// shadow passes and shadow lookups. Identity when unused.
+    light_space: Mat4 = Mat4.Identity,
 };
 
 /// Mirrors `DrawUniforms` in shaders/common.wgsl (group 2, binding 0). One per draw,
@@ -117,6 +127,9 @@ pub const DrawUniforms = extern struct {
     /// First joint matrix of this draw in group 2's `joints` array (skinned meshes).
     joint_offset: u32 = 0,
     _pad: [2]u32 = .{ 0, 0 },
+    /// Shader-specific per-draw values (e.g. a sprite sheet's columns and age); zero
+    /// unless the shader documents them.
+    params: Vec4 = Vec4.init(0.0, 0.0, 0.0, 0.0),
 
     pub fn init(model: Mat4, color: Vec4) DrawUniforms {
         return .{
@@ -158,8 +171,10 @@ comptime {
     std.debug.assert(@sizeOf(DirectionLightUniforms) == 32);
     std.debug.assert(@sizeOf(PointLightUniforms) == 48);
     std.debug.assert(@sizeOf(LightsUniforms) == 256);
-    std.debug.assert(@sizeOf(FrameUniforms) == 464);
-    std.debug.assert(@sizeOf(DrawUniforms) == 160);
+    std.debug.assert(@sizeOf(FrameUniforms) == 528);
+    std.debug.assert(@offsetOf(FrameUniforms, "light_space") == 464);
+    std.debug.assert(@sizeOf(DrawUniforms) == 176);
+    std.debug.assert(@offsetOf(DrawUniforms, "params") == 160);
 }
 
 /// WGSL constants generated from the declarations above.
@@ -226,6 +241,7 @@ pub const Bindings = struct {
     pbr_layout: c.WGPUBindGroupLayout,
     cube_texture_layout: c.WGPUBindGroupLayout,
     object_layout: c.WGPUBindGroupLayout,
+    shadow_layout: c.WGPUBindGroupLayout,
 
     frame_buffer: c.WGPUBuffer,
     frame_bind_group: c.WGPUBindGroup,
@@ -266,6 +282,7 @@ pub const Bindings = struct {
             .pbr_layout = pbr_layout,
             .cube_texture_layout = cube_texture_layout,
             .object_layout = object_layout,
+            .shadow_layout = createShadowLayout(device),
             .frame_buffer = frame_buffer,
             .frame_bind_group = createUniformBindGroup(device, "frame", frame_layout, frame_buffer, @sizeOf(FrameUniforms)),
             .empty_bind_group = c.wgpuDeviceCreateBindGroup(device, &.{
@@ -286,7 +303,16 @@ pub const Bindings = struct {
         };
     }
 
+    /// Group 3 layout for `kind`; null for `.none` (the pipeline layout stops at group 2).
+    pub fn passLayout(self: *const Self, kind: PassKind) c.WGPUBindGroupLayout {
+        return switch (kind) {
+            .none => null,
+            .shadow => self.shadow_layout,
+        };
+    }
+
     pub fn releaseGpuObjects(self: *Self) void {
+        c.wgpuBindGroupLayoutRelease(self.shadow_layout);
         c.wgpuBindGroupRelease(self.object_bind_group);
         c.wgpuBufferRelease(self.no_joints_buffer);
         c.wgpuBindGroupRelease(self.empty_bind_group);
@@ -381,6 +407,27 @@ fn createTextureLayout(device: c.WGPUDevice, view_dimension: c.WGPUTextureViewDi
     };
     return c.wgpuDeviceCreateBindGroupLayout(device, &.{
         .label = stringView(label),
+        .entryCount = entries.len,
+        .entries = &entries,
+    });
+}
+
+/// `PassKind.shadow`: depth texture at binding 0, comparison sampler at 1.
+fn createShadowLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
+    const entries = [_]c.WGPUBindGroupLayoutEntry{
+        .{
+            .binding = 0,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .texture = .{ .sampleType = c.WGPUTextureSampleType_Depth, .viewDimension = c.WGPUTextureViewDimension_2D },
+        },
+        .{
+            .binding = 1,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .sampler = .{ .type = c.WGPUSamplerBindingType_Comparison },
+        },
+    };
+    return c.wgpuDeviceCreateBindGroupLayout(device, &.{
+        .label = stringView("shadow layout"),
         .entryCount = entries.len,
         .entries = &entries,
     });

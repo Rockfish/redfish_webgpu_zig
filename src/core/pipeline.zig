@@ -58,14 +58,33 @@ pub const Topology = enum {
     }
 };
 
+/// The color attachment a shader's pipelines draw into.
+pub const ColorTarget = union(enum) {
+    /// The window (and screenshot captures, which use its format).
+    surface,
+    /// A render target of this format.
+    format: c.WGPUTextureFormat,
+    /// Depth only: no fragment stage.
+    none,
+};
+
+/// A WGSL `override` constant's value. Booleans are 0 / 1.
+pub const OverrideConstant = struct {
+    key: []const u8,
+    value: f64,
+};
+
 /// Everything a pipeline needs except its render state.
 pub const PipelineConfig = struct {
     label: []const u8,
     module: c.WGPUShaderModule,
     layout: c.WGPUPipelineLayout,
     vertex_buffers: []const c.WGPUVertexBufferLayout,
-    color_format: c.WGPUTextureFormat,
-    depth_format: c.WGPUTextureFormat,
+    /// Null: depth only, no fragment stage.
+    color_format: ?c.WGPUTextureFormat,
+    /// Null: no depth attachment.
+    depth_format: ?c.WGPUTextureFormat,
+    constants: []const OverrideConstant = &.{},
     topology: Topology = .triangle_list,
     /// Overrides `Less` (or `Always` with `no_depth_test`), e.g. `LessEqual` for a skybox
     /// drawn at depth 1.
@@ -98,19 +117,27 @@ pub const PipelineVariants = struct {
 /// Entry points are `vs_main` / `fs_main` (STYLE.md section 10). Every zero default that
 /// would be wrong (write mask, sample count, step mode) is set here explicitly.
 pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state: RenderState) c.WGPURenderPipeline {
+    var constants: [8]c.WGPUConstantEntry = undefined;
+    std.debug.assert(config.constants.len <= constants.len);
+    for (config.constants, 0..) |constant, i| {
+        constants[i] = .{ .key = stringView(constant.key), .value = constant.value };
+    }
+
     const color_target: c.WGPUColorTargetState = .{
-        .format = config.color_format,
+        .format = config.color_format orelse c.WGPUTextureFormat_Undefined,
         .blend = if (state.transparent) &alpha_blend else null,
         .writeMask = c.WGPUColorWriteMask_All,
     };
     const fragment: c.WGPUFragmentState = .{
         .module = config.module,
         .entryPoint = stringView("fs_main"),
+        .constantCount = config.constants.len,
+        .constants = &constants,
         .targetCount = 1,
         .targets = &color_target,
     };
     const depth_stencil: c.WGPUDepthStencilState = .{
-        .format = config.depth_format,
+        .format = config.depth_format orelse c.WGPUTextureFormat_Undefined,
         .depthWriteEnabled = if (state.no_depth_write) c.WGPUOptionalBool_False else c.WGPUOptionalBool_True,
         .depthCompare = config.depth_compare orelse if (state.no_depth_test) c.WGPUCompareFunction_Always else c.WGPUCompareFunction_Less,
         .stencilFront = keep_stencil,
@@ -123,6 +150,8 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
         .vertex = .{
             .module = config.module,
             .entryPoint = stringView("vs_main"),
+            .constantCount = config.constants.len,
+            .constants = &constants,
             .bufferCount = config.vertex_buffers.len,
             .buffers = config.vertex_buffers.ptr,
         },
@@ -131,9 +160,9 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
             .frontFace = c.WGPUFrontFace_CCW,
             .cullMode = if (state.double_sided) c.WGPUCullMode_None else c.WGPUCullMode_Back,
         },
-        .depthStencil = &depth_stencil,
+        .depthStencil = if (config.depth_format != null) &depth_stencil else null,
         .multisample = .{ .count = 1, .mask = 0xFFFF_FFFF },
-        .fragment = &fragment,
+        .fragment = if (config.color_format != null) &fragment else null,
     });
 }
 

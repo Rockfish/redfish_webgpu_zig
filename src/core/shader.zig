@@ -21,7 +21,10 @@ const GpuContext = gpu_context.GpuContext;
 const PipelineVariants = pipeline.PipelineVariants;
 const RenderState = pipeline.RenderState;
 const MaterialKind = bindings.MaterialKind;
+const PassKind = bindings.PassKind;
 const Topology = pipeline.Topology;
+const ColorTarget = pipeline.ColorTarget;
+const OverrideConstant = pipeline.OverrideConstant;
 
 /// How a shader's pipelines are built.
 pub const ShaderConfig = struct {
@@ -32,6 +35,16 @@ pub const ShaderConfig = struct {
     topology: Topology = .triangle_list,
     /// Replaces the `Less` depth test, e.g. `LessEqual` for a skybox at depth 1.
     depth_compare: ?c.WGPUCompareFunction = null,
+    /// What the pipelines draw into: the window's format, another format (a render
+    /// target), or nothing (a depth-only shadow pass, which has no fragment stage).
+    color_target: ColorTarget = .surface,
+    /// False for passes without a depth attachment (full-screen post-processing).
+    depth: bool = true,
+    /// What the shader binds at group 3.
+    pass: PassKind = .none,
+    /// Values for the shader's `override` constants, e.g. `DEPTH_MODE` for a shadow
+    /// pipeline made from a lit shader.
+    constants: []const OverrideConstant = &.{},
 };
 
 const log = std.log.scoped(.shader);
@@ -61,7 +74,7 @@ pub const Shader = struct {
         config: ShaderConfig,
     ) !*Shader {
         const module = try createModule(io, allocator, gpu, file_path);
-        const pipeline_layout = createPipelineLayout(gpu, config.material);
+        const pipeline_layout = createPipelineLayout(gpu, config.material, config.pass);
 
         const shader = try allocator.create(Shader);
         shader.* = .{
@@ -76,8 +89,13 @@ pub const Shader = struct {
                 .vertex_buffers = config.vertex_buffers,
                 .topology = config.topology,
                 .depth_compare = config.depth_compare,
-                .color_format = gpu.surface_format,
-                .depth_format = gpu_context.depth_format,
+                .color_format = switch (config.color_target) {
+                    .surface => gpu.surface_format,
+                    .format => |format| format,
+                    .none => null,
+                },
+                .depth_format = if (config.depth) gpu_context.depth_format else null,
+                .constants = config.constants,
             }),
         };
         return shader;
@@ -121,12 +139,13 @@ fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path:
     return module;
 }
 
-/// Groups 0-2: frame, material, object.
-fn createPipelineLayout(gpu: *const GpuContext, material: MaterialKind) c.WGPUPipelineLayout {
+/// Groups 0-2: frame, material, object; group 3 when the shader binds pass resources.
+fn createPipelineLayout(gpu: *const GpuContext, material: MaterialKind, pass: PassKind) c.WGPUPipelineLayout {
     const shared = &gpu.bindings;
-    const layouts = [_]c.WGPUBindGroupLayout{ shared.frame_layout, shared.materialLayout(material), shared.object_layout };
+    const pass_layout = shared.passLayout(pass);
+    const layouts = [_]c.WGPUBindGroupLayout{ shared.frame_layout, shared.materialLayout(material), shared.object_layout, pass_layout };
     return c.wgpuDeviceCreatePipelineLayout(gpu.device, &.{
-        .bindGroupLayoutCount = layouts.len,
+        .bindGroupLayoutCount = if (pass_layout != null) 4 else 3,
         .bindGroupLayouts = &layouts,
     });
 }

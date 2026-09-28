@@ -23,6 +23,10 @@ pub fn build(b: *std.Build) void {
         .shared = false,
     });
 
+    const zaudio = b.dependency("zaudio", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const zstbi = b.dependency("zstbi", .{
         .target = target,
         .optimize = optimize,
@@ -55,10 +59,12 @@ pub fn build(b: *std.Build) void {
     core.addImport("zglfw", zglfw.module("root"));
     core.addImport("zgui", zgui.module("root"));
     core.addImport("zstbi", zstbi.module("root"));
+    core.addImport("zaudio", zaudio.module("root"));
 
     core.linkLibrary(zgui.artifact("imgui"));
     core.linkLibrary(imgui_wgpu);
     core.linkLibrary(zglfw.artifact("glfw"));
+    core.linkLibrary(zaudio.artifact("miniaudio"));
     linkWgpuNative(core, target, wgpu_native);
 
     inline for ([_]struct {
