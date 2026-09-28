@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-09-28 - PBR edge highlights
+- **pbr.wgsl**: Fresnel on VdotH instead of NdotV, Schlick-GGX `k = (roughness + 1)² / 8` for direct light; the white rims on shadow-side edges (redfish too) are gone, backlit specular remains
+
 ### 2026-09-28 - angrybot: restore original AngryGL features
 - **Emission pass**: floor drawn depth-only (`ShaderConfig.color_writes = false`), so bullets below the floor don't bloom through it
 - **Muzzle flash**: follows the animated gun node (`Model.findNode` / `nodeTransform`) with the original's billboard tilt and 0.05 s frames; its light sits at the muzzle

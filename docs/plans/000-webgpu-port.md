@@ -463,12 +463,12 @@ Done as three commits (design: `docs/designs/009-angrybot.md`):
   converter wrote conjugated quaternions. demo_app entry 9 shows it on its head; scene_tree
   compensates with a 180° X rotation. Fix the converter or re-export the asset.
 
-- **PBR highlights on edges at the shadow side** (redfish too; e.g. panel seams of the
-  spacesuit models). Suspected, not verified: `pbr.wgsl`'s geometry term uses `k = alpha / 2`,
-  so with roughness clamped to 0.1 (`k` = 0.005) `G / (4 NdotV NdotL)` reaches ~1/(4k²) where
-  both dot products are small; and Fresnel uses `NdotV` instead of `VdotH`, which goes to 1 at
-  grazing view. Try Schlick-GGX with `k = (roughness + 1)² / 8` for direct light and
-  Fresnel on `VdotH`, and compare on the same model.
+- **PBR highlights on edges at the shadow side: fixed 2026-09-28.** `pbr.wgsl` now uses
+  Fresnel on `VdotH` and the direct-light `k = (roughness + 1)² / 8`; redfish's NdotV Fresnel
+  and `k = alpha / 2` blew specular out at grazing views. On the modular Spacesuit from its
+  shadow side, the near-white edge pixels halved (1,719 to 857; 722 with no specular at
+  all). What remains is real backlit specular: looking toward demo_app's strong point light
+  (about 10× radiance at the model), glossy bevels facing it reflect at grazing angles.
 
 ## Risks
 

@@ -132,17 +132,22 @@ fn sceneLight(world_position: vec3f, normal: vec3f, base_color: vec3f, metallic:
     return color;
 }
 
-/// Cook-Torrance (GGX, Schlick) for one light, as redfish's pbr.frag.
+/// Cook-Torrance (GGX, Schlick) for one light. Two changes from redfish's pbr.frag, which
+/// lit silhouettes on the shadow side: Fresnel uses the half vector (VdotH), not NdotV,
+/// which went to 1 around every silhouette; and the geometry term uses the direct-light
+/// k = (roughness + 1)² / 8, where redfish's alpha / 2 (0.005 at the 0.1 roughness floor)
+/// let specular grow like 1 / (4k NdotL) as NdotV went to 0.
 fn brdf(normal: vec3f, view_dir: vec3f, light_dir: vec3f, radiance: vec3f, base_color: vec3f, metallic: f32, roughness: f32) -> vec3f {
     let half_dir = normalize(light_dir + view_dir);
 
     let n_dot_l = max(dot(normal, light_dir), 0.0);
     let n_dot_v = max(dot(normal, view_dir), 0.0);
     let n_dot_h = max(dot(normal, half_dir), 0.0);
+    let v_dot_h = max(dot(view_dir, half_dir), 0.0);
 
     // Fresnel-Schlick
     let f0 = mix(vec3f(0.04), base_color, metallic);
-    let fresnel = f0 + (1.0 - f0) * pow(1.0 - n_dot_v, 5.0);
+    let fresnel = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
 
     // GGX distribution
     let alpha = roughness * roughness;
@@ -150,8 +155,8 @@ fn brdf(normal: vec3f, view_dir: vec3f, light_dir: vec3f, radiance: vec3f, base_
     let denom = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
     let distribution = alpha2 / (PI * denom * denom);
 
-    // Schlick-GGX geometry
-    let k = alpha / 2.0;
+    // Schlick-GGX geometry, direct lighting
+    let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
     let geometry = (n_dot_v / (n_dot_v * (1.0 - k) + k)) * (n_dot_l / (n_dot_l * (1.0 - k) + k));
 
     let specular = (fresnel * distribution * geometry) / (4.0 * n_dot_v * n_dot_l + 0.0001);
