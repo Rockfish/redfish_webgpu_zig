@@ -2,6 +2,14 @@
 
 ## Recent Changes
 
+### 2026-09-27 - angrybot and skybox (Port Step 9)
+- **Design**: `docs/designs/009-angrybot.md`
+- **Core**: multi-pass frames (`acquireFrame`, `beginPass` / `endPass`), shaders for render targets / depth-only / group 3 / override constants, `ShadowMap`, `FrameUniforms.light_space`, `DrawUniforms.params`, render-target textures (`rgba16float`), zaudio `SoundEngine`, `GltfAsset.useGammaSpaceTextures`, `SkyboxFaces.mirrored`
+- **angrybot**: shadow, emission, scene, blur, composite passes; one shader file for player / enemy / shadow / emission pipelines; correct shadow UVs; gamma-space shading to match GL; sound
+- **skybox**: ported on core `Skybox` (the GL version showed no sky)
+- **Fixes**: enemy node transforms and normals, floor spec map binding, fullscreen quad depth outside WebGPU's 0..1
+- **Tests**: 62 pass
+
 ### 2026-09-27 - demo_app Complete (Port Step 8)
 - **Screenshots**: `core.ScreenCapture` renders an extra offscreen frame (surface format) and reads it back; demo_app's F12 writes `temp/<timestamp>_screenshot.png` without the UI
 - **Uniform dump**: `core.UniformDebug` on `GpuContext` captures frame, draw, and material uniform structs by field path; G toggles, U prints, F12 writes the JSON

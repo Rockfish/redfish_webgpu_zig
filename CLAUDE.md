@@ -25,7 +25,9 @@ rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes
 textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app;
 Step 5 skinning (live and baked, one shader) and `animation_example`; Step 6 lights, lines,
 skybox, instancing, and the `bullets` app; Step 7 `level_01`; Step 8 screenshots
-(`ScreenCapture`) and the uniform dump (`UniformDebug`) in demo_app.
+(`ScreenCapture`) and the uniform dump (`UniformDebug`) in demo_app; Step 9 multi-pass
+frames, shadow map, render targets, zaudio, `angrybot` (the regression check), `skybox`.
+The port is complete.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
@@ -76,6 +78,10 @@ docs/
   `DrawFlags.skinned`. Draw each posed `ModelInstance` once per frame
 - Per-frame vertex data (lines, instance attributes) goes through `gpu.vertex_ring`
 - Lights: `SceneLights.uniforms()` into `FrameUniforms.lights`, once per frame
+- Multi-pass frames: `gpu.acquireFrame()`, then `frame.beginPass(PassTarget)` / `endPass`
+  per pass; group 3 (e.g. `ShadowMap.bind`) is set after each `beginPass`. Shaders for render
+  targets or depth-only passes set `ShaderConfig.color_target` / `depth` / `pass`; variants
+  of one WGSL file differ by `constants` (WGSL `override`). See docs/designs/009-angrybot.md
 - GL-era color constants (clear colors, part colors, palette) go through `srgbToLinear`
 - Shared shaders live in `src/core/shaders/` (`common.wgsl` embedded, `pbr.wgsl` loaded by path)
 - GL-era color constants go through `colors.srgbToLinear` to look the same

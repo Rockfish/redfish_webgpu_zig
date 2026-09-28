@@ -83,6 +83,10 @@ pub const SkyboxFaces = struct {
     bottom: [:0]const u8,
     forward: [:0]const u8,
     back: [:0]const u8,
+    /// redfish core's layout (bullets): +Z = back, -Z = forward, each face flipped
+    /// horizontally. False: the standard order with `forward` at +Z and no flip, as
+    /// examples/skybox's own loader.
+    mirrored: bool = true,
 };
 
 /// A cube-map sky drawn at depth 1 behind everything. Owns its shader and pipeline
@@ -163,13 +167,16 @@ pub const Skybox = struct {
     }
 };
 
-/// Six faces as layers of one texture, in cube order (+X, -X, +Y, -Y, +Z, -Z) with
-/// redfish's assignment (+Z = back, -Z = forward) and horizontal flip.
+/// Six faces as layers of one texture, in cube order (+X, -X, +Y, -Y, +Z, -Z), laid out
+/// as `faces.mirrored` says.
 fn loadCubemap(io: Io, allocator: Allocator, gpu: *GpuContext, faces: SkyboxFaces) !c.WGPUTexture {
     zstbi.init(io, allocator);
     defer zstbi.deinit();
 
-    const face_paths = [_][:0]const u8{ faces.right, faces.left, faces.top, faces.bottom, faces.back, faces.forward };
+    const face_paths = if (faces.mirrored)
+        [_][:0]const u8{ faces.right, faces.left, faces.top, faces.bottom, faces.back, faces.forward }
+    else
+        [_][:0]const u8{ faces.right, faces.left, faces.top, faces.bottom, faces.forward, faces.back };
 
     var texture: c.WGPUTexture = null;
     var face_size: [2]u32 = .{ 0, 0 };
@@ -177,7 +184,7 @@ fn loadCubemap(io: Io, allocator: Allocator, gpu: *GpuContext, faces: SkyboxFace
     for (face_paths, 0..) |path, layer| {
         var image = try zstbi.Image.loadFromFile(path, 4);
         defer image.deinit();
-        utils.flipImageHorizontal(&image);
+        if (faces.mirrored) utils.flipImageHorizontal(&image);
 
         if (texture == null) {
             face_size = .{ image.width, image.height };

@@ -418,7 +418,7 @@ into it; timestamps used the boot clock (`.awake`) and dated files 1970, now wal
 local time (libc `localtime_r`; Zig's std has no time zones). wgpu-native rejects `WGPU_WHOLE_MAP_SIZE` in `wgpuBufferMapAsync`; pass the real size.
 The zgui panels were already complete from Step 4.
 
-### Step 9 - angrybot and Remaining Examples
+### Step 9 - angrybot and Remaining Examples ✅
 
 - Offscreen targets: shadow depth texture (comparison sampler, PCF), emission, scene
   (`rgba16float` for bloom headroom), blur ping-pong, composite to the surface, all as
@@ -430,6 +430,23 @@ The zgui panels were already complete from Step 4.
 
 **Done:** angrybot plays as in GL, including shadows and bloom. It is then the regression
 check for later changes.
+
+Done as three commits (design: `docs/designs/009-angrybot.md`):
+
+- **9a core:** multi-pass frames (`acquireFrame`, `frame.beginPass` / `endPass`,
+  `PassTarget`), `ShaderConfig.color_target` / `depth` / `pass` / `constants` (WGSL
+  overrides), `ShadowMap` with group 3 `PassKind.shadow`, `FrameUniforms.light_space`,
+  `common.wgsl` `shadowCoords`, `DrawUniforms.params`, `texture.initRenderTarget` and
+  `hdr_format`, zaudio `SoundEngine`.
+- **9b angrybot:** five passes per frame. One `player_shader.wgsl` serves the player,
+  enemies, shadow, and emission pipelines through override constants (redfish's uniform
+  switches). Shaded in gamma space, as GL: the targets hold sRGB-encoded values and the
+  composite decodes once, which matches GL's brightness; linear shading doubled it.
+  Differences kept on purpose: the eels are lit (GL's wrong normals made them black), the
+  floor samples its spec map (GL read texture unit 0).
+- **9c skybox:** core `Skybox` with `SkyboxFaces.mirrored = false` (the example's own
+  loader used the standard face order without flipping). redfish's GL version of this
+  example was broken (no sky, solid red cube); the port shows both.
 
 ---
 
