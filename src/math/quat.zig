@@ -358,33 +358,26 @@ pub const Quat = extern struct {
         return self.rotateVec(Vec3.init(0.0, 0.0, 1.0));
     }
 
+    /// Rotation that looks from `position` at `target` down its −Z axis, with `up_dir` as
+    /// up (the same convention as `Transform.lookAt`). Identity when the two points coincide.
+    /// The basis is right = up × back, up = back × right, a proper rotation; redfish built
+    /// right = forward × up, a mirrored basis that doesn't convert to a quaternion.
     pub fn lookAtOrientation(position: Vec3, target: Vec3, up_dir: Vec3) Quat {
-        // Calculate direction vector
-        var forward_dir = target.sub(position);
-        if (forward_dir.lengthSquared() == 0.0) {
+        const direction = target.sub(position);
+        if (direction.lengthSquared() == 0.0) {
             return Quat.Identity;
         }
-        forward_dir.normalize();
 
-        // Normalize up vector
-        var up_normalized = up_dir;
-        up_normalized.normalize();
+        const back_dir = direction.mulScalar(-1.0).toNormalized();
+        const right_vec = up_dir.crossNormalized(back_dir);
+        const new_up = back_dir.cross(right_vec);
 
-        // Calculate right vector (cross product of forward and up)
-        const right_vec = forward_dir.crossNormalized(up_normalized);
-
-        // Recalculate up vector to ensure orthogonality
-        const new_up = right_vec.crossNormalized(forward_dir);
-
-        // Create rotation matrix from basis vectors
         const rotation_matrix = Mat4{ .data = .{
             .{ right_vec.x, right_vec.y, right_vec.z, 0.0 },
             .{ new_up.x, new_up.y, new_up.z, 0.0 },
-            .{ forward_dir.x, forward_dir.y, forward_dir.z, 0.0 },
+            .{ back_dir.x, back_dir.y, back_dir.z, 0.0 },
             .{ 0.0, 0.0, 0.0, 1.0 },
         } };
-
-        // Convert rotation matrix to quaternion
         return rotation_matrix.toQuat();
     }
 
@@ -414,3 +407,22 @@ pub const Quat = extern struct {
         return Self{ .data = .{ x, y, z, w } };
     }
 };
+
+test "lookAtOrientation: forward (-Z) points at the target, up stays up" {
+    const position = Vec3.init(1.0, 2.0, 3.0);
+    const up = Vec3.init(0.0, 1.0, 0.0);
+    const targets = [_]Vec3{
+        Vec3.init(6.0, 2.0, 3.0), // +X
+        Vec3.init(1.0, 2.0, -7.0), // -Z
+        Vec3.init(-4.0, 5.0, 8.0), // off-axis
+    };
+    for (targets) |target| {
+        const rotation = Quat.lookAtOrientation(position, target, up);
+        const expected = target.sub(position).toNormalized();
+        const forward = rotation.forward();
+        try std.testing.expectApproxEqAbs(expected.x, forward.x, 1e-5);
+        try std.testing.expectApproxEqAbs(expected.y, forward.y, 1e-5);
+        try std.testing.expectApproxEqAbs(expected.z, forward.z, 1e-5);
+        try std.testing.expect(rotation.up().y > 0.0);
+    }
+}

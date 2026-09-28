@@ -2,6 +2,14 @@
 
 ## Recent Changes
 
+### 2026-09-28 - Motion patterns, phases 1-2 (plan 016)
+- **core.motion**: `SmoothFollow`, `dampLookAt`, `moveToward`, `dampVec3`, `dampQuat`, `dampAlpha` (frame-rate independent damping), with invariant tests
+- **angrybot**: the game camera eases after the player (`SmoothFollow`) instead of snapping
+- **level_01**: click-to-move uses `moveToward`
+- **Fix**: `Quat.lookAtOrientation` built a mirrored basis; now matches `Transform.lookAt`, with a test
+- **Plans**: redfish_gl_zig plans 001-016, backlog, and notes imported; `docs/plans/README.md` describes parking and resuming plans
+- **Tests**: 69 pass
+
 ### 2026-09-28 - Orthographic mouse picking
 - **math.getWorldRayFromMouse**: returns `MouseRay { origin, direction }` unprojected at the near and far planes; works for orthographic projections (redfish's version was perspective-only, so clicking in ortho mode hit the wrong place)
 - **Callers**: scene_tree, level_01, angrybot use the ray's origin; new unit test for orthographic rays

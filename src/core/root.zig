@@ -43,6 +43,8 @@ pub const skinning = @import("skinning.zig");
 
 pub const Movement = @import("movement.zig").Movement;
 pub const MovementDirection = @import("movement.zig").MovementDirection;
+pub const motion = @import("motion.zig");
+pub const SmoothFollow = motion.SmoothFollow;
 
 pub const AABB = @import("aabb.zig").AABB;
 pub const Ray = @import("aabb.zig").Ray;

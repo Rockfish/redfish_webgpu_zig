@@ -38,6 +38,8 @@ const SCR_HEIGHT: f32 = 1000.0;
 /// redfish's GL clear color, converted so it looks the same on the sRGB surface.
 const CLEAR_COLOR = [4]f64{ srgbToLinear(0.1), srgbToLinear(0.3), srgbToLinear(0.1), 1.0 };
 const NO_HIT = vec4(0.0, 0.0, 0.0, 0.0);
+/// Units per second the scene moves toward a clicked point.
+const CLICK_MOVE_SPEED: f32 = 20.0;
 const HIT = vec4(1.0, 0.0, 0.0, 0.0);
 
 // Wrapper types for objects that implement the Node interface
@@ -263,8 +265,6 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     const xz_plane_point = vec3(0.0, 0.0, 0.0);
     const xz_plane_normal = vec3(0.0, 1.0, 0.0);
 
-    var moving = false;
-
     const barrel = try shapes.loadOBJ(
         init.io,
         context.alloc,
@@ -307,28 +307,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
         if (state.input.mouse_left_button and state.world_point != null) {
             state.target_position = state.world_point.?;
-            moving = true;
         }
 
-        if (moving) {
-            var direction = state.target_position.sub(state.current_position);
-            const distance = direction.length();
-
-            if (distance < 0.1) {
-                state.current_position = state.target_position;
-                moving = false;
-            } else {
-                direction.normalize();
-                const moveDistance = state.delta_time * 20.0;
-
-                if (moveDistance > distance) {
-                    state.current_position = state.target_position;
-                    moving = false;
-                } else {
-                    state.current_position = state.current_position.add(direction.mulScalar(moveDistance));
-                }
-            }
-        }
+        // Glide to the clicked point; stays put once there
+        state.current_position = core.motion.moveToward(
+            state.current_position,
+            state.target_position,
+            CLICK_MOVE_SPEED,
+            state.delta_time,
+        );
 
         model_node.updateAnimation(state.delta_time);
 

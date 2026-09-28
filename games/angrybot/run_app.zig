@@ -22,6 +22,7 @@ const GpuContext = core.GpuContext;
 const MeshPrimitive = core.MeshPrimitive;
 const OverrideConstant = core.pipeline.OverrideConstant;
 const SceneLights = core.SceneLights;
+const SmoothFollow = core.SmoothFollow;
 const ShadowMap = core.ShadowMap;
 const Shape = core.shapes.Shape;
 const State = world.State;
@@ -50,6 +51,10 @@ const VIEW_PORT_HEIGHT: f32 = 1000.0;
 
 // Lighting
 const LIGHT_FACTOR: f32 = 0.8;
+
+/// How quickly the game camera catches up with the player, per second (motion.SmoothFollow).
+/// At the player's run speed (5 units/s) the camera trails by about 5 / rate.
+const CAMERA_FOLLOW_RATE: f32 = 8.0;
 const NON_BLUE: f32 = 0.9;
 
 // angrybot shades in gamma space, as redfish's GL did (no sRGB textures or surface): its
@@ -269,6 +274,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
     // Models and systems
     var player = try Player.init(context, gpu);
+    // The game camera eases after the player (redfish snapped it to the player every frame)
+    var camera_follow = SmoothFollow.init(player.position, camera_follow_vec, CAMERA_FOLLOW_RATE);
     defer player.cleanUp();
     var enemy_system = try EnemySystem.init(context, gpu);
     defer enemy_system.cleanUp();
@@ -358,10 +365,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         world.processInput();
 
         const p = state.player.position;
-        state.game_camera.reset(
-            state.player.position.add(camera_follow_vec),
-            state.player.position,
-        );
+        camera_follow.update(&state.game_camera.movement, state.player.position, state.delta_time);
         state.floating_camera.reset(
             vec3(p.x, 0.5, p.z + 4.0),
             state.player.position,

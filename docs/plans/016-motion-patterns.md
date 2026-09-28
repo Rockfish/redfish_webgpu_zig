@@ -151,15 +151,15 @@ is the composition boundary (§1), not the field lists.
 ## 4. Phases
 
 ### Phase 1 — Foundations
-- [ ] `motion.zig` with `dampAlpha` + `moveToward` and invariant tests
+- [x] `motion.zig` with `dampAlpha` + `moveToward` and invariant tests
       (frame-rate independence, no overshoot, snap-on-arrival)
-- [ ] Replace level_01's inline click-to-move stepping with the engine version
-- [ ] Export from `core/root.zig`; tests run under `zig build test` (the core
+- [x] Replace level_01's inline click-to-move stepping with the engine version
+- [x] Export from `core/root.zig`; tests run under `zig build test` (the core
       module tests and `tests/analyze_all.zig`)
 
 ### Phase 2 — Follow & aim
-- [ ] `SmoothFollow` (position + target damping), `LookAtDamp`
-- [ ] Use in angrybot or level_01 chase camera (replaces target snapping)
+- [x] `SmoothFollow` (position + target damping), `LookAtDamp` (as `dampLookAt`)
+- [x] Use in angrybot or level_01 chase camera (replaces target snapping)
 
 ### Phase 3 — Paths
 - [ ] Linear waypoint `PathFollow` with repeat modes
@@ -188,3 +188,23 @@ now: phases 1-2. `math/easing.zig` has a scalar `smoothDamp` (Unity-style,
 velocity state) that nothing uses; `dampAlpha` is the simpler starting point, as
 §1 says. `camera_gimbal.zig` is still unreferenced in core; its revival stays in
 phase 4.
+
+**2026-09-28** — Phases 1-2 done.
+- `src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`, `dampVec3`,
+  `dampQuat`, `dampAlpha`, with invariant tests (the same second at 10, 60, and 144 fps
+  lands in the same place; `moveToward` never overshoots and stays at the goal;
+  `SmoothFollow` never moves away from a stationary followee; `dampLookAt` settles on the
+  focus). Exported as `core.motion` and `core.SmoothFollow`.
+- `LookAtDamp` became a function, `dampLookAt(rotation, position, focus, up, rate, dt)`:
+  it needs no state beyond the rotation the caller already holds.
+- `SmoothFollow.offset` is in world space (angrybot's `camera_follow_vec`); a
+  followee-local offset (chase cam behind a turning player) can come when needed.
+- **Bug found:** `Quat.lookAtOrientation` built right = forward x up, a mirrored basis
+  that doesn't convert to a quaternion (it returned identity for a +X focus). Fixed to the
+  `Transform.lookTo` basis (right = up x back), with a test. It had no other callers.
+- level_01: click-to-move is one `moveToward` call per frame; the `moving` flag is gone
+  (moveToward is idempotent at the goal). redfish's 0.1-unit snap threshold is gone too.
+- angrybot: the game camera follows the player through `SmoothFollow` at rate 8 (about
+  0.6 units of lag at run speed) instead of being snapped every frame.
+- No first user for `dampLookAt` yet; plan 008's turret aim is the natural one.
+

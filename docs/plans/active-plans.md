@@ -6,7 +6,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 - **[016-motion-patterns.md](016-motion-patterns.md)**: time-based, goal-seeking motion
   (`src/core/motion.zig`): `dampAlpha`, `moveToward`, `SmoothFollow`, damped look-at.
-  - Scope now: phases 1-2. First users: level_01 click-to-move, angrybot's follow camera.
+  - Phases 1-2 done 2026-09-28 (level_01 click-to-move, angrybot's follow camera).
+    Next: phase 3 (`PathFollow`), or park it.
 
 ## ⏸️ Parked
 
@@ -60,4 +61,5 @@ How these files work, including parking and resuming plans: [README.md](README.m
 **2026-09-28**: Imported plans 001-016, `backlog.md`, the notes files, and the movement
 reviews from redfish_gl_zig; statuses reconciled with this repo (a note under each plan's
 title). Plan 016 made active (phases 1-2). Review notes added to 012 and 005. Older
-session notes stay in redfish_gl_zig's `active-plans.md`.
+session notes stay in redfish_gl_zig's `active-plans.md`. Plan 016 phases 1-2 done:
+`core.motion`, used by level_01 and angrybot; `Quat.lookAtOrientation` fixed.
