@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "demo_app", .exe_name = "demo_app", .source = "examples/demo_app/main.zig" },
         .{ .name = "animation", .exe_name = "animation_example", .source = "examples/animation_example/main.zig" },
         .{ .name = "bullets", .exe_name = "bullets", .source = "examples/bullets/main.zig" },
+        .{ .name = "level_01", .exe_name = "level_01", .source = "games/level_01/main.zig" },
     }) |app| {
         const exe = b.addExecutable(.{
             .name = app.exe_name,

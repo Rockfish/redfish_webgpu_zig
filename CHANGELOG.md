@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-09-27 - level_01 (Port Step 7)
+- **level_01**: ported from `games/level_01` (main, run_app, state, nodes); `basic_model.wgsl` unlit with hit color and vertex-color barrel; Spacesuit on core `pbr.wgsl`
+- **Not ported**: `run_animation.zig` and `player_shader` (never called), main's unused print tests
+- **Fixes**: Spacesuit had no working light in GL (now scene_tree's light); scroll zoom used pixel dimensions
+
 ### 2026-09-27 - bullets (Port Step 6)
 - **Design**: `docs/designs/006-bullets.md`
 - **Lights**: `SceneLights` in group 0 for every shader; PBR reads direction and point lights; existing apps keep their look

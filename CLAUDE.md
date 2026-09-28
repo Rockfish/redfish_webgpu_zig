@@ -24,7 +24,7 @@ Steps 1-3a done: wgpu-native skeleton (`gpu_caps`), carry-over modules, 0..1 dep
 rendering foundation (bindings, uniform ring, shaders, pipeline variants, shapes; `draw_test`),
 textures / mipmaps / samplers, all shapes, `scene_tree`; Step 4 glTF + PBR with demo_app;
 Step 5 skinning (live and baked, one shader) and `animation_example`; Step 6 lights, lines,
-skybox, instancing, and the `bullets` app.
+skybox, instancing, and the `bullets` app; Step 7 `level_01`.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

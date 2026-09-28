@@ -381,11 +381,19 @@ and now drawing them. The trees stay near white: their MTL colors are Blender's 
 
 **Done:** all three scenes run, PageUp/PageDown switches cleanly, cannon fires.
 
-### Step 7 - level_01
+### Step 7 - level_01 ✅
 
 - Port app files; replace per-app `gl.*` setup with core calls
 
 **Done:** level_01 plays as in GL.
+
+Ported main, run_app, state, nodes, and `basic_model.wgsl` (unlit: texture or vertex color,
+plus the hit color). The Spacesuit uses the core `pbr.wgsl` (redfish's `animated_pbr`) with
+scene_tree's light. redfish never set that shader's light position or intensity, so the
+model got only its 0.15 ambient. Not ported: `run_animation.zig` and `player_shader`
+(never called and already broken against redfish's current APIs), and main's unused
+movement-math print tests. Fixed: the scroll handler set screen dimensions in pixels
+instead of window units.
 
 ### Step 8 - demo_app Complete
 
