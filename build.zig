@@ -6,8 +6,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // 4x multisampled anti-aliasing for everything drawn in the window pass (plan 018).
+    // Fixed per build: every pipeline is created with the sample count.
+    const msaa = b.option(bool, "msaa", "4x MSAA anti-aliasing (default: true)") orelse true;
+
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "content_dir", content_dir);
+    build_options.addOption(bool, "msaa", msaa);
+    const build_options_module = build_options.createModule();
 
     const zglfw = b.dependency("zglfw", .{
         .target = target,
@@ -60,6 +66,7 @@ pub fn build(b: *std.Build) void {
     core.addImport("zgui", zgui.module("root"));
     core.addImport("zstbi", zstbi.module("root"));
     core.addImport("zaudio", zaudio.module("root"));
+    core.addImport("build_options", build_options_module);
 
     core.linkLibrary(zgui.artifact("imgui"));
     core.linkLibrary(imgui_wgpu);
@@ -96,7 +103,7 @@ pub fn build(b: *std.Build) void {
                     .{ .name = "zglfw", .module = zglfw.module("root") },
                     .{ .name = "zgui", .module = zgui.module("root") },
                     .{ .name = "zstbi", .module = zstbi.module("root") },
-                    .{ .name = "build_options", .module = build_options.createModule() },
+                    .{ .name = "build_options", .module = build_options_module },
                 },
             }),
         });

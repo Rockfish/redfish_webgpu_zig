@@ -104,6 +104,9 @@ pub const Shader = struct {
                 .constants = config.constants,
                 .color_writes = config.color_writes,
                 .depth_bias = config.depth_bias,
+                // The window pass is multisampled with MSAA; render targets and shadow
+                // passes aren't
+                .sample_count = if (config.color_target == .surface) gpu_context.window_sample_count else 1,
             }),
         };
         return shader;

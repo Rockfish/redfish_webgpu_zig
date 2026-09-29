@@ -51,6 +51,10 @@ fn drawPanel(gpu: *const GpuContext) void {
     if (zgui.begin("gpu_caps", .{})) {
         zgui.text("surface: {d} x {d}", .{ gpu.width, gpu.height });
         zgui.text("surface format: {d}", .{gpu.surface_format});
+        zgui.text("window samples: {d} (MSAA {s}; zig build -Dmsaa=false to turn off)", .{
+            core.gpu_context.window_sample_count,
+            if (core.gpu_context.window_sample_count > 1) "on" else "off",
+        });
         zgui.text("clear: linear 0.5 gray, expect sRGB 188", .{});
         zgui.text("frame time: {d:.2} ms", .{1000.0 / zgui.io.getFramerate()});
     }

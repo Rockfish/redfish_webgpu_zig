@@ -9,6 +9,7 @@
 //! another texture (screenshots).
 
 const std = @import("std");
+const build_options = @import("build_options");
 const zglfw = @import("zglfw");
 const wgpu = @import("wgpu");
 const gpu_debug = @import("gpu_debug.zig");
@@ -38,12 +39,23 @@ const log = std.log.scoped(.gpu_context);
 
 pub const depth_format = c.WGPUTextureFormat_Depth32Float;
 
+/// Samples per pixel in the window pass: 4 with MSAA (`zig build -Dmsaa`, the default),
+/// else 1. Fixed per build because every pipeline drawing in the window pass is created
+/// with it (`Shader` for `.surface` targets, ImGui). With 4, the window pass draws into
+/// 4x color and depth textures, and the color is resolved (averaged) into the frame's
+/// single-sample view at the end of the pass. Shadow passes and render targets stay at 1.
+pub const window_sample_count: u32 = if (build_options.msaa) 4 else 1;
+
 /// Where a pass draws. Null `color` is a depth-only pass (shadow map); null `depth` a pass
 /// without depth (full-screen post-processing). Both are cleared when the pass begins.
+/// A multisampled pass draws into multisampled `color` and `depth` and names `resolve`:
+/// the single-sample view the color is averaged into when the pass ends. Only the
+/// resolved color is kept.
 pub const PassTarget = struct {
     label: []const u8,
     color: c.WGPUTextureView = null,
     depth: c.WGPUTextureView = null,
+    resolve: c.WGPUTextureView = null,
     clear_color: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
 };
 
@@ -60,12 +72,32 @@ pub const Frame = struct {
     /// The frame's own color view (the window, or the offscreen target) with the shared
     /// depth texture.
     pub fn beginSurfacePass(self: *Frame, clear_color: [4]f64) void {
-        self.beginPass(.{
-            .label = if (self.surface_texture == null) "offscreen pass" else "main pass",
-            .color = self.color_view,
-            .depth = self.gpu.depth_view,
+        const label = if (self.surface_texture == null) "offscreen pass" else "main pass";
+        self.beginPass(self.surfaceTarget(label, clear_color, true));
+    }
+
+    /// The window pass's target: the frame's color view, directly or (with MSAA) as the
+    /// resolve target of the 4x color texture, and the matching depth texture when
+    /// `with_depth`. For window passes that don't use `beginSurfacePass` (a composite
+    /// without depth): their pipelines have the window's sample count, so their pass must
+    /// too.
+    pub fn surfaceTarget(self: *const Frame, label: []const u8, clear_color: [4]f64, with_depth: bool) PassTarget {
+        const gpu = self.gpu;
+        if (window_sample_count == 1) {
+            return .{
+                .label = label,
+                .color = self.color_view,
+                .depth = if (with_depth) gpu.depth_view else null,
+                .clear_color = clear_color,
+            };
+        }
+        return .{
+            .label = label,
+            .color = gpu.msaa_color_view,
+            .depth = if (with_depth) gpu.msaa_depth_view else null,
+            .resolve = self.color_view,
             .clear_color = clear_color,
-        });
+        };
     }
 
     /// Opens a pass with group 0 bound. The previous pass must be ended. Bind groups
@@ -74,17 +106,22 @@ pub const Frame = struct {
         std.debug.assert(self.pass == null);
 
         const clear = target.clear_color;
+        // A multisampled pass keeps only the resolved color; its samples and depth are
+        // dropped at the end of the pass instead of written back to memory.
+        const multisampled = target.resolve != null;
+        const store: c.WGPUStoreOp = if (multisampled) c.WGPUStoreOp_Discard else c.WGPUStoreOp_Store;
         const color_attachment: c.WGPURenderPassColorAttachment = .{
             .view = target.color,
+            .resolveTarget = target.resolve,
             .depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED,
             .loadOp = c.WGPULoadOp_Clear,
-            .storeOp = c.WGPUStoreOp_Store,
+            .storeOp = store,
             .clearValue = .{ .r = clear[0], .g = clear[1], .b = clear[2], .a = clear[3] },
         };
         const depth_attachment: c.WGPURenderPassDepthStencilAttachment = .{
             .view = target.depth,
             .depthLoadOp = c.WGPULoadOp_Clear,
-            .depthStoreOp = c.WGPUStoreOp_Store,
+            .depthStoreOp = store,
             .depthClearValue = 1.0,
         };
         self.pass = c.wgpuCommandEncoderBeginRenderPass(self.encoder, &.{
@@ -116,8 +153,15 @@ pub const GpuContext = struct {
     alpha_mode: c.WGPUCompositeAlphaMode,
     width: u32,
     height: u32,
+    /// Single-sample depth: the window pass without MSAA, and render-target passes.
     depth_texture: c.WGPUTexture = null,
     depth_view: c.WGPUTextureView = null,
+    /// The window pass's 4x color and depth with MSAA (`window_sample_count` 4); null
+    /// without. Sized to the window, like `depth_texture`.
+    msaa_color_texture: c.WGPUTexture = null,
+    msaa_color_view: c.WGPUTextureView = null,
+    msaa_depth_texture: c.WGPUTexture = null,
+    msaa_depth_view: c.WGPUTextureView = null,
     uniform_ring: UniformRing,
     vertex_ring: VertexRing,
     bindings: Bindings,
@@ -284,7 +328,7 @@ pub const GpuContext = struct {
         self.uniform_ring.deinit(self.allocator);
         self.vertex_ring.releaseGpuObjects();
         self.vertex_ring.deinit(self.allocator);
-        self.releaseDepthTexture();
+        self.releaseAttachments();
         c.wgpuSurfaceUnconfigure(self.surface);
         c.wgpuQueueRelease(self.queue);
         c.wgpuDeviceRelease(self.device);
@@ -347,32 +391,50 @@ pub const GpuContext = struct {
         });
         self.width = width;
         self.height = height;
-        self.createDepthTexture();
+        self.createAttachments();
     }
 
-    fn createDepthTexture(self: *Self) void {
-        self.releaseDepthTexture();
-        self.depth_texture = c.wgpuDeviceCreateTexture(self.device, &.{
-            .label = stringView("depth"),
+    /// The window-sized attachments: single-sample depth, and with MSAA the window pass's
+    /// 4x color and depth.
+    fn createAttachments(self: *Self) void {
+        self.releaseAttachments();
+        self.depth_texture = self.createAttachment("depth", depth_format, 1);
+        self.depth_view = c.wgpuTextureCreateView(self.depth_texture, null);
+        if (window_sample_count > 1) {
+            self.msaa_color_texture = self.createAttachment("msaa color", self.surface_format, window_sample_count);
+            self.msaa_color_view = c.wgpuTextureCreateView(self.msaa_color_texture, null);
+            self.msaa_depth_texture = self.createAttachment("msaa depth", depth_format, window_sample_count);
+            self.msaa_depth_view = c.wgpuTextureCreateView(self.msaa_depth_texture, null);
+        }
+    }
+
+    fn createAttachment(self: *Self, label: []const u8, format: c.WGPUTextureFormat, sample_count: u32) c.WGPUTexture {
+        return c.wgpuDeviceCreateTexture(self.device, &.{
+            .label = stringView(label),
             .usage = c.WGPUTextureUsage_RenderAttachment,
             .dimension = c.WGPUTextureDimension_2D,
             .size = .{ .width = self.width, .height = self.height, .depthOrArrayLayers = 1 },
-            .format = depth_format,
+            .format = format,
             .mipLevelCount = 1,
-            .sampleCount = 1,
+            .sampleCount = sample_count,
         });
-        self.depth_view = c.wgpuTextureCreateView(self.depth_texture, null);
     }
 
-    fn releaseDepthTexture(self: *Self) void {
-        if (self.depth_view != null) {
-            c.wgpuTextureViewRelease(self.depth_view);
+    fn releaseAttachments(self: *Self) void {
+        const views = [_]*c.WGPUTextureView{ &self.depth_view, &self.msaa_color_view, &self.msaa_depth_view };
+        for (views) |view| {
+            if (view.* != null) {
+                c.wgpuTextureViewRelease(view.*);
+            }
+            view.* = null;
         }
-        if (self.depth_texture != null) {
-            c.wgpuTextureRelease(self.depth_texture);
+        const textures = [_]*c.WGPUTexture{ &self.depth_texture, &self.msaa_color_texture, &self.msaa_depth_texture };
+        for (textures) |texture| {
+            if (texture.* != null) {
+                c.wgpuTextureRelease(texture.*);
+            }
+            texture.* = null;
         }
-        self.depth_view = null;
-        self.depth_texture = null;
     }
 };
 

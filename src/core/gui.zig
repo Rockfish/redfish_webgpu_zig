@@ -1,6 +1,7 @@
 //! zgui on WebGPU: zgui's GLFW platform backend plus imgui's WebGPU renderer backend,
 //! which the build compiles against wgpu-native (zgui's own `glfw_wgpu` targets Dawn).
-//! zgui draws inside the frame's main render pass, after the scene.
+//! zgui draws inside the frame's main render pass, after the scene, so its pipeline has
+//! the window pass's sample count.
 
 const std = @import("std");
 const zglfw = @import("zglfw");
@@ -21,6 +22,7 @@ pub fn init(allocator: std.mem.Allocator, window: *zglfw.Window, gpu: *const Gpu
         .device = gpu.device,
         .render_target_format = gpu.surface_format,
         .depth_stencil_format = gpu_context.depth_format,
+        .pipeline_multisample_state = .{ .count = gpu_context.window_sample_count, .mask = 0xFFFF_FFFF },
     };
     if (!ImGui_ImplWGPU_Init(&info)) {
         @panic("ImGui_ImplWGPU_Init failed");

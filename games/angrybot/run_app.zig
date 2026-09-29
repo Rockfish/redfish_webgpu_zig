@@ -516,7 +516,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         fullscreen_quad.draw(&frame, blur_shader, blurUniforms(false));
         frame.endPass();
 
-        frame.beginPass(.{ .label = "composite pass", .color = frame.color_view, .clear_color = WINDOW_CLEAR_COLOR });
+        frame.beginPass(frame.surfaceTarget("composite pass", WINDOW_CLEAR_COLOR, false));
         frame_buffers.composite.bind(&frame);
         fullscreen_quad.draw(&frame, scene_draw_shader, DrawUniforms.init(Mat4.Identity, WHITE));
 

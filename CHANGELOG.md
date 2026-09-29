@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Anti-aliasing: 4x MSAA in the window pass, plan 018 phase 1
+- **MSAA**: everything drawn in the window pass is 4x multisampled and resolved into the surface; on by default, `zig build -Dmsaa=false` turns it off
+- **core**: `gpu_context.window_sample_count`, `Frame.surfaceTarget`, `PassTarget.resolve`, `PipelineConfig.sample_count`; ImGui uses the window's sample count
+- **angrybot**: the composite pass uses `frame.surfaceTarget` (its scene is still single-sample: phase 2)
+- **gpu_caps**: shows the sample count
+
 ### 2026-09-29 - Plan 017 finished
 - **Plans**: 017 shadows completed after phase 3; unclipped depth (phase 4) left until a scene needs it
 

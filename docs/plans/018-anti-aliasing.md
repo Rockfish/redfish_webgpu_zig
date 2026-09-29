@@ -1,6 +1,6 @@
 # Plan 018 - Anti-aliasing (MSAA)
 
-## Status: Planned (drafted 2026-09-29, not started)
+## Status: Active (phase 1 done 2026-09-29)
 
 ## Context
 
@@ -49,14 +49,11 @@ PCF edge, the spotlight's cone), and alpha-tested cutouts aren't touched.
 
 ### Where the sample count lives
 
-`GpuContext.sample_count` (1 or 4), chosen at init from a `GpuContext.Config` field
-(`msaa: bool`, default on). It is fixed for the context's lifetime: switching would mean
-recreating every pipeline, which the apps don't have a way to do. An app that wants it off
-passes the option; the gpu_caps example reports it.
-
-Open question: default on for every app, or opt-in? Leaning on: the cost at these window
-sizes is small, and the look improves everywhere. Decide after measuring frame time in
-demo_app and angrybot (phase 1 and 2 notes).
+**Decided (2026-09-29): a build option, on by default.** `zig build -Dmsaa=false` turns it
+off for every app; core reads it as `gpu_context.window_sample_count` (4 or 1), a comptime
+constant. A build option fits because the sample count has to be fixed before any pipeline
+is created anyway, and it makes on/off comparisons one flag with no app code. (The first
+draft had a `GpuContext.Config` field chosen per app at init.) gpu_caps shows it.
 
 ### The window pass
 
@@ -68,7 +65,7 @@ multisampled depth texture, both recreated with the surface in `configure`.
   screenshot target), `storeOp = Discard` (only the resolved result is kept);
 - depth: the 4x depth texture, `depthStoreOp = Discard`.
 
-With `sample_count == 1` everything stays as now. The single-sample depth texture stays
+With `window_sample_count == 1` everything stays as now. The single-sample depth texture stays
 for render-target passes that aren't multisampled (angrybot's blur and composite don't use
 depth; its scene and emission passes change in phase 2).
 
@@ -80,14 +77,14 @@ depth; its scene and emission passes change in phase 2).
 `PipelineConfig.sample_count` (default 1) goes into `.multisample.count`. `Shader` derives
 it from `ShaderConfig.color_target`:
 
-- `.surface`: `gpu.sample_count` (it draws in the window pass);
+- `.surface`: `window_sample_count` (it draws in the window pass);
 - `.format` (render targets) and `.none` (depth-only shadow passes): 1, unless
   `ShaderConfig.multisampled = true` (phase 2, for angrybot's scene and emission).
 
 Shadow passes stay single-sample: shadow maps are sampled as depth textures, and a 4x depth
 texture can't be sampled by a comparison sampler.
 
-ImGui draws in the window pass: `gui.init` passes `gpu.sample_count` in
+ImGui draws in the window pass: `gui.init` passes `window_sample_count` in
 `pipeline_multisample_state`.
 
 ### Screenshots
@@ -117,17 +114,18 @@ same view with and without MSAA, enlarged.
 ## Phases
 
 ### Phase 1 - Window MSAA in core
-- [ ] `GpuContext.Config.msaa` and `sample_count`; 4x color and depth textures, recreated
-      in `configure`, released in `deinit`
-- [ ] `beginSurfacePass` with the 4x attachments and the frame's view as resolve target
-- [ ] `PipelineConfig.sample_count`; `Shader` sets it from `color_target`
-- [ ] ImGui's `pipeline_multisample_state` from `gpu.sample_count`
-- [ ] gpu_caps shows the sample count
-- [ ] Every app runs without GPU errors; draw_test, shadows, demo_app screenshots on vs off;
-      a demo_app screenshot (`ScreenCapture` path) is smooth too; frame time noted
+- [x] `-Dmsaa` build option (default on) and `gpu_context.window_sample_count`; 4x color
+      and depth textures, recreated in `configure`, released in `deinit`
+- [x] `beginSurfacePass` with the 4x attachments and the frame's view as resolve target
+- [x] `PipelineConfig.sample_count`; `Shader` sets it from `color_target`
+- [x] ImGui's `pipeline_multisample_state` from `window_sample_count`
+- [x] gpu_caps shows the sample count
+- [x] Every app runs without GPU errors; shadows screenshots on vs off; the
+      `ScreenCapture` path is smooth too; cost noted
 
 ### Phase 2 - angrybot's render targets
-- [ ] `PassTarget.resolve`; `beginPass` sets `resolveTarget`
+- [x] `PassTarget.resolve`; `beginPass` sets `resolveTarget` (done in phase 1: the window
+      pass uses it)
 - [ ] `ShaderConfig.multisampled` for render-target pipelines
 - [ ] angrybot: 4x textures for the scene and emission passes resolving into the existing
       targets, and a 4x depth texture for those passes; blur and composite unchanged
@@ -137,7 +135,7 @@ same view with and without MSAA, enlarged.
 - [ ] Alpha-to-coverage for glTF alpha MASK materials (`pbr.wgsl` discards below the
       cutoff, so cutout edges stay jagged under MSAA; with alpha-to-coverage the alpha
       decides how many samples are covered). Only if a model shows it
-- [ ] Decide the default (on / off) from the frame times in phases 1-2
+- [x] Decide the default (on / off): on, as a build option (phase 1)
 
 Each phase ends with a `CHANGELOG.md` entry and a commit, `zig build test` passing, and all
 apps run once.
@@ -149,3 +147,26 @@ smooths geometry edges without blurring textures and fits the pass structure. Sa
 count fixed at `GpuContext` init, because pipelines are. Shadow passes stay single-sample.
 angrybot is its own phase: its geometry is drawn in render targets, so window MSAA doesn't
 reach it.
+
+**2026-09-29**: Phase 1 done.
+- `-Dmsaa` build option (default true), passed to core through `build_options`;
+  `gpu_context.window_sample_count` is 4 or 1.
+- `GpuContext` creates the 4x color (surface format) and 4x depth textures with the
+  single-sample depth in `createAttachments`, all recreated on resize.
+  `Frame.surfaceTarget(label, clear, with_depth)` builds the window pass's target: with
+  MSAA, the 4x views plus the frame's color view as `resolve`. `beginSurfacePass` uses it,
+  and so does angrybot's composite pass (a window pass without depth that used to name
+  `frame.color_view` directly, and whose `.surface` pipeline now has 4 samples).
+- `PassTarget.resolve` (from phase 2's list): a pass with a resolve target discards its
+  samples and depth at the end (`storeOp = Discard`); only the resolved color is written.
+- `PipelineConfig.sample_count`; `Shader` gives `.surface` pipelines the window's count and
+  render targets and depth-only passes 1. ImGui gets the window's count. The mipmap
+  generator is unchanged (renders into textures).
+- Checked: all ten apps run with no GPU validation errors (animation_example's "Invalid
+  animation id 4" is on the committed tree too, unrelated). Shadows example, 3x crops:
+  the floor's far edge and the pillar are stair-stepped with `-Dmsaa=false` and smooth
+  with MSAA. A `ScreenCapture` frame resolves the same way.
+- Cost: footprint 101 MB off, 129 MB on, for a 1280 x 800 framebuffer (this display is 1x).
+  A Retina framebuffer has four times the pixels, about 110 MB extra. Frame time is
+  vsync-bound (the present mode is FIFO), so no difference shows.
+- angrybot's scene still has jagged edges: it's drawn in render targets (phase 2).

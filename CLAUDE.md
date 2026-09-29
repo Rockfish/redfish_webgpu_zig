@@ -28,7 +28,8 @@ the regression check. Since then: PBR edge-highlight fixes, orthographic picking
 demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
 follow camera), and plan 017 shadows (`examples/shadows`, `DepthBias`, `ShadowMap` filter,
-`ShadowMapArray`). No active plan; 016 is parked at phase 3. See `docs/plans/active-plans.md`.
+`ShadowMapArray`). Active plan: 018 anti-aliasing (phase 1 done: 4x MSAA in the window
+pass, `-Dmsaa`; next: angrybot's render targets); 016 parked. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -69,6 +70,9 @@ docs/
 - Per-draw values: `DrawUniforms` through `gpu.uniform_ring`; frame values: `gpu.writeFrameUniforms`
 - `examples/draw_test` is the per-draw regression check; run it after touching the draw path
 - Depth 0..1, sRGB surface and color textures, texture origin top-left
+- MSAA (`-Dmsaa`, default on): window passes are 4x and resolve into the frame's view. A
+  window pass that doesn't use `beginSurfacePass` gets its target from `frame.surfaceTarget`;
+  `.surface` pipelines have `gpu_context.window_sample_count` samples, everything else 1
 - Translated descriptors default every field to zero; set the ones where zero is wrong
   (`depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED`)
 - Mipmaps from our render-pass generator in `mipmaps.zig` (WebGPU has none)

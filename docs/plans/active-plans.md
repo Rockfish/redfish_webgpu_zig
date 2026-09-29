@@ -4,14 +4,10 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- None. Next: start plan 018 (below), or resume a parked plan (016 phase 3,
-  `PathFollow`, is ready).
-
-## 📋 Planned
-
-- **[018-anti-aliasing.md](018-anti-aliasing.md)**: 4x MSAA. Phase 1 in core (window pass
-  resolves into the surface, pipelines and ImGui get the sample count), phase 2 angrybot's
-  render targets, phase 3 optional (alpha-to-coverage, default on/off). Drafted 2026-09-29.
+- **[018-anti-aliasing.md](018-anti-aliasing.md)**: 4x MSAA, a build option on by default
+  (`-Dmsaa=false` turns it off).
+  - Phase 1 done 2026-09-29: the window pass in every app. Next: phase 2, angrybot's
+    render targets.
 
 ## ⏸️ Parked
 

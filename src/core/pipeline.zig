@@ -107,6 +107,9 @@ pub const PipelineConfig = struct {
     /// drawn at depth 1.
     depth_compare: ?c.WGPUCompareFunction = null,
     depth_bias: DepthBias = .{},
+    /// Samples per pixel of the pass the pipeline draws in: 1, or 4 for a multisampled
+    /// (MSAA) pass. Must match the pass's attachments.
+    sample_count: u32 = 1,
 };
 
 pub const PipelineVariants = struct {
@@ -185,7 +188,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
             .cullMode = if (state.double_sided) c.WGPUCullMode_None else c.WGPUCullMode_Back,
         },
         .depthStencil = if (config.depth_format != null) &depth_stencil else null,
-        .multisample = .{ .count = 1, .mask = 0xFFFF_FFFF },
+        .multisample = .{ .count = config.sample_count, .mask = 0xFFFF_FFFF },
         .fragment = if (config.color_format != null) &fragment else null,
     });
 }
