@@ -1,6 +1,6 @@
 # Plan 017 - Shadows: example, debug view, bias and filtering, several lights
 
-## Status: Active (phases 1-2 done 2026-09-29)
+## Status: Active (phases 1-3 done 2026-09-29; phase 4 optional)
 
 ## Context
 
@@ -149,13 +149,13 @@ it's optional and only used when the adapter has it. Try it last; it may not be 
 ### Phase 3 - Several lights
 - [x] Decide how casters get the pass's light matrix: a group 3 bind group per shadow
       pass (Design, option 2)
-- [ ] Per-layer group 3 bind groups for casters, with the explanatory comment on why
+- [x] Per-layer group 3 bind groups for casters, with the explanatory comment on why
       they aren't one rewritten buffer
-- [ ] Layered shadow map (a `layers` count or `ShadowMapArray`): per-layer attachment views,
+- [x] Layered shadow map (a `layers` count or `ShadowMapArray`): per-layer attachment views,
       array view for sampling, group 3 layout for `texture_depth_2d_array`
-- [ ] Example: directional light plus spotlight, one shadow pass each; receivers sample
+- [x] Example: directional light plus spotlight, one shadow pass each; receivers sample
       both layers; debug overlay picks the layer
-- [ ] `examples/draw_test` and angrybot still pass
+- [x] `examples/draw_test` and angrybot still pass
 
 ### Phase 4 - Unclipped depth (optional)
 - [ ] Request `DepthClipControl` when the adapter offers it; `unclipped_depth` on caster
@@ -249,3 +249,33 @@ the receivers keep `SHADOW_BIAS = 0.001`. Window captures of the same view befor
 (3x crops): the baseline shows a stippled dark outline of self-shadow acne along the eel's
 back, which is nearly edge-on to the light; the trial doesn't. The floor shadows and the
 player look the same at the game camera's distance.
+
+**2026-09-29**: Phase 3 done.
+- `core.ShadowMapArray` (`src/core/shadow_map_array.zig`), a separate type; `ShadowMap`
+  stays the single-light form for angrybot, since the WGSL types differ
+  (`texture_depth_2d` vs `texture_depth_2d_array`). One depth texture with a layer per
+  light (up to `MAX_SHADOW_LAYERS` = 4), a single-layer 2D view per layer as each shadow
+  pass's attachment, and a 2D-array view for sampling.
+- Light matrices: one uniform buffer with a 256-byte slot per layer
+  (`ShadowLayerUniforms`, WGSL `struct ShadowLayer { @size(256) light_space: mat4x4f }`).
+  256 is WebGPU's minimum uniform offset alignment, so the same buffer serves both sides:
+  - each layer's caster bind group (`PassKind.shadow_caster`) binds its own slot, 64
+    bytes at `layer * 256`;
+  - the receivers' bind group (`PassKind.shadow_layers`) binds all slots as
+    `array<ShadowLayer, MAX_SHADOW_LAYERS>`, next to the texture array and sampler.
+  `setLightSpace` writes each slot once per frame, before any pass is recorded. The comment
+  on the caster bind groups in `ShadowMapArray.init` explains why a rewritten single buffer
+  would give every layer the last light's shadows.
+- The caster is its own WGSL file (examples/shadows/shaders/shadow_caster.wgsl) instead of
+  a `DEPTH_MODE` override in the scene shader: an override-guarded branch still counts as
+  using the caster's group 3 binding, which the receivers' layout doesn't have.
+- Example: directional light (layer 0) plus spotlight (layer 1, point light 0 in
+  `SceneLights`). The spotlight's cone is its shadow projection: a perspective frustum
+  whose field of view is the cone, lit inside the circle inscribed in its map with a soft
+  edge (`spotCone`). Panel: spotlight on/off, position, cone, range, intensity; the debug
+  views pick a layer. With the spotlight off, its shadow pass is skipped.
+- Checked with window captures: shadows from both lights (overlapping shadows on the slab
+  are one light's shadow lit by the other); the spot layer's overlay (perspective depth,
+  near 1: shown with depth range 0.9-1.0) and the view from the spotlight (a centered
+  circle, none of its own shadows visible). `zig build test` passes; draw_test and angrybot
+  run without errors.

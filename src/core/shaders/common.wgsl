@@ -47,6 +47,12 @@ struct DrawUniforms {
     params: vec4f,
 }
 
+// One light's matrix in a ShadowMapArray (group 3, `shadow_layers`). 256 bytes per layer,
+// WebGPU's uniform offset alignment, so a shadow pass can bind its layer's slot alone.
+struct ShadowLayer {
+    @size(256) light_space: mat4x4f,
+}
+
 // Group 1 uniforms of `pbr` materials.
 struct MaterialUniforms {
     base_color_factor: vec4f,

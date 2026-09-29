@@ -57,6 +57,7 @@ pub const UniformDebug = @import("uniform_debug.zig").UniformDebug;
 pub const screen_capture = @import("screen_capture.zig");
 pub const ScreenCapture = screen_capture.ScreenCapture;
 pub const ShadowMap = @import("shadow_map.zig").ShadowMap;
+pub const ShadowMapArray = @import("shadow_map_array.zig").ShadowMapArray;
 pub const SoundEngine = @import("sound_engine.zig").SoundEngine;
 pub const PassTarget = gpu_context.PassTarget;
 pub const pipeline = @import("pipeline.zig");

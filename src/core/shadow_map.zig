@@ -47,10 +47,6 @@ pub const ShadowMap = struct {
 
     pub fn init(gpu: *const GpuContext, config: Config) Self {
         const size = config.size;
-        const filter_mode: c.WGPUFilterMode = switch (config.filter) {
-            .nearest => c.WGPUFilterMode_Nearest,
-            .linear => c.WGPUFilterMode_Linear,
-        };
         const texture = c.wgpuDeviceCreateTexture(gpu.device, &.{
             .label = stringView("shadow map"),
             .usage = c.WGPUTextureUsage_RenderAttachment | c.WGPUTextureUsage_TextureBinding,
@@ -61,18 +57,7 @@ pub const ShadowMap = struct {
             .sampleCount = 1,
         });
         const view = c.wgpuTextureCreateView(texture, null);
-        const sampler = c.wgpuDeviceCreateSampler(gpu.device, &.{
-            .label = stringView("shadow comparison"),
-            .addressModeU = c.WGPUAddressMode_ClampToEdge,
-            .addressModeV = c.WGPUAddressMode_ClampToEdge,
-            .addressModeW = c.WGPUAddressMode_ClampToEdge,
-            .magFilter = filter_mode,
-            .minFilter = filter_mode,
-            .mipmapFilter = c.WGPUMipmapFilterMode_Nearest,
-            .lodMaxClamp = 32.0,
-            .compare = c.WGPUCompareFunction_LessEqual,
-            .maxAnisotropy = 1,
-        });
+        const sampler = createComparisonSampler(gpu.device, config.filter);
 
         const entries = [_]c.WGPUBindGroupEntry{
             .{ .binding = 0, .textureView = view },
@@ -111,3 +96,23 @@ pub const ShadowMap = struct {
         c.wgpuTextureRelease(self.texture);
     }
 };
+
+/// `LessEqual` comparison with `filter`, clamp to edge. Shared with `ShadowMapArray`.
+pub fn createComparisonSampler(device: c.WGPUDevice, filter: ShadowMap.Filter) c.WGPUSampler {
+    const filter_mode: c.WGPUFilterMode = switch (filter) {
+        .nearest => c.WGPUFilterMode_Nearest,
+        .linear => c.WGPUFilterMode_Linear,
+    };
+    return c.wgpuDeviceCreateSampler(device, &.{
+        .label = stringView("shadow comparison"),
+        .addressModeU = c.WGPUAddressMode_ClampToEdge,
+        .addressModeV = c.WGPUAddressMode_ClampToEdge,
+        .addressModeW = c.WGPUAddressMode_ClampToEdge,
+        .magFilter = filter_mode,
+        .minFilter = filter_mode,
+        .mipmapFilter = c.WGPUMipmapFilterMode_Nearest,
+        .lodMaxClamp = 32.0,
+        .compare = c.WGPUCompareFunction_LessEqual,
+        .maxAnisotropy = 1,
+    });
+}

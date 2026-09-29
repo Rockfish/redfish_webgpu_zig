@@ -27,8 +27,8 @@ The port is complete (plan 000, 2026-09-27): all apps run on wgpu-native, and `a
 the regression check. Since then: PBR edge-highlight fixes, orthographic picking, softer
 demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
-follow camera). Active plan: 017 shadows (phases 1-2 done: `examples/shadows`, `DepthBias`,
-`ShadowMap` filter, both in angrybot; next: phase 3, several lights); 016 parked.
+follow camera). Active plan: 017 shadows (phases 1-3 done: `examples/shadows`, `DepthBias`,
+`ShadowMap` filter, `ShadowMapArray`; next: optional phase 4 or finish); 016 parked.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
@@ -80,7 +80,8 @@ docs/
 - Per-frame vertex data (lines, instance attributes) goes through `gpu.vertex_ring`
 - Lights: `SceneLights.uniforms()` into `FrameUniforms.lights`, once per frame
 - Multi-pass frames: `gpu.acquireFrame()`, then `frame.beginPass(PassTarget)` / `endPass`
-  per pass; group 3 (e.g. `ShadowMap.bind`) is set after each `beginPass`. Shaders for render
+  per pass; group 3 (e.g. `ShadowMap.bind`, or `ShadowMapArray.bindCaster` per shadow pass
+  and `.bind` for receivers) is set after each `beginPass`. Shaders for render
   targets or depth-only passes set `ShaderConfig.color_target` / `depth` / `pass`; variants
   of one WGSL file differ by `constants` (WGSL `override`). See docs/designs/009-angrybot.md
 - GL-era color constants (clear colors, part colors, palette) go through `srgbToLinear`

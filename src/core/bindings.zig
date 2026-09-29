@@ -35,6 +35,8 @@ pub const VertexAttr = struct {
 
 pub const MAX_JOINTS = 100;
 pub const MAX_POINT_LIGHTS = 4;
+/// Lights with a shadow map layer in a `ShadowMapArray`.
+pub const MAX_SHADOW_LAYERS = 4;
 
 /// What a shader binds at group 1. Picks the pipeline layout's material slot.
 pub const MaterialKind = enum {
@@ -54,6 +56,12 @@ pub const PassKind = enum {
     none,
     /// A shadow map: `@binding(0)` texture_depth_2d, `@binding(1)` sampler_comparison.
     shadow,
+    /// A `ShadowMapArray` for receivers: `@binding(0)` texture_depth_2d_array,
+    /// `@binding(1)` sampler_comparison, `@binding(2)` the layers' light matrices as
+    /// `array<ShadowLayer, MAX_SHADOW_LAYERS>` (uniform).
+    shadow_layers,
+    /// One layer's shadow pass: `@binding(0)` that light's matrix, `mat4x4f` (uniform).
+    shadow_caster,
 };
 
 pub const PBR_TEXTURE_COUNT = 5;
@@ -118,6 +126,14 @@ pub const FrameUniforms = extern struct {
     light_space: Mat4 = Mat4.Identity,
 };
 
+/// Mirrors `ShadowLayer` in shaders/common.wgsl: one light's projection x view in a
+/// `ShadowMapArray`. Padded to 256 bytes, WebGPU's minimum uniform offset alignment, so
+/// each layer's slot can also be bound on its own for that layer's shadow pass.
+pub const ShadowLayerUniforms = extern struct {
+    light_space: Mat4,
+    _pad: [48]f32 = @splat(0.0),
+};
+
 /// Mirrors `DrawUniforms` in shaders/common.wgsl (group 2, binding 0). One per draw,
 /// allocated from the uniform ring.
 pub const DrawUniforms = extern struct {
@@ -176,6 +192,7 @@ comptime {
     std.debug.assert(@sizeOf(FrameUniforms) == 528);
     std.debug.assert(@offsetOf(FrameUniforms, "light_space") == 464);
     std.debug.assert(@sizeOf(DrawUniforms) == 176);
+    std.debug.assert(@sizeOf(ShadowLayerUniforms) == 256);
     std.debug.assert(@offsetOf(DrawUniforms, "params") == 160);
 }
 
@@ -195,6 +212,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     \\const LOCATION_WEIGHTS: u32 = {d}u;
     \\const MAX_JOINTS: u32 = {d}u;
     \\const MAX_POINT_LIGHTS: u32 = {d}u;
+    \\const MAX_SHADOW_LAYERS: u32 = {d}u;
     \\const DRAW_FLAG_VERTEX_COLOR: u32 = {d}u;
     \\const DRAW_FLAG_SKINNED: u32 = {d}u;
     \\const MATERIAL_FLAG_BASE_COLOR_TEXTURE: u32 = {d}u;
@@ -222,6 +240,7 @@ pub const wgsl_header = std.fmt.comptimePrint(
     VertexAttr.weights,
     MAX_JOINTS,
     MAX_POINT_LIGHTS,
+    MAX_SHADOW_LAYERS,
     DrawFlags.vertex_color,
     DrawFlags.skinned,
     MaterialFlags.base_color_texture,
@@ -244,6 +263,8 @@ pub const Bindings = struct {
     cube_texture_layout: c.WGPUBindGroupLayout,
     object_layout: c.WGPUBindGroupLayout,
     shadow_layout: c.WGPUBindGroupLayout,
+    shadow_layers_layout: c.WGPUBindGroupLayout,
+    shadow_caster_layout: c.WGPUBindGroupLayout,
 
     frame_buffer: c.WGPUBuffer,
     frame_bind_group: c.WGPUBindGroup,
@@ -285,6 +306,8 @@ pub const Bindings = struct {
             .cube_texture_layout = cube_texture_layout,
             .object_layout = object_layout,
             .shadow_layout = createShadowLayout(device),
+            .shadow_layers_layout = createShadowLayersLayout(device),
+            .shadow_caster_layout = createUniformLayout(device, "shadow caster layout", @sizeOf(Mat4), false),
             .frame_buffer = frame_buffer,
             .frame_bind_group = createUniformBindGroup(device, "frame", frame_layout, frame_buffer, @sizeOf(FrameUniforms)),
             .empty_bind_group = c.wgpuDeviceCreateBindGroup(device, &.{
@@ -310,10 +333,14 @@ pub const Bindings = struct {
         return switch (kind) {
             .none => null,
             .shadow => self.shadow_layout,
+            .shadow_layers => self.shadow_layers_layout,
+            .shadow_caster => self.shadow_caster_layout,
         };
     }
 
     pub fn releaseGpuObjects(self: *Self) void {
+        c.wgpuBindGroupLayoutRelease(self.shadow_caster_layout);
+        c.wgpuBindGroupLayoutRelease(self.shadow_layers_layout);
         c.wgpuBindGroupLayoutRelease(self.shadow_layout);
         c.wgpuBindGroupRelease(self.object_bind_group);
         c.wgpuBufferRelease(self.no_joints_buffer);
@@ -430,6 +457,36 @@ fn createShadowLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
     };
     return c.wgpuDeviceCreateBindGroupLayout(device, &.{
         .label = stringView("shadow layout"),
+        .entryCount = entries.len,
+        .entries = &entries,
+    });
+}
+
+/// `PassKind.shadow_layers`: depth texture array at binding 0, comparison sampler at 1,
+/// the layers' light matrices at 2.
+fn createShadowLayersLayout(device: c.WGPUDevice) c.WGPUBindGroupLayout {
+    const entries = [_]c.WGPUBindGroupLayoutEntry{
+        .{
+            .binding = 0,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .texture = .{ .sampleType = c.WGPUTextureSampleType_Depth, .viewDimension = c.WGPUTextureViewDimension_2DArray },
+        },
+        .{
+            .binding = 1,
+            .visibility = c.WGPUShaderStage_Fragment,
+            .sampler = .{ .type = c.WGPUSamplerBindingType_Comparison },
+        },
+        .{
+            .binding = 2,
+            .visibility = c.WGPUShaderStage_Vertex | c.WGPUShaderStage_Fragment,
+            .buffer = .{
+                .type = c.WGPUBufferBindingType_Uniform,
+                .minBindingSize = MAX_SHADOW_LAYERS * @sizeOf(ShadowLayerUniforms),
+            },
+        },
+    };
+    return c.wgpuDeviceCreateBindGroupLayout(device, &.{
+        .label = stringView("shadow layers layout"),
         .entryCount = entries.len,
         .entries = &entries,
     });

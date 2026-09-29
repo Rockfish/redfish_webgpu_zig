@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Shadows from several lights, plan 017 phase 3
+- **core.ShadowMapArray**: one depth texture with a layer per light; each layer's shadow pass binds its own light matrix at group 3 (`PassKind.shadow_caster`), receivers sample all layers (`PassKind.shadow_layers`). Each light's matrix has its own 256-byte slot, written once per frame, so nothing is rewritten between passes
+- **examples/shadows**: a spotlight with its own shadow layer next to the directional light; the spotlight's cone is its shadow projection; debug views pick a layer
+
 ### 2026-09-29 - angrybot: emission pass occluders
 - **Fix**: the player's glow showed through enemies in front of it and through the floor when the dying player sinks into it; the emission pass now draws the floor and enemies depth-only before the player's emissive parts (a depth write only hides later draws). redfish drew only the player and bullets there
 

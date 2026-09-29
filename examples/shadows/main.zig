@@ -1,11 +1,13 @@
 //! Shadow map test bed (plan 017). A floor with cubes, spheres, and a cylinder, some
-//! tilted so there are sloped receivers, lit by one directional light that casts shadows
-//! through `core.ShadowMap`.
+//! tilted so there are sloped receivers, lit by two shadow-casting lights: a directional
+//! light and a spotlight, each with a layer in one `core.ShadowMapArray`.
 //!
-//! Each frame has two passes: the shadow pass draws every shape from the light into the
-//! shadow map (the depth-only caster pipeline of shadow_scene.wgsl), then the window pass
-//! draws them again from the camera, sampling the map. The panel moves the light and shows
-//! the map itself: as an overlay, or by drawing the scene from the light.
+//! Each frame has a shadow pass per light, drawing every shape from that light into its
+//! layer (shadow_caster.wgsl), then the window pass draws them again from the camera,
+//! sampling both layers (shadow_scene.wgsl). Each shadow pass binds its own light's
+//! matrix at group 3; see `ShadowMapArray.init` for why that's a bind group per layer and
+//! not one matrix rewritten between passes. The panel moves the lights and shows a layer
+//! itself: as an overlay, or by drawing the scene from that light.
 //!
 //! Keys: arrows circle the camera around the scene (world up and right, so the horizon
 //! stays level), W / S move it in and out, Escape quits.
@@ -24,7 +26,7 @@ const FrameUniforms = core.bindings.FrameUniforms;
 const GpuContext = core.GpuContext;
 const SceneLights = core.SceneLights;
 const Shader = core.Shader;
-const ShadowMap = core.ShadowMap;
+const ShadowMapArray = core.ShadowMapArray;
 const Shape = core.shapes.Shape;
 const gui = core.gui;
 const Mat4 = math.Mat4;
@@ -35,10 +37,19 @@ const vec4 = math.vec4;
 
 const CLEAR_COLOR = [4]f64{ 0.05, 0.06, 0.08, 1.0 };
 const SHADOW_MAP_SIZE: u32 = 2048;
-/// Where the light looks and the camera circles.
+/// Where the lights look and the camera circles.
 const SCENE_CENTER = vec3(0.0, 0.0, 0.0);
+const SPOT_COLOR = vec3(1.0, 0.85, 0.6);
 
 const DebugView = enum(i32) { off, overlay, light_view };
+
+/// The shadow map layers, in the order shadow_scene.wgsl reads them.
+const Layer = enum(u32) {
+    directional,
+    spot,
+
+    const count = @typeInfo(Layer).@"enum".fields.len;
+};
 
 /// Everything the panel changes.
 const Settings = struct {
@@ -53,6 +64,17 @@ const Settings = struct {
     light_near: f32 = 1.0,
     light_far: f32 = 50.0,
     light_distance: f32 = 25.0,
+    spot_enabled: bool = true,
+    /// Spotlight position around the scene center: angle (degrees), height, and
+    /// horizontal distance. It always aims at the center.
+    spot_azimuth: f32 = 210.0,
+    spot_height: f32 = 7.0,
+    spot_radius: f32 = 8.0,
+    /// Full cone angle in degrees: the field of view of its shadow map.
+    spot_cone: f32 = 60.0,
+    /// The spotlight's far plane; nothing past it is lit or shadowed by it.
+    spot_range: f32 = 30.0,
+    spot_intensity: f32 = 3.0,
     /// The defaults are the combination that showed no acne (plan 017, phase 2 notes):
     /// slope-scaled bias on the casters for sloped surfaces, plus a small bias on the
     /// receivers for PCF, whose outer samples land on texels deeper along the slope.
@@ -64,10 +86,12 @@ const Settings = struct {
     pipeline_bias: bool = true,
     bias_constant: i32 = 2,
     bias_slope_scale: f32 = 2.0,
-    filter: ShadowMap.Filter = .linear,
+    filter: ShadowMapArray.Filter = .linear,
     /// Comparison samples around each lookup: 0 is one sample, 1 a 3x3 grid, 2 a 5x5.
     pcf_radius: i32 = 1,
     debug_view: DebugView = .off,
+    /// The layer the overlay and the light view show.
+    debug_layer: Layer = .directional,
     /// The depth range the overlay shows black to white.
     overlay_depth_min: f32 = 0.0,
     overlay_depth_max: f32 = 1.0,
@@ -88,14 +112,14 @@ const SceneObject = struct {
     color: Vec4,
 };
 
-/// The light's matrices for one frame, from the panel's settings.
+/// A light's matrices for one frame, from the panel's settings.
 const LightView = struct {
-    /// Direction the light travels, toward the scene.
+    /// Direction the light travels, toward the scene center.
     dir: Vec3,
     position: Vec3,
     view: Mat4,
     projection: Mat4,
-    /// projection x view, for `FrameUniforms.light_space`.
+    /// projection x view: the light's `ShadowMapArray` layer.
     light_space: Mat4,
 };
 
@@ -123,11 +147,11 @@ pub fn main(init: std.process.Init) !void {
 fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
     const shape_layouts = &Shape.vertex_buffer_layouts;
 
-    // Lit and shadow-receiving, for the window pass. The same file is also the shadow
-    // pass's caster (`createCasterShader`).
+    // Lit and shadow-receiving, for the window pass. The shadow passes use
+    // `createCasterShader`.
     const scene_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_scene.wgsl", .{
         .vertex_buffers = shape_layouts,
-        .pass = .shadow,
+        .pass = .shadow_layers,
     });
     defer scene_shader.releaseGpuObjects();
 
@@ -138,12 +162,12 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
 
     const overlay_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_map_overlay.wgsl", .{
         .vertex_buffers = shape_layouts,
-        .pass = .shadow,
+        .pass = .shadow_layers,
     });
     defer overlay_shader.releaseGpuObjects();
 
-    var shadow_map = ShadowMap.init(gpu, .{ .size = SHADOW_MAP_SIZE, .filter = settings.filter });
-    defer shadow_map.releaseGpuObjects();
+    var shadow_maps = createShadowMaps(gpu, settings);
+    defer shadow_maps.releaseGpuObjects();
 
     // Drawn on top of everything, from either side
     const overlay_quad = try core.shapes.createSquare(context.alloc, gpu);
@@ -189,8 +213,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
             caster_shader = try createCasterShader(context, gpu, settings);
         }
         if (rebuild.shadow_map) {
-            shadow_map.releaseGpuObjects();
-            shadow_map = ShadowMap.init(gpu, .{ .size = SHADOW_MAP_SIZE, .filter = settings.filter });
+            shadow_maps.releaseGpuObjects();
+            shadow_maps = createShadowMaps(gpu, settings);
         }
         rebuild = .{};
         if (settings.animate_light) {
@@ -200,17 +224,27 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         var frame = gpu.acquireFrame() orelse continue;
 
         camera.setScreenDimensions(@floatFromInt(gpu.width), @floatFromInt(gpu.height));
-        const light = lightView(settings);
-        gpu.writeFrameUniforms(frameUniforms(camera, light, settings, gpu, time));
+        gpu.writeFrameUniforms(frameUniforms(camera, settings, gpu, time));
 
-        // Shadow pass: every shape from the light, depth only
-        frame.beginPass(shadow_map.passTarget());
-        drawObjects(&frame, caster_shader, &objects, settings);
-        frame.endPass();
+        // Every layer's light before any pass is recorded: each has its own slot
+        shadow_maps.setLightSpace(gpu, @intFromEnum(Layer.directional), lightView(.directional, settings, 1.0).light_space);
+        shadow_maps.setLightSpace(gpu, @intFromEnum(Layer.spot), lightView(.spot, settings, 1.0).light_space);
 
-        // Window pass: every shape from the camera (or the light), sampling the map
+        // A shadow pass per light: every shape from that light, depth only
+        for (0..Layer.count) |i| {
+            const layer: Layer = @enumFromInt(i);
+            if (layer == .spot and !settings.spot_enabled) {
+                continue;
+            }
+            frame.beginPass(shadow_maps.passTarget(@intFromEnum(layer)));
+            shadow_maps.bindCaster(&frame, @intFromEnum(layer));
+            drawObjects(&frame, caster_shader, &objects, settings);
+            frame.endPass();
+        }
+
+        // Window pass: every shape from the camera (or a light), sampling both layers
         frame.beginSurfacePass(CLEAR_COLOR);
-        shadow_map.bind(&frame);
+        shadow_maps.bind(&frame);
         drawObjects(&frame, scene_shader, &objects, settings);
         if (settings.debug_view == .overlay) {
             drawOverlay(&frame, overlay_shader, overlay_quad, settings, gpu);
@@ -224,19 +258,23 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     }
 }
 
-/// The shadow pass's pipelines: shadow_scene.wgsl with `DEPTH_MODE`, depth only (no
-/// fragment stage, no group 3), with the panel's depth bias when it's on.
+/// The shadow passes' pipelines: shadow_caster.wgsl, depth only (no fragment stage), the
+/// layer's light at group 3, with the panel's depth bias when it's on.
 fn createCasterShader(context: core.Context, gpu: *GpuContext, settings: Settings) !*Shader {
     const depth_bias: core.pipeline.DepthBias = if (settings.pipeline_bias)
         .{ .constant = settings.bias_constant, .slope_scale = settings.bias_slope_scale }
     else
         .{};
-    return Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_scene.wgsl", .{
+    return Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_caster.wgsl", .{
         .vertex_buffers = &Shape.vertex_buffer_layouts,
         .color_target = .none,
-        .constants = &.{.{ .key = "DEPTH_MODE", .value = 1.0 }},
+        .pass = .shadow_caster,
         .depth_bias = depth_bias,
     });
+}
+
+fn createShadowMaps(gpu: *const GpuContext, settings: Settings) ShadowMapArray {
+    return ShadowMapArray.init(gpu, .{ .size = SHADOW_MAP_SIZE, .layers = Layer.count, .filter = settings.filter });
 }
 
 /// The shapes, created once, and where each one goes.
@@ -311,23 +349,41 @@ fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
     }
 }
 
-fn lightView(settings: Settings) LightView {
-    const azimuth = std.math.degreesToRadians(settings.light_azimuth);
-    const elevation = std.math.degreesToRadians(settings.light_elevation);
-    const toward_light = vec3(
-        @cos(elevation) * @cos(azimuth),
-        @sin(elevation),
-        @cos(elevation) * @sin(azimuth),
-    );
-    const position = SCENE_CENTER.add(toward_light.mulScalar(settings.light_distance));
+/// `layer`'s light, aimed at the scene center. `aspect` is 1 for the square shadow map;
+/// the light view passes the window's, which widens the view instead of stretching it
+/// (the shadow map covers the middle square). Both projections have zero-to-one depth,
+/// as the shadow map stores it.
+fn lightView(layer: Layer, settings: Settings, aspect: f32) LightView {
+    const position = switch (layer) {
+        .directional => blk: {
+            const azimuth = std.math.degreesToRadians(settings.light_azimuth);
+            const elevation = std.math.degreesToRadians(settings.light_elevation);
+            const toward_light = vec3(
+                @cos(elevation) * @cos(azimuth),
+                @sin(elevation),
+                @cos(elevation) * @sin(azimuth),
+            );
+            break :blk SCENE_CENTER.add(toward_light.mulScalar(settings.light_distance));
+        },
+        .spot => blk: {
+            const azimuth = std.math.degreesToRadians(settings.spot_azimuth);
+            break :blk vec3(settings.spot_radius * @cos(azimuth), settings.spot_height, settings.spot_radius * @sin(azimuth));
+        },
+    };
     const view = Mat4.lookAtRhGl(position, SCENE_CENTER, Vec3.World_Up);
 
-    // Zero-to-one depth, as the shadow map stores it
-    const e = settings.light_extent;
-    const projection = Mat4.orthographicRhZo(-e, e, -e, e, settings.light_near, settings.light_far);
+    const projection = switch (layer) {
+        // Parallel rays: an orthographic box around the scene
+        .directional => blk: {
+            const e = settings.light_extent;
+            break :blk Mat4.orthographicRhZo(-e * aspect, e * aspect, -e, e, settings.light_near, settings.light_far);
+        },
+        // Rays from a point: a perspective frustum whose field of view is the cone
+        .spot => Mat4.perspectiveRhZo(std.math.degreesToRadians(settings.spot_cone), aspect, 0.5, settings.spot_range),
+    };
 
     return .{
-        .dir = toward_light.mulScalar(-1.0),
+        .dir = SCENE_CENTER.sub(position).toNormalized(),
         .position = position,
         .view = view,
         .projection = projection,
@@ -335,26 +391,34 @@ fn lightView(settings: Settings) LightView {
     };
 }
 
-/// The frame's camera, light, and shadow matrix. In the light view the scene is drawn
-/// from the light's position and direction, widened to the window's aspect so it isn't
-/// stretched: the shadow map covers the middle square.
-fn frameUniforms(camera: *Camera, light: LightView, settings: Settings, gpu: *const GpuContext, time: f32) FrameUniforms {
+/// The frame's camera and lights. In the light view the scene is drawn from the debug
+/// layer's light.
+fn frameUniforms(camera: *Camera, settings: Settings, gpu: *const GpuContext, time: f32) FrameUniforms {
     var lights = SceneLights.init();
     lights.ambient = vec3(0.15, 0.15, 0.18);
-    lights.direction_light = .{ .dir = light.dir, .color = vec3(1.0, 0.97, 0.9) };
+    lights.direction_light = .{ .dir = lightView(.directional, settings, 1.0).dir, .color = vec3(1.0, 0.97, 0.9) };
+    if (settings.spot_enabled) {
+        // Point light 0 is the spotlight; shadow_scene.wgsl adds the cone and shadow
+        lights.setPointLight(0, .{
+            .world_pos = lightView(.spot, settings, 1.0).position,
+            .color = SPOT_COLOR.mulScalar(settings.spot_intensity),
+            .constant = 1.0,
+            .linear = 0.05,
+            .quadratic = 0.01,
+            .enabled = true,
+        });
+    }
 
     var uniforms = camera.getRenderContext(time).frameUniforms();
     if (settings.debug_view == .light_view) {
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
-        const e = settings.light_extent;
-        const projection = Mat4.orthographicRhZo(-e * aspect, e * aspect, -e, e, settings.light_near, settings.light_far);
-        uniforms.projection = projection;
+        const light = lightView(settings.debug_layer, settings, aspect);
+        uniforms.projection = light.projection;
         uniforms.view = light.view;
-        uniforms.projection_view = projection.mulMat4(&light.view);
+        uniforms.projection_view = light.light_space;
         uniforms.view_position = light.position;
     }
     uniforms.lights = lights.uniforms();
-    uniforms.light_space = light.light_space;
     return uniforms;
 }
 
@@ -367,7 +431,7 @@ fn drawObjects(frame: *const Frame, shader: *const Shader, objects: []const Scen
     }
 }
 
-/// The shadow map as a square in the window's bottom-left corner. The unit square is
+/// A shadow map layer as a square in the window's bottom-left corner. The unit square is
 /// scaled and moved in clip space (-1..1), so its model matrix is the whole transform.
 fn drawOverlay(frame: *const Frame, shader: *const Shader, quad: *const Shape, settings: Settings, gpu: *const GpuContext) void {
     const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
@@ -378,7 +442,8 @@ fn drawOverlay(frame: *const Frame, shader: *const Shader, quad: *const Shape, s
     const model = Mat4.fromTranslation(center).mulMat4(&Mat4.fromScale(vec3(width, height, 1.0)));
 
     var draw_uniforms = DrawUniforms.init(model, vec4(1.0, 1.0, 1.0, 1.0));
-    draw_uniforms.params = vec4(settings.overlay_depth_min, settings.overlay_depth_max, 0.0, 0.0);
+    const layer: f32 = @floatFromInt(@intFromEnum(settings.debug_layer));
+    draw_uniforms.params = vec4(settings.overlay_depth_min, settings.overlay_depth_max, layer, 0.0);
     quad.draw(frame, shader, draw_uniforms);
 }
 
@@ -390,9 +455,9 @@ fn drawPanel(settings: *Settings) Rebuild {
     zgui.setNextWindowSize(.{ .w = 300, .h = 0, .cond = .first_use_ever });
     if (zgui.begin("shadows", .{})) {
         zgui.text("frame time: {d:.2} ms", .{1000.0 / zgui.io.getFramerate()});
-        zgui.text("shadow map: {d} x {d}", .{ SHADOW_MAP_SIZE, SHADOW_MAP_SIZE });
+        zgui.text("shadow maps: {d} layers, {d} x {d}", .{ Layer.count, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE });
 
-        zgui.separatorText("Light");
+        zgui.separatorText("Directional light");
         _ = zgui.sliderFloat("azimuth", .{ .v = &settings.light_azimuth, .min = 0.0, .max = 360.0 });
         _ = zgui.sliderFloat("elevation", .{ .v = &settings.light_elevation, .min = 5.0, .max = 89.0 });
         _ = zgui.checkbox("animate azimuth", .{ .v = &settings.animate_light });
@@ -400,6 +465,17 @@ fn drawPanel(settings: *Settings) Rebuild {
         _ = zgui.sliderFloat("distance", .{ .v = &settings.light_distance, .min = 5.0, .max = 60.0 });
         _ = zgui.sliderFloat("near", .{ .v = &settings.light_near, .min = 0.1, .max = 20.0 });
         _ = zgui.sliderFloat("far", .{ .v = &settings.light_far, .min = 10.0, .max = 100.0 });
+
+        zgui.separatorText("Spotlight");
+        _ = zgui.checkbox("spotlight", .{ .v = &settings.spot_enabled });
+        if (settings.spot_enabled) {
+            _ = zgui.sliderFloat("spot azimuth", .{ .v = &settings.spot_azimuth, .min = 0.0, .max = 360.0 });
+            _ = zgui.sliderFloat("spot height", .{ .v = &settings.spot_height, .min = 1.0, .max = 20.0 });
+            _ = zgui.sliderFloat("spot distance", .{ .v = &settings.spot_radius, .min = 1.0, .max = 20.0 });
+            _ = zgui.sliderFloat("cone", .{ .v = &settings.spot_cone, .min = 10.0, .max = 120.0 });
+            _ = zgui.sliderFloat("range", .{ .v = &settings.spot_range, .min = 5.0, .max = 60.0 });
+            _ = zgui.sliderFloat("intensity", .{ .v = &settings.spot_intensity, .min = 0.0, .max = 10.0 });
+        }
 
         zgui.separatorText("Shadows");
         _ = zgui.sliderFloat("shader bias", .{ .v = &settings.shadow_bias, .min = 0.0, .max = 0.02, .cfmt = "%.4f" });
@@ -419,6 +495,9 @@ fn drawPanel(settings: *Settings) Rebuild {
 
         zgui.separatorText("Debug view");
         _ = zgui.comboFromEnum("view", &settings.debug_view);
+        if (settings.debug_view != .off) {
+            _ = zgui.comboFromEnum("layer", &settings.debug_layer);
+        }
         if (settings.debug_view == .overlay) {
             _ = zgui.sliderFloat("depth min", .{ .v = &settings.overlay_depth_min, .min = 0.0, .max = 1.0 });
             _ = zgui.sliderFloat("depth max", .{ .v = &settings.overlay_depth_max, .min = 0.0, .max = 1.0 });

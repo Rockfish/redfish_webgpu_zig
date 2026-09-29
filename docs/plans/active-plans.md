@@ -7,8 +7,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[017-shadows.md](017-shadows.md)**: `examples/shadows` with a shadow map debug view,
   then pipeline slope bias, linear (hardware PCF) filtering, and several lights in a
   layered shadow map. Taken from small_wgpu_core's `shadows` example.
-  - Phases 1-2 done 2026-09-29: `examples/shadows` with debug views; `DepthBias`,
-    `ShadowMap` filter option, both used in angrybot. Next: phase 3, several lights.
+  - Phases 1-3 done 2026-09-29: `examples/shadows` with debug views; `DepthBias`,
+    `ShadowMap` filter option (both in angrybot); `ShadowMapArray` for several lights.
+    Next: phase 4 (unclipped depth, optional), or finish the plan.
 
 ## ⏸️ Parked
 
