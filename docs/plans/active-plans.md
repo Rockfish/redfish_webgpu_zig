@@ -7,7 +7,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[017-shadows.md](017-shadows.md)**: `examples/shadows` with a shadow map debug view,
   then pipeline slope bias, linear (hardware PCF) filtering, and several lights in a
   layered shadow map. Taken from small_wgpu_core's `shadows` example.
-  - Drafted 2026-09-29, not started. Next: phase 1, the example and debug view.
+  - Phase 1 done 2026-09-29: `examples/shadows` with overlay and light-view debug views.
+    Next: phase 2, pipeline depth bias and linear (hardware PCF) filtering.
 
 ## ⏸️ Parked
 

@@ -1,6 +1,6 @@
 # Plan 017 - Shadows: example, debug view, bias and filtering, several lights
 
-## Status: Active (drafted 2026-09-29, not started)
+## Status: Active (phase 1 done 2026-09-29)
 
 ## Context
 
@@ -130,12 +130,12 @@ it's optional and only used when the adapter has it. Try it last; it may not be 
 ## Phases
 
 ### Phase 1 - Example and debug view
-- [ ] `examples/shadows`: floor, cubes and spheres, one directional light, a local
+- [x] `examples/shadows`: floor, cubes and spheres, one directional light, a local
       lit/shadow-receiving shader and its depth-only caster variant; build steps
       `shadows` / `shadows-run`
-- [ ] zgui panel: light direction, light extent and near/far
-- [ ] Debug view: shadow map overlay (`textureLoad`, depth remapped) and view from the light
-- [ ] Screenshot check; angrybot unchanged
+- [x] zgui panel: light direction, light extent and near/far
+- [x] Debug view: shadow map overlay (`textureLoad`, depth remapped) and view from the light
+- [x] Screenshot check; angrybot unchanged
 
 ### Phase 2 - Bias and filtering
 - [ ] `depth_bias` in `PipelineConfig` / `ShaderConfig`, set on caster pipelines
@@ -176,3 +176,25 @@ change is checked there before it touches angrybot.
 **2026-09-29**: Per-pass light matrix decided: a group 3 bind group per shadow pass
 (option 2). Chosen because it shows the pattern that avoids the buffer-overwrite bug, at
 pass level; the code will carry a comment explaining it.
+
+**2026-09-29**: Phase 1 done.
+- `examples/shadows` (`zig build shadows-run`): floor, cubes, spheres, a cylinder, a slab
+  tilted 30° as a sloped receiver, and a small cube resting on a larger one. One directional
+  light from azimuth / elevation sliders; its orthographic box (extent, distance, near, far)
+  is in the panel. Arrows circle the camera (world axes, so the horizon stays level;
+  orbit, around the camera's own axes, tilted it), W / S zoom.
+- One WGSL file, `shadow_scene.wgsl`, gives both pipelines: lit and receiving (`pass =
+  .shadow`), and the depth-only caster (`color_target = .none`, `DEPTH_MODE`), as angrybot
+  does. No core changes were needed.
+- The shadow bias is a per-draw value for now (`draw.params.x`, a panel slider), so phase 2
+  can compare it against the pipeline bias without editing the shader.
+- Debug overlay: `shadow_map_overlay.wgsl` reads the map with `textureLoad`, so group 3's
+  comparison sampler doesn't matter. Correction to the design note above: the light is
+  orthographic, so depth is linear from near to far and not bunched near 1. The overlay
+  gets a depth min / max range instead of a fixed remap; the scene occupies roughly
+  0.35-0.65 of it at the defaults.
+- View from the light uses the light's position and direction with the horizontal extent
+  widened to the window's aspect, so the picture isn't stretched; the shadow map covers
+  the middle square. No shadows are visible in this view, as expected.
+- Checked: screenshots of all three views; `zig build test` (69 pass); draw_test, angrybot,
+  and shadows run with no GPU errors.

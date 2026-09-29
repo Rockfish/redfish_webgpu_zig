@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Shadows example, plan 017 phase 1
+- **examples/shadows**: shadow map test bed: flat and sloped receivers, one directional light with panel controls (direction, orthographic box, bias), `zig build shadows-run`
+- **Debug views**: the shadow map as an overlay (`textureLoad`, adjustable depth range) and the scene drawn from the light
+- **Plans**: plan 017 (shadows) drafted and active, 016 parked; review of the Rust wgpu projects in `docs/reviews/`
+
 ### 2026-09-28 - Motion patterns, phases 1-2 (plan 016)
 - **core.motion**: `SmoothFollow`, `dampLookAt`, `moveToward`, `dampVec3`, `dampQuat`, `dampAlpha` (frame-rate independent damping), with invariant tests
 - **angrybot**: the game camera eases after the player (`SmoothFollow`) instead of snapping
