@@ -183,6 +183,22 @@ pub const model_infos = [_]ModelInfo{
         .category = "Edge Case",
         .description = "OPAQUE, BLEND, and MASK with cutoffs 0.25 / 0.5 / 0.75 (plan 018 phase 3)",
     },
+    .{
+        .path = "assets_nas/glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf",
+        .name = "Sponza",
+        .format = "glTF",
+        .category = "Complex",
+        .description = "Atrium scene; plants and chains are alpha MASK",
+    },
+    .{
+        // glTF-JPG-PNG: the version without extensions (the glTF one needs
+        // KHR_materials_transmission and others for its glass)
+        .path = "assets_nas/glTF-Sample-Models/2.0/StainedGlassLamp/glTF-JPG-PNG/StainedGlassLamp.gltf",
+        .name = "Stained Glass Lamp",
+        .format = "glTF",
+        .category = "Complex",
+        .description = "Tiffany-style lamp; alpha MASK and BLEND materials",
+    },
     // Extra models for variety
 };
 

@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-09-29 - demo_app: Sponza and Stained Glass Lamp
+- **demo_app**: Sponza (alpha MASK plants and chains) and Stained Glass Lamp (its no-extension `glTF-JPG-PNG` version) added to the model list
+
 ### 2026-09-29 - Alpha-to-coverage for MASK materials, plan 018 phase 3 (plan finished)
 - **pbr.wgsl**: with MSAA, glTF alpha MASK edges are smoothed through alpha-to-coverage (alpha sharpened around the cutoff, so the cut stays where glTF puts it); without MSAA it still discards
 - **core**: `ShaderConfig.alpha_to_coverage` / `PipelineConfig.alpha_to_coverage`, on in multisampled, non-blended variants; the pipeline sets the shader's `ALPHA_TO_COVERAGE` override
