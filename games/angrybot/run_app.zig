@@ -135,6 +135,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .color_target = render_target,
         .constants = &.{enabled("WIGGLE")},
     });
+    // Enemies as depth-only occluders in the emission pass, like floor_depth_shader
+    const enemy_depth_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
+        .vertex_buffers = mesh_layouts,
+        .material = .pbr,
+        .pass = .shadow,
+        .color_target = render_target,
+        .color_writes = false,
+        .constants = &.{enabled("WIGGLE")},
+    });
     const enemy_shadow_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
         .vertex_buffers = mesh_layouts,
         .material = .pbr,
@@ -195,6 +204,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     defer player_emissive_shader.releaseGpuObjects();
     defer player_shadow_shader.releaseGpuObjects();
     defer enemy_shader.releaseGpuObjects();
+    defer enemy_depth_shader.releaseGpuObjects();
     defer enemy_shadow_shader.releaseGpuObjects();
     defer floor_shader.releaseGpuObjects();
     defer floor_depth_shader.releaseGpuObjects();
@@ -468,9 +478,14 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         //
         frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.emission, "emission pass", EMISSION_CLEAR_COLOR, true));
         shadow_map.bind(&frame);
-        player.draw(&frame, player_emissive_shader, player_transform);
-        // Depth only: bullets that dipped below the floor don't glow through it
+        // Occluders first, depth only: a depth write hides what's drawn after it, not
+        // before, so the floor and enemies must be in the depth buffer before anything
+        // glows. Then the player's emissive parts don't show through an enemy in front,
+        // or through the floor where the dying player sinks into it, and neither do
+        // bullets below the floor. (redfish drew only the player and bullets here.)
         floor.draw(&frame, floor_depth_shader);
+        enemy_system.drawEnemies(&frame, enemy_depth_shader, &state);
+        player.draw(&frame, player_emissive_shader, player_transform);
         bullet_system.drawBullets(&frame, instanced_matrix_shader);
         frame.endPass();
 

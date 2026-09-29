@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-09-29 - angrybot: emission pass occluders
+- **Fix**: the player's glow showed through enemies in front of it and through the floor when the dying player sinks into it; the emission pass now draws the floor and enemies depth-only before the player's emissive parts (a depth write only hides later draws). redfish drew only the player and bullets there
+
 ### 2026-09-29 - angrybot: caster slope bias and linear shadow filtering (plan 017)
 - **angrybot**: player and enemy shadow casters use a slope-scaled depth bias and the shadow map filters linearly; removes the acne outline along the eels' backs
 - **Backlog**: anti-aliasing (MSAA) added to the Advanced Rendering cluster
