@@ -1,9 +1,9 @@
 # Plan 016 - Motion Patterns (motion.zig)
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Active: phases 1-2 in progress (2026-09-28). See Notes & Decisions at the end.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Parked 2026-09-29 after phases 1-2. See Notes & Decisions at the end.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-## Status: Active (phases 1-2)
+## Status: Parked (phases 1-2 done, 2026-09-28)
 
 ## Context
 
@@ -208,3 +208,9 @@ phase 4.
   0.6 units of lag at run speed) instead of being snapped every frame.
 - No first user for `dampLookAt` yet; plan 008's turret aim is the natural one.
 
+**2026-09-29**: Parked for plan 017 (shadows).
+- **Where it stands:** phases 1-2 done and committed (`a2a7546`): `core.motion`, used by
+  level_01's click-to-move and angrybot's follow camera. Nothing half-finished.
+- **Next step:** phase 3, a linear waypoint `PathFollow` with repeat modes in `motion.zig`,
+  then Catmull-Rom over the same waypoints and a flythrough example. `dampLookAt` still
+  has no user; plan 008's turret aim is the likely first one.

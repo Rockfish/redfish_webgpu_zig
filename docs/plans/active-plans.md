@@ -4,13 +4,16 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[016-motion-patterns.md](016-motion-patterns.md)**: time-based, goal-seeking motion
-  (`src/core/motion.zig`): `dampAlpha`, `moveToward`, `SmoothFollow`, damped look-at.
-  - Phases 1-2 done 2026-09-28 (level_01 click-to-move, angrybot's follow camera).
-    Next: phase 3 (`PathFollow`), or park it.
+- **[017-shadows.md](017-shadows.md)**: `examples/shadows` with a shadow map debug view,
+  then pipeline slope bias, linear (hardware PCF) filtering, and several lights in a
+  layered shadow map. Taken from small_wgpu_core's `shadows` example.
+  - Drafted 2026-09-29, not started. Next: phase 1, the example and debug view.
 
 ## ⏸️ Parked
 
+- **[016-motion-patterns.md](016-motion-patterns.md)**: `core.motion` (`dampAlpha`,
+  `moveToward`, `SmoothFollow`, `dampLookAt`); phases 1-2 done 2026-09-28 (level_01
+  click-to-move, angrybot's follow camera). Next: phase 3, `PathFollow`.
 - **[012-animation-fsm.md](012-animation-fsm.md)**: phases 1-2 implemented
   (`animation_fsm.zig`, bullets). Next: the crossfade-interrupt fix, then a blend-space
   state tried on angrybot's locomotion (review notes 2026-09-28).
@@ -63,3 +66,7 @@ reviews from redfish_gl_zig; statuses reconciled with this repo (a note under ea
 title). Plan 016 made active (phases 1-2). Review notes added to 012 and 005. Older
 session notes stay in redfish_gl_zig's `active-plans.md`. Plan 016 phases 1-2 done:
 `core.motion`, used by level_01 and angrybot; `Quat.lookAtOrientation` fixed.
+
+**2026-09-29**: Reviewed the Rust wgpu projects
+(`docs/reviews/2026-09-29-rust-wgpu-projects-review.md`). Plan 017 (shadows) drafted and
+made active; 016 parked after phases 1-2.
