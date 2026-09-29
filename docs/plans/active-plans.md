@@ -4,12 +4,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[017-shadows.md](017-shadows.md)**: `examples/shadows` with a shadow map debug view,
-  then pipeline slope bias, linear (hardware PCF) filtering, and several lights in a
-  layered shadow map. Taken from small_wgpu_core's `shadows` example.
-  - Phases 1-3 done 2026-09-29: `examples/shadows` with debug views; `DepthBias`,
-    `ShadowMap` filter option (both in angrybot); `ShadowMapArray` for several lights.
-    Next: phase 4 (unclipped depth, optional), or finish the plan.
+- None. Next: resume a parked plan (016 phase 3, `PathFollow`, is ready), or start one
+  from `backlog.md` (anti-aliasing / MSAA was added 2026-09-29).
 
 ## ⏸️ Parked
 
@@ -33,6 +29,10 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## ✅ Completed
 
+- **[017-shadows.md](017-shadows.md)**: 2026-09-29. `examples/shadows` (debug views,
+  bias, filter, and PCF controls), `DepthBias`, the `ShadowMap` filter option (both in
+  angrybot), and `ShadowMapArray` for several lights. Phase 4 (unclipped depth) left
+  until a scene needs it.
 - **[000-webgpu-port.md](000-webgpu-port.md)**: port of redfish_gl_zig to WebGPU
   (wgpu-native), 2026-09-27. Known issues resolved or out of scope 2026-09-28.
 
@@ -72,3 +72,4 @@ session notes stay in redfish_gl_zig's `active-plans.md`. Plan 016 phases 1-2 do
 **2026-09-29**: Reviewed the Rust wgpu projects
 (`docs/reviews/2026-09-29-rust-wgpu-projects-review.md`). Plan 017 (shadows) drafted and
 made active; 016 parked after phases 1-2.
+Plan 017 finished (phases 1-3); angrybot's emission pass fixed (occluders drawn first).

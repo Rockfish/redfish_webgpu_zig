@@ -27,9 +27,8 @@ The port is complete (plan 000, 2026-09-27): all apps run on wgpu-native, and `a
 the regression check. Since then: PBR edge-highlight fixes, orthographic picking, softer
 demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
-follow camera). Active plan: 017 shadows (phases 1-3 done: `examples/shadows`, `DepthBias`,
-`ShadowMap` filter, `ShadowMapArray`; next: optional phase 4 or finish); 016 parked.
-See `docs/plans/active-plans.md`.
+follow camera), and plan 017 shadows (`examples/shadows`, `DepthBias`, `ShadowMap` filter,
+`ShadowMapArray`). No active plan; 016 is parked at phase 3. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

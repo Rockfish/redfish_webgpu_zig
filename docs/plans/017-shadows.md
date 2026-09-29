@@ -1,6 +1,6 @@
 # Plan 017 - Shadows: example, debug view, bias and filtering, several lights
 
-## Status: Active (phases 1-3 done 2026-09-29; phase 4 optional)
+## Status: Completed 2026-09-29 (phases 1-3; phase 4 not needed)
 
 ## Context
 
@@ -157,7 +157,7 @@ it's optional and only used when the adapter has it. Try it last; it may not be 
       both layers; debug overlay picks the layer
 - [x] `examples/draw_test` and angrybot still pass
 
-### Phase 4 - Unclipped depth (optional)
+### Phase 4 - Unclipped depth (optional, not done: see the closing note)
 - [ ] Request `DepthClipControl` when the adapter offers it; `unclipped_depth` on caster
       pipelines when enabled; compare with a tight light volume in the example
 
@@ -279,3 +279,11 @@ player look the same at the game camera's distance.
   near 1: shown with depth range 0.9-1.0) and the view from the spotlight (a centered
   circle, none of its own shadows visible). `zig build test` passes; draw_test and angrybot
   run without errors.
+
+**2026-09-29**: Plan finished after phase 3. Phase 4 (unclipped depth) is not done: no
+scene here has casters in front of a light's near plane. If one does, the work is small:
+request the `DepthClipControl` feature when the adapter offers it and set
+`unclippedDepth` on caster pipelines (a `PipelineConfig` field, like `depth_bias`).
+Outcome: `examples/shadows` as the shadow test bed, `DepthBias`, the `ShadowMap` filter
+option (angrybot uses both), and `ShadowMapArray` for several lights with a group 3 bind
+group per shadow pass.

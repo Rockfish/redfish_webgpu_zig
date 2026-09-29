@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Plan 017 finished
+- **Plans**: 017 shadows completed after phase 3; unclipped depth (phase 4) left until a scene needs it
+
 ### 2026-09-29 - Shadows from several lights, plan 017 phase 3
 - **core.ShadowMapArray**: one depth texture with a layer per light; each layer's shadow pass binds its own light matrix at group 3 (`PassKind.shadow_caster`), receivers sample all layers (`PassKind.shadow_layers`). Each light's matrix has its own 256-byte slot, written once per frame, so nothing is rewritten between passes
 - **examples/shadows**: a spotlight with its own shadow layer next to the directional light; the spotlight's cone is its shadow projection; debug views pick a layer
