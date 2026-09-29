@@ -4,8 +4,14 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- None. Next: resume a parked plan (016 phase 3, `PathFollow`, is ready), or start one
-  from `backlog.md` (anti-aliasing / MSAA was added 2026-09-29).
+- None. Next: start plan 018 (below), or resume a parked plan (016 phase 3,
+  `PathFollow`, is ready).
+
+## 📋 Planned
+
+- **[018-anti-aliasing.md](018-anti-aliasing.md)**: 4x MSAA. Phase 1 in core (window pass
+  resolves into the surface, pipelines and ImGui get the sample count), phase 2 angrybot's
+  render targets, phase 3 optional (alpha-to-coverage, default on/off). Drafted 2026-09-29.
 
 ## ⏸️ Parked
 

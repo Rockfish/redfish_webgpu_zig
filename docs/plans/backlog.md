@@ -31,7 +31,7 @@ This file tracks future features organized by development layers. Features are g
   - Double-sided rendering
   - Texture coordinate transformations
 
-- [ ] **Anti-aliasing (MSAA)** (added 2026-09-29; shape edges and shadow silhouettes stair-step)
+- [ ] **Anti-aliasing (MSAA)** (added 2026-09-29; now [plan 018](018-anti-aliasing.md))
   - 4x MSAA: a multisampled color texture resolved into the surface texture, and a
     multisampled depth texture, in `GpuContext`
   - Sample count on every pipeline (`createRenderPipeline`) and in ImGui's backend
