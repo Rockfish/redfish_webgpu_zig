@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-09-29 - angrybot: caster slope bias and linear shadow filtering (plan 017)
+- **angrybot**: player and enemy shadow casters use a slope-scaled depth bias and the shadow map filters linearly; removes the acne outline along the eels' backs
+- **Backlog**: anti-aliasing (MSAA) added to the Advanced Rendering cluster
+
 ### 2026-09-29 - Shadow bias and filtering, plan 017 phase 2
 - **core.pipeline.DepthBias**: slope-scaled depth bias for shadow casters (`ShaderConfig.depth_bias`)
 - **ShadowMap**: `init(gpu, .{ .size, .filter })`; `.linear` is the hardware 2x2 comparison filter (default `.nearest`, angrybot unchanged)

@@ -117,11 +117,15 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .color_target = render_target,
         .constants = &.{enabled("EMISSIVE_ONLY")},
     });
+    // Shadow casters get a slope-scaled depth bias; it removed acne along the eel's back,
+    // which is nearly edge-on to the light (plan 017, phase 2). The receiving shaders keep
+    // their small SHADOW_BIAS, which covers the floor's PCF samples.
     const player_shadow_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
         .vertex_buffers = mesh_layouts,
         .material = .pbr,
         .color_target = .none,
         .constants = &.{enabled("DEPTH_MODE")},
+        .depth_bias = .{ .constant = 2, .slope_scale = 2.0 },
     });
 
     const enemy_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
@@ -136,6 +140,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .material = .pbr,
         .color_target = .none,
         .constants = &.{ enabled("WIGGLE"), enabled("DEPTH_MODE") },
+        .depth_bias = .{ .constant = 2, .slope_scale = 2.0 },
     });
 
     const floor_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/floor_shader.wgsl", .{
@@ -218,7 +223,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
     // -- Framebuffers ---
 
-    var shadow_map = ShadowMap.init(gpu, .{ .size = fb.SHADOW_SIZE });
+    // Linear: each comparison blends the four nearest texels (redfish's was one texel)
+    var shadow_map = ShadowMap.init(gpu, .{ .size = fb.SHADOW_SIZE, .filter = .linear });
     defer shadow_map.releaseGpuObjects();
 
     var frame_buffers = try fb.FrameBuffers.init(context.alloc, gpu);

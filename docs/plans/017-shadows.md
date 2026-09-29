@@ -1,6 +1,6 @@
 # Plan 017 - Shadows: example, debug view, bias and filtering, several lights
 
-## Status: Active (phases 1-2 done 2026-09-29, except the angrybot trial)
+## Status: Active (phases 1-2 done 2026-09-29)
 
 ## Context
 
@@ -143,9 +143,8 @@ it's optional and only used when the adapter has it. Try it last; it may not be 
       keep both
 - [x] `ShadowMap` filter option (nearest default, linear); panel toggle; PCF kernel size in
       the example shader
-- [ ] Try slope bias and linear filtering in angrybot; keep them only if it looks as
-      good or better than now (angrybot is the regression reference). Not done yet: see
-      the phase 2 note
+- [x] Try slope bias and linear filtering in angrybot; keep them only if it looks as
+      good or better than now (angrybot is the regression reference): kept
 
 ### Phase 3 - Several lights
 - [x] Decide how casters get the pass's light matrix: a group 3 bind group per shadow
@@ -243,3 +242,10 @@ There was no JetsamEvent report to name the process. One real fix: the example g
 the arena allocator, and ImGui frees in any order, while an arena only reclaims its most
 recent allocation. It now gets the general-purpose allocator, like the other apps. If it
 happens again, watch the Memory column in Activity Monitor for `shadows`.
+
+**2026-09-29**: angrybot trial done; both kept. Caster pipelines (player, enemies) get
+`depth_bias = .{ .constant = 2, .slope_scale = 2.0 }` and the shadow map `.filter = .linear`;
+the receivers keep `SHADOW_BIAS = 0.001`. Window captures of the same view before and after
+(3x crops): the baseline shows a stippled dark outline of self-shadow acne along the eel's
+back, which is nearly edge-on to the light; the trial doesn't. The floor shadows and the
+player look the same at the game camera's distance.

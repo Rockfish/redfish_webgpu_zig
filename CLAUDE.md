@@ -28,7 +28,7 @@ the regression check. Since then: PBR edge-highlight fixes, orthographic picking
 demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
 follow camera). Active plan: 017 shadows (phases 1-2 done: `examples/shadows`, `DepthBias`,
-`ShadowMap` filter; next: the angrybot trial, then phase 3); 016 parked after phases 1-2.
+`ShadowMap` filter, both in angrybot; next: phase 3, several lights); 016 parked.
 See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

@@ -1,4 +1,4 @@
-ter# Development Backlog
+# Development Backlog
 
 > Imported from redfish_gl_zig on 2026-09-28. Items the WebGPU port has delivered since are
 > ticked or annotated; new ideas go at the end of the relevant cluster.
@@ -30,6 +30,14 @@ This file tracks future features organized by development layers. Features are g
   - Blend mode support
   - Double-sided rendering
   - Texture coordinate transformations
+
+- [ ] **Anti-aliasing (MSAA)** (added 2026-09-29; shape edges and shadow silhouettes stair-step)
+  - 4x MSAA: a multisampled color texture resolved into the surface texture, and a
+    multisampled depth texture, in `GpuContext`
+  - Sample count on every pipeline (`createRenderPipeline`) and in ImGui's backend
+    (`pipeline_multisample_state` in `gui.zig`)
+  - Render-target passes (angrybot's) either match the sample count or stay at one
+  - Option to turn it off; `ScreenCapture` resolves the same way
 
 ### Advanced Animation Cluster
 - [ ] **Complex State Machine**
