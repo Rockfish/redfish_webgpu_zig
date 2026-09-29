@@ -6,8 +6,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 - **[018-anti-aliasing.md](018-anti-aliasing.md)**: 4x MSAA, a build option on by default
   (`-Dmsaa=false` turns it off).
-  - Phase 1 done 2026-09-29: the window pass in every app. Next: phase 2, angrybot's
-    render targets.
+  - Phases 1-2 done 2026-09-29: the window pass in every app, and angrybot's scene and
+    emission passes. Next: phase 3 (alpha-to-coverage, optional), or finish the plan.
 
 ## ⏸️ Parked
 

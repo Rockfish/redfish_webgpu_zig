@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Anti-aliasing in angrybot, plan 018 phase 2
+- **angrybot**: the emission and scene passes are 4x multisampled and resolve into their render targets; blur and composite unchanged
+- **core**: `gpu_context.Attachment` (render-only textures; `GpuContext`'s depth and MSAA textures use it), `ShaderConfig.multisampled` for render-target pipelines in multisampled passes
+
 ### 2026-09-29 - Anti-aliasing: 4x MSAA in the window pass, plan 018 phase 1
 - **MSAA**: everything drawn in the window pass is 4x multisampled and resolved into the surface; on by default, `zig build -Dmsaa=false` turns it off
 - **core**: `gpu_context.window_sample_count`, `Frame.surfaceTarget`, `PassTarget.resolve`, `PipelineConfig.sample_count`; ImGui uses the window's sample count

@@ -1,6 +1,6 @@
 # Plan 018 - Anti-aliasing (MSAA)
 
-## Status: Active (phase 1 done 2026-09-29)
+## Status: Active (phases 1-2 done 2026-09-29; phase 3 optional)
 
 ## Context
 
@@ -126,10 +126,10 @@ same view with and without MSAA, enlarged.
 ### Phase 2 - angrybot's render targets
 - [x] `PassTarget.resolve`; `beginPass` sets `resolveTarget` (done in phase 1: the window
       pass uses it)
-- [ ] `ShaderConfig.multisampled` for render-target pipelines
-- [ ] angrybot: 4x textures for the scene and emission passes resolving into the existing
+- [x] `ShaderConfig.multisampled` for render-target pipelines
+- [x] angrybot: 4x textures for the scene and emission passes resolving into the existing
       targets, and a 4x depth texture for those passes; blur and composite unchanged
-- [ ] Screenshots: edges smooth, bloom unchanged; frame time noted
+- [x] Screenshots: edges smooth, bloom unchanged; cost noted
 
 ### Phase 3 - Optional
 - [ ] Alpha-to-coverage for glTF alpha MASK materials (`pbr.wgsl` discards below the
@@ -170,3 +170,21 @@ reach it.
   A Retina framebuffer has four times the pixels, about 110 MB extra. Frame time is
   vsync-bound (the present mode is FIFO), so no difference shows.
 - angrybot's scene still has jagged edges: it's drawn in render targets (phase 2).
+
+**2026-09-29**: Phase 2 done.
+- `gpu_context.Attachment`: a texture that passes draw into and shaders never sample (depth,
+  multisampled color), with its view. `GpuContext` now holds `depth`, `msaa_color`,
+  `msaa_depth` as attachments (they were texture / view field pairs).
+- `ShaderConfig.multisampled`: a render-target pipeline that draws in a multisampled pass
+  gets the window's sample count. angrybot sets it on the nine shaders of its emission and
+  scene passes.
+- angrybot `FrameBuffers`: one 4x `rgba16float` `msaa_color`, shared by the emission and
+  scene passes (each clears it and resolves into its own target); both use the window's 4x
+  depth, which is the same size. `passTarget(with_depth)` became `geometryPassTarget`
+  (depth, MSAA when enabled) and `quadPassTarget` (the blurs: single-sample, no depth).
+- Checked: all apps run with no GPU errors, with MSAA on and angrybot with it off too.
+  angrybot on vs off (3x crops): the player's silhouette, antenna, and gun are smooth with
+  MSAA; the emissive specks stay pixel-sized (texture detail, which MSAA doesn't touch);
+  bloom unchanged.
+- Cost: angrybot's footprint 663 MB off, 739 MB on at 1500 x 1000 (the window's 4x color
+  and depth plus the 4x `rgba16float`).

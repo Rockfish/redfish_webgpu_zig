@@ -97,7 +97,8 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     // Shaders. redfish drew the shadow and emission passes with the lit shaders and
     // uniform switches; here those are pipelines of the same file with override
     // constants (see player_shader.wgsl). Everything before the composite draws into
-    // rgba16float render targets.
+    // rgba16float render targets. The shaders of the emission and scene passes set
+    // `.multisampled`: with MSAA those passes are 4x (framebuffers.zig).
     const render_target: core.pipeline.ColorTarget = .{ .format = core.texture.hdr_format };
     const mesh_layouts = &MeshPrimitive.vertex_buffer_layouts;
     const shape_layouts = &Shape.vertex_buffer_layouts;
@@ -108,6 +109,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .pass = .shadow,
         .color_target = render_target,
         .constants = &.{ enabled("USE_EMISSIVE"), enabled("USE_POINT_LIGHT") },
+        .multisampled = true,
     });
     // Its fragment stage references the shadow map, so it binds group 3 too.
     const player_emissive_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
@@ -116,6 +118,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .pass = .shadow,
         .color_target = render_target,
         .constants = &.{enabled("EMISSIVE_ONLY")},
+        .multisampled = true,
     });
     // Shadow casters get a slope-scaled depth bias; it removed acne along the eel's back,
     // which is nearly edge-on to the light (plan 017, phase 2). The receiving shaders keep
@@ -134,6 +137,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .pass = .shadow,
         .color_target = render_target,
         .constants = &.{enabled("WIGGLE")},
+        .multisampled = true,
     });
     // Enemies as depth-only occluders in the emission pass, like floor_depth_shader
     const enemy_depth_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
@@ -143,6 +147,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .color_target = render_target,
         .color_writes = false,
         .constants = &.{enabled("WIGGLE")},
+        .multisampled = true,
     });
     const enemy_shadow_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/player_shader.wgsl", .{
         .vertex_buffers = mesh_layouts,
@@ -157,6 +162,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .material = .pbr,
         .pass = .shadow,
         .color_target = render_target,
+        .multisampled = true,
     });
 
     // The floor as a depth-only occluder in the emission pass (the original's glColorMask off)
@@ -166,6 +172,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .pass = .shadow,
         .color_target = render_target,
         .color_writes = false,
+        .multisampled = true,
     });
 
     // bullets - instanced quaternion rotations and positions
@@ -173,18 +180,21 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         .vertex_buffers = &bullet_system_.vertex_buffer_layouts,
         .material = .texture,
         .color_target = render_target,
+        .multisampled = true,
     });
     // muzzle flash, bullet impacts
     const sprite_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/sprite_shader.wgsl", .{
         .vertex_buffers = shape_layouts,
         .material = .texture,
         .color_target = render_target,
+        .multisampled = true,
     });
     // burn marks
     const basic_texture_shader = try Shader.init(context.io, context.alloc, gpu, "games/angrybot/shaders/basic_texture_shader.wgsl", .{
         .vertex_buffers = shape_layouts,
         .material = .texture,
         .color_target = render_target,
+        .multisampled = true,
     });
 
     // blur and scene
@@ -476,7 +486,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         //
         // emission - the bright parts that bloom
         //
-        frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.emission, "emission pass", EMISSION_CLEAR_COLOR, true));
+        frame.beginPass(frame_buffers.geometryPassTarget(gpu, frame_buffers.emission, "emission pass", EMISSION_CLEAR_COLOR));
         shadow_map.bind(&frame);
         // Occluders first, depth only: a depth write hides what's drawn after it, not
         // before, so the floor and enemies must be in the depth buffer before anything
@@ -492,7 +502,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         //
         // scene - reads the shadow map
         //
-        frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.scene, "scene pass", SCENE_CLEAR_COLOR, true));
+        frame.beginPass(frame_buffers.geometryPassTarget(gpu, frame_buffers.scene, "scene pass", SCENE_CLEAR_COLOR));
         shadow_map.bind(&frame);
 
         floor.draw(&frame, floor_shader);
@@ -506,12 +516,12 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         //
         // blur the emission at half size, then combine it with the scene in the window
         //
-        frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.horizontal_blur, "horizontal blur pass", EMISSION_CLEAR_COLOR, false));
+        frame.beginPass(fb.FrameBuffers.quadPassTarget(frame_buffers.horizontal_blur, "horizontal blur pass", EMISSION_CLEAR_COLOR));
         frame_buffers.emission.bind(&frame);
         fullscreen_quad.draw(&frame, blur_shader, blurUniforms(true));
         frame.endPass();
 
-        frame.beginPass(fb.FrameBuffers.passTarget(gpu, frame_buffers.vertical_blur, "vertical blur pass", EMISSION_CLEAR_COLOR, false));
+        frame.beginPass(fb.FrameBuffers.quadPassTarget(frame_buffers.vertical_blur, "vertical blur pass", EMISSION_CLEAR_COLOR));
         frame_buffers.horizontal_blur.bind(&frame);
         fullscreen_quad.draw(&frame, blur_shader, blurUniforms(false));
         frame.endPass();

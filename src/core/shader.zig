@@ -51,6 +51,10 @@ pub const ShaderConfig = struct {
     constants: []const OverrideConstant = &.{},
     /// Depth bias for shadow casters (see `DepthBias`); zero for everything else.
     depth_bias: DepthBias = .{},
+    /// A render-target (`.format`) pipeline that draws in a multisampled pass, one whose
+    /// target has a `resolve` view: it gets the window's sample count
+    /// (`gpu_context.window_sample_count`, 1 without MSAA). `.surface` pipelines always do.
+    multisampled: bool = false,
 };
 
 const log = std.log.scoped(.shader);
@@ -104,9 +108,9 @@ pub const Shader = struct {
                 .constants = config.constants,
                 .color_writes = config.color_writes,
                 .depth_bias = config.depth_bias,
-                // The window pass is multisampled with MSAA; render targets and shadow
-                // passes aren't
-                .sample_count = if (config.color_target == .surface) gpu_context.window_sample_count else 1,
+                // The window pass is multisampled with MSAA; render targets only when the
+                // shader says so, and shadow passes never
+                .sample_count = if (config.color_target == .surface or config.multisampled) gpu_context.window_sample_count else 1,
             }),
         };
         return shader;

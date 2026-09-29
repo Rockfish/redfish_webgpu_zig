@@ -3,6 +3,8 @@ const core = @import("core");
 
 const Allocator = std.mem.Allocator;
 const GpuContext = core.GpuContext;
+const Attachment = core.gpu_context.Attachment;
+const window_sample_count = core.gpu_context.window_sample_count;
 const Frame = core.Frame;
 const PassTarget = core.PassTarget;
 const PbrMaterial = core.material.PbrMaterial;
@@ -15,6 +17,11 @@ pub const SHADOW_SIZE: u32 = 6 * 1024;
 /// passes at half size. `rgba16float` (redfish: RGB8). Sized to the window; `update`
 /// recreates them after a resize. The shadow map is separate (`core.ShadowMap`): its size
 /// doesn't follow the window.
+///
+/// With MSAA the emission and scene passes are multisampled: they draw into `msaa_color`
+/// with the window's 4x depth and resolve into `emission` / `scene` (`geometryPassTarget`).
+/// One 4x texture serves both passes: each clears it and keeps only its resolve. The blur
+/// and composite passes read the resolved targets.
 pub const FrameBuffers = struct {
     allocator: Allocator,
     width: u32,
@@ -23,6 +30,8 @@ pub const FrameBuffers = struct {
     scene: *Texture,
     horizontal_blur: *Texture,
     vertical_blur: *Texture,
+    /// 4x `rgba16float` for the multisampled passes; empty without MSAA.
+    msaa_color: Attachment,
     /// The composite pass's inputs as one pbr-layout material (see texture_merge_shader).
     composite: PbrMaterial,
 
@@ -47,6 +56,10 @@ pub const FrameBuffers = struct {
             .scene = scene,
             .horizontal_blur = horizontal_blur,
             .vertical_blur = vertical_blur,
+            .msaa_color = if (window_sample_count > 1)
+                Attachment.init(gpu, width, height, core.texture.hdr_format, window_sample_count, "msaa scene")
+            else
+                .{},
             // Slots: base color, metallic-roughness, normal, occlusion, emissive
             .composite = try PbrMaterial.initWithTextures(gpu, .{ scene, emission, null, null, vertical_blur }),
         };
@@ -61,18 +74,31 @@ pub const FrameBuffers = struct {
         self.* = try init(self.allocator, gpu);
     }
 
-    /// Color pass into `target`, with the window-sized depth texture when `with_depth`.
-    pub fn passTarget(gpu: *const GpuContext, target: *const Texture, label: []const u8, clear_color: [4]f64, with_depth: bool) PassTarget {
+    /// A pass that draws the scene's geometry into `target` (emission, scene), with depth.
+    /// With MSAA it draws 4x and resolves into `target`; its shaders set
+    /// `ShaderConfig.multisampled`.
+    pub fn geometryPassTarget(self: *const Self, gpu: *const GpuContext, target: *const Texture, label: []const u8, clear_color: [4]f64) PassTarget {
+        if (window_sample_count == 1) {
+            return .{ .label = label, .color = target.view, .depth = gpu.depth.view, .clear_color = clear_color };
+        }
         return .{
             .label = label,
-            .color = target.view,
-            .depth = if (with_depth) gpu.depth_view else null,
+            .color = self.msaa_color.view,
+            .depth = gpu.msaa_depth.view,
+            .resolve = target.view,
             .clear_color = clear_color,
         };
     }
 
+    /// A full-screen pass into `target` (the blurs): single-sample, no depth. A full-screen
+    /// quad has no edges inside the target for MSAA to smooth.
+    pub fn quadPassTarget(target: *const Texture, label: []const u8, clear_color: [4]f64) PassTarget {
+        return .{ .label = label, .color = target.view, .clear_color = clear_color };
+    }
+
     pub fn releaseGpuObjects(self: *Self) void {
         self.composite.releaseGpuObjects();
+        self.msaa_color.releaseGpuObjects();
         self.vertical_blur.releaseGpuObjects();
         self.horizontal_blur.releaseGpuObjects();
         self.scene.releaseGpuObjects();

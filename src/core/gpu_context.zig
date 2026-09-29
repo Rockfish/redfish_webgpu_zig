@@ -46,6 +46,44 @@ pub const depth_format = c.WGPUTextureFormat_Depth32Float;
 /// single-sample view at the end of the pass. Shadow passes and render targets stay at 1.
 pub const window_sample_count: u32 = if (build_options.msaa) 4 else 1;
 
+/// A texture passes draw into and shaders never sample: depth, and the multisampled
+/// color of an MSAA pass, which is resolved into a normal texture when the pass ends.
+/// Empty (null) until `init`.
+pub const Attachment = struct {
+    texture: c.WGPUTexture = null,
+    view: c.WGPUTextureView = null,
+
+    pub fn init(
+        gpu: *const GpuContext,
+        width: u32,
+        height: u32,
+        format: c.WGPUTextureFormat,
+        sample_count: u32,
+        label: []const u8,
+    ) Attachment {
+        const texture = c.wgpuDeviceCreateTexture(gpu.device, &.{
+            .label = stringView(label),
+            .usage = c.WGPUTextureUsage_RenderAttachment,
+            .dimension = c.WGPUTextureDimension_2D,
+            .size = .{ .width = width, .height = height, .depthOrArrayLayers = 1 },
+            .format = format,
+            .mipLevelCount = 1,
+            .sampleCount = sample_count,
+        });
+        return .{ .texture = texture, .view = c.wgpuTextureCreateView(texture, null) };
+    }
+
+    pub fn releaseGpuObjects(self: *Attachment) void {
+        if (self.view != null) {
+            c.wgpuTextureViewRelease(self.view);
+        }
+        if (self.texture != null) {
+            c.wgpuTextureRelease(self.texture);
+        }
+        self.* = .{};
+    }
+};
+
 /// Where a pass draws. Null `color` is a depth-only pass (shadow map); null `depth` a pass
 /// without depth (full-screen post-processing). Both are cleared when the pass begins.
 /// A multisampled pass draws into multisampled `color` and `depth` and names `resolve`:
@@ -87,14 +125,14 @@ pub const Frame = struct {
             return .{
                 .label = label,
                 .color = self.color_view,
-                .depth = if (with_depth) gpu.depth_view else null,
+                .depth = if (with_depth) gpu.depth.view else null,
                 .clear_color = clear_color,
             };
         }
         return .{
             .label = label,
-            .color = gpu.msaa_color_view,
-            .depth = if (with_depth) gpu.msaa_depth_view else null,
+            .color = gpu.msaa_color.view,
+            .depth = if (with_depth) gpu.msaa_depth.view else null,
             .resolve = self.color_view,
             .clear_color = clear_color,
         };
@@ -153,15 +191,14 @@ pub const GpuContext = struct {
     alpha_mode: c.WGPUCompositeAlphaMode,
     width: u32,
     height: u32,
-    /// Single-sample depth: the window pass without MSAA, and render-target passes.
-    depth_texture: c.WGPUTexture = null,
-    depth_view: c.WGPUTextureView = null,
-    /// The window pass's 4x color and depth with MSAA (`window_sample_count` 4); null
-    /// without. Sized to the window, like `depth_texture`.
-    msaa_color_texture: c.WGPUTexture = null,
-    msaa_color_view: c.WGPUTextureView = null,
-    msaa_depth_texture: c.WGPUTexture = null,
-    msaa_depth_view: c.WGPUTextureView = null,
+    /// Single-sample depth, sized to the window: the window pass without MSAA, and
+    /// single-sample render-target passes.
+    depth: Attachment = .{},
+    /// With MSAA (`window_sample_count` 4), the window pass's 4x color and depth, sized to
+    /// the window; empty without. Multisampled render-target passes of the window's size
+    /// share `msaa_depth` too.
+    msaa_color: Attachment = .{},
+    msaa_depth: Attachment = .{},
     uniform_ring: UniformRing,
     vertex_ring: VertexRing,
     bindings: Bindings,
@@ -398,43 +435,17 @@ pub const GpuContext = struct {
     /// 4x color and depth.
     fn createAttachments(self: *Self) void {
         self.releaseAttachments();
-        self.depth_texture = self.createAttachment("depth", depth_format, 1);
-        self.depth_view = c.wgpuTextureCreateView(self.depth_texture, null);
+        self.depth = Attachment.init(self, self.width, self.height, depth_format, 1, "depth");
         if (window_sample_count > 1) {
-            self.msaa_color_texture = self.createAttachment("msaa color", self.surface_format, window_sample_count);
-            self.msaa_color_view = c.wgpuTextureCreateView(self.msaa_color_texture, null);
-            self.msaa_depth_texture = self.createAttachment("msaa depth", depth_format, window_sample_count);
-            self.msaa_depth_view = c.wgpuTextureCreateView(self.msaa_depth_texture, null);
+            self.msaa_color = Attachment.init(self, self.width, self.height, self.surface_format, window_sample_count, "msaa color");
+            self.msaa_depth = Attachment.init(self, self.width, self.height, depth_format, window_sample_count, "msaa depth");
         }
-    }
-
-    fn createAttachment(self: *Self, label: []const u8, format: c.WGPUTextureFormat, sample_count: u32) c.WGPUTexture {
-        return c.wgpuDeviceCreateTexture(self.device, &.{
-            .label = stringView(label),
-            .usage = c.WGPUTextureUsage_RenderAttachment,
-            .dimension = c.WGPUTextureDimension_2D,
-            .size = .{ .width = self.width, .height = self.height, .depthOrArrayLayers = 1 },
-            .format = format,
-            .mipLevelCount = 1,
-            .sampleCount = sample_count,
-        });
     }
 
     fn releaseAttachments(self: *Self) void {
-        const views = [_]*c.WGPUTextureView{ &self.depth_view, &self.msaa_color_view, &self.msaa_depth_view };
-        for (views) |view| {
-            if (view.* != null) {
-                c.wgpuTextureViewRelease(view.*);
-            }
-            view.* = null;
-        }
-        const textures = [_]*c.WGPUTexture{ &self.depth_texture, &self.msaa_color_texture, &self.msaa_depth_texture };
-        for (textures) |texture| {
-            if (texture.* != null) {
-                c.wgpuTextureRelease(texture.*);
-            }
-            texture.* = null;
-        }
+        self.depth.releaseGpuObjects();
+        self.msaa_color.releaseGpuObjects();
+        self.msaa_depth.releaseGpuObjects();
     }
 };
 
