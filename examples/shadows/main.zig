@@ -9,8 +9,13 @@
 //! not one matrix rewritten between passes. The panel moves the lights and shows a layer
 //! itself: as an overlay, or by drawing the scene from that light.
 //!
+//! The camera can also fly a closed path around the scene (`core.motion.PathFollow`, plan
+//! 016): straight segments or a Catmull-Rom curve through the same waypoints, drawn as
+//! lines so the two can be compared.
+//!
 //! Keys: arrows circle the camera around the scene (world up and right, so the horizon
-//! stays level), W / S move it in and out, Escape quits.
+//! stays level), W / S move it in and out, Escape quits. The keys do nothing while the
+//! camera flies the path.
 
 const std = @import("std");
 const core = @import("core");
@@ -29,6 +34,9 @@ const Shader = core.Shader;
 const ShadowMapArray = core.ShadowMapArray;
 const Shape = core.shapes.Shape;
 const gui = core.gui;
+const Lines = core.shapes.Lines;
+const LineSegment = core.shapes.LineSegment;
+const PathFollow = core.motion.PathFollow;
 const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -44,6 +52,21 @@ const SPOT_COLOR = vec3(1.0, 0.85, 0.6);
 const DebugView = enum(i32) { off, overlay, light_view };
 
 /// The shadow map layers, in the order shadow_scene.wgsl reads them.
+/// The camera's flythrough: a closed loop around the scene, rising and dipping.
+const camera_waypoints = [_]Vec3{
+    vec3(13.0, 5.0, 0.0),
+    vec3(8.0, 2.5, 10.0),
+    vec3(-4.0, 2.0, 11.0),
+    vec3(-12.0, 6.0, 3.0),
+    vec3(-7.0, 3.5, -10.0),
+    vec3(6.0, 2.0, -11.0),
+};
+/// Line segments drawn along the path.
+const PATH_LINE_SEGMENTS = 240;
+
+const CameraPath = enum(i32) { off, linear, catmull_rom };
+const CameraLook = enum(i32) { center, ahead };
+
 const Layer = enum(u32) {
     directional,
     spot,
@@ -92,6 +115,12 @@ const Settings = struct {
     debug_view: DebugView = .off,
     /// The layer the overlay and the light view show.
     debug_layer: Layer = .directional,
+    camera_path: CameraPath = .off,
+    /// Units per second along the path.
+    path_speed: f32 = 3.0,
+    /// Look at the scene center, or ahead along the path (`PathFollow.tangent`).
+    camera_look: CameraLook = .center,
+    show_path: bool = true,
     /// The depth range the overlay shows black to white.
     overlay_depth_min: f32 = 0.0,
     overlay_depth_max: f32 = 1.0,
@@ -187,6 +216,15 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         .scr_height = @floatFromInt(gpu.height),
     });
 
+    const lines_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/lines.wgsl", .{
+        .vertex_buffers = &Lines.vertex_buffer_layouts,
+        .topology = .line_list,
+    });
+    defer lines_shader.releaseGpuObjects();
+    var path_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, PATH_LINE_SEGMENTS);
+
+    var camera_path: PathFollow = .{ .points = &camera_waypoints, .speed = 0.0, .repeat = .loop };
+
     gui.init(allocator, window, gpu);
     defer gui.deinit();
 
@@ -203,7 +241,11 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const delta_time = time - last_time;
         last_time = time;
 
-        processKeys(window, camera, delta_time);
+        if (settings.camera_path == .off) {
+            processKeys(window, camera, delta_time);
+        } else {
+            flyCamera(camera, &camera_path, settings, delta_time);
+        }
 
         // Depth bias is pipeline state and filtering is sampler state, both fixed when
         // created, so a change in the panel means new ones. Between frames, not while the
@@ -246,6 +288,9 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         frame.beginSurfacePass(CLEAR_COLOR);
         shadow_maps.bind(&frame);
         drawObjects(&frame, scene_shader, &objects, settings);
+        if (settings.camera_path != .off and settings.show_path) {
+            drawPath(&frame, &path_lines, camera_path);
+        }
         if (settings.debug_view == .overlay) {
             drawOverlay(&frame, overlay_shader, overlay_quad, settings, gpu);
         }
@@ -328,6 +373,35 @@ const SceneShapes = struct {
 fn place(position: Vec3, scale: Vec3, axis: Vec3, degrees: f32) Mat4 {
     const rotation = Mat4.fromAxisAngle(axis.toNormalized(), std.math.degreesToRadians(degrees));
     return Mat4.fromTranslation(position).mulMat4(&rotation).mulMat4(&Mat4.fromScale(scale));
+}
+
+/// Moves the camera along the path: the path's shape and speed from the panel, looking at
+/// the scene center or ahead along the direction of travel.
+fn flyCamera(camera: *Camera, path: *PathFollow, settings: Settings, delta_time: f32) void {
+    path.shape = if (settings.camera_path == .catmull_rom) .catmull_rom else .linear;
+    path.speed = settings.path_speed;
+    const position = path.update(delta_time);
+    const target = switch (settings.camera_look) {
+        .center => SCENE_CENTER,
+        .ahead => position.add(path.tangent()),
+    };
+    camera.movement.reset(position, target);
+}
+
+/// The path's current shape, sampled along its length. A copy of the path, so the
+/// camera's position on it is untouched.
+fn drawPath(frame: *const Frame, lines: *Lines, path: PathFollow) void {
+    var sampler = path;
+    const length = sampler.length();
+    var segments: [PATH_LINE_SEGMENTS]LineSegment = undefined;
+    var previous = sampler.points[0];
+    for (&segments, 1..) |*segment, i| {
+        sampler.distance = length * @as(f32, @floatFromInt(i)) / PATH_LINE_SEGMENTS;
+        const point = sampler.position();
+        segment.* = .{ .start = previous, .end = point, .color = .gold };
+        previous = point;
+    }
+    lines.draw(frame, &segments);
 }
 
 fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
@@ -492,6 +566,14 @@ fn drawPanel(settings: *Settings) Rebuild {
             rebuild.shadow_map = true;
         }
         _ = zgui.sliderInt("PCF radius", .{ .v = &settings.pcf_radius, .min = 0, .max = 2 });
+
+        zgui.separatorText("Camera path");
+        _ = zgui.comboFromEnum("path", &settings.camera_path);
+        if (settings.camera_path != .off) {
+            _ = zgui.sliderFloat("speed", .{ .v = &settings.path_speed, .min = 0.0, .max = 15.0 });
+            _ = zgui.comboFromEnum("look", &settings.camera_look);
+            _ = zgui.checkbox("show path", .{ .v = &settings.show_path });
+        }
 
         zgui.separatorText("Debug view");
         _ = zgui.comboFromEnum("view", &settings.debug_view);

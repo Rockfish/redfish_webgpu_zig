@@ -4,14 +4,13 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- None. Next: resume a parked plan (016 phase 3, `PathFollow`, is ready), or start one
-  from `backlog.md`.
+- **[016-motion-patterns.md](016-motion-patterns.md)**: `core.motion` (`dampAlpha`,
+  `moveToward`, `SmoothFollow`, `dampLookAt`, `PathFollow`).
+  - Phases 1-3 done (phase 3 on 2026-09-29: `PathFollow`, linear and Catmull-Rom, with a
+    camera flythrough in the shadows example). Next: phase 4 (`Shake`, `CameraGimbal`).
 
 ## ⏸️ Parked
 
-- **[016-motion-patterns.md](016-motion-patterns.md)**: `core.motion` (`dampAlpha`,
-  `moveToward`, `SmoothFollow`, `dampLookAt`); phases 1-2 done 2026-09-28 (level_01
-  click-to-move, angrybot's follow camera). Next: phase 3, `PathFollow`.
 - **[012-animation-fsm.md](012-animation-fsm.md)**: phases 1-2 implemented
   (`animation_fsm.zig`, bullets). Next: the crossfade-interrupt fix, then a blend-space
   state tried on angrybot's locomotion (review notes 2026-09-28).
@@ -77,3 +76,4 @@ session notes stay in redfish_gl_zig's `active-plans.md`. Plan 016 phases 1-2 do
 made active; 016 parked after phases 1-2.
 Plan 017 finished (phases 1-3); angrybot's emission pass fixed (occluders drawn first).
 Plan 018 (anti-aliasing) drafted and finished: MSAA, angrybot's render targets, alpha-to-coverage.
+Plan 016 resumed: phase 3 (`PathFollow`) done.

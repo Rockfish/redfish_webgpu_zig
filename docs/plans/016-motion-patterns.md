@@ -1,9 +1,9 @@
 # Plan 016 - Motion Patterns (motion.zig)
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Parked 2026-09-29 after phases 1-2. See Notes & Decisions at the end.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Active: phases 1-3 done (2026-09-29). See Notes & Decisions at the end.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-## Status: Parked (phases 1-2 done, 2026-09-28)
+## Status: Active (phases 1-3 done, 2026-09-29)
 
 ## Context
 
@@ -162,9 +162,9 @@ is the composition boundary (§1), not the field lists.
 - [x] Use in angrybot or level_01 chase camera (replaces target snapping)
 
 ### Phase 3 — Paths
-- [ ] Linear waypoint `PathFollow` with repeat modes
-- [ ] Catmull-Rom interpolation over the same waypoints
-- [ ] Example: scripted flythrough in an example app
+- [x] Linear waypoint `PathFollow` with repeat modes
+- [x] Catmull-Rom interpolation over the same waypoints
+- [x] Example: scripted flythrough in an example app (the shadows example)
 
 ### Phase 4 — Shake + showcase
 - [ ] `Shake` with trauma model, composed as a post-controller offset
@@ -214,3 +214,32 @@ phase 4.
 - **Next step:** phase 3, a linear waypoint `PathFollow` with repeat modes in `motion.zig`,
   then Catmull-Rom over the same waypoints and a flythrough example. `dampLookAt` still
   has no user; plan 008's turret aim is the likely first one.
+
+**2026-09-29**: Resumed; phase 3 done.
+- `PathFollow` in `motion.zig`: `points` (caller-owned, at least two), `speed` (units per
+  second), `shape` (`.linear` / `.catmull_rom`), `repeat` (`.once` / `.loop` /
+  `.ping_pong`), and state `distance`, `heading`, `finished`. `update(dt)` returns the
+  position; `position()`, `tangent()` (unit direction of travel, reversed when heading
+  back), `length()`.
+- Progress is distance along the path, so speed is steady however the waypoints are
+  spaced. No allocation: segment lengths are recomputed per call (cheap for tens of
+  points).
+- Its own `Repeat` enum instead of `AnimationRepeatMode` (`Once` / `Count` / `Forever`),
+  which doesn't have loop-closing or ping-pong.
+- Catmull-Rom: each segment is a cubic Hermite curve with tangent `(next - previous) / 2`
+  at each point, the same basis as the glTF cubic-spline code in animator.zig (whose
+  functions are private and keyframe-specific, so `motion.zig` has its own small
+  `hermite` / `hermiteDerivative`). Open paths mirror a phantom point past each end; loops
+  wrap. Curve segment lengths are the sum of 16 chords, and distance maps linearly to the
+  curve parameter within a segment, so speed is steady between segments and close to
+  steady within one.
+- Tests (74 pass): once passes each point at its distance and stops; loop returns to the
+  start after one length; ping-pong turns back and its tangent turns with it; one second
+  lands in the same place at 10, 60, and 144 fps (both shapes); the Catmull-Rom curve
+  goes through every point without the linear path's corner.
+- Example: the shadows example's "Camera path" panel section flies the camera around a
+  closed loop of six waypoints (off, linear, or Catmull-Rom; speed; look at the center or
+  ahead along `tangent()`), and draws the path with `core.shapes.Lines` (a copy of the
+  bullets example's line shader). The path is sampled from a copy of the `PathFollow`, so
+  drawing doesn't move the camera.
+- Next: phase 4 (`Shake`, `CameraGimbal` revival), or park the plan.

@@ -29,7 +29,8 @@ demo_app lights with an optional grazing-specular fade, the brace style pass, an
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
 follow camera), and plan 017 shadows (`examples/shadows`, `DepthBias`, `ShadowMap` filter,
 `ShadowMapArray`), and plan 018 anti-aliasing (4x MSAA, `-Dmsaa`, default on; alpha-to-coverage
-for glTF MASK). No active plan; 016 is parked at phase 3. See `docs/plans/active-plans.md`.
+for glTF MASK). Active plan: 016 motion patterns (phase 3 done: `PathFollow`; next: phase 4,
+`Shake` and `CameraGimbal`). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

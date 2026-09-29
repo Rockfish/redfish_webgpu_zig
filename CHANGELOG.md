@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Motion paths, plan 016 phase 3
+- **core.motion.PathFollow**: moves along waypoints at a steady speed; straight segments or a Catmull-Rom curve through the points; once, loop, or ping-pong; `tangent()` for facing. Invariant tests (frame-rate independence, loop and ping-pong ends, no corner on the curve)
+- **examples/shadows**: camera flythrough around the scene (linear or Catmull-Rom, look at the center or ahead), with the path drawn as lines
+
 ### 2026-09-29 - demo_app: Sponza and Stained Glass Lamp
 - **demo_app**: Sponza (alpha MASK plants and chains) and Stained Glass Lamp (its no-extension `glTF-JPG-PNG` version) added to the model list
 

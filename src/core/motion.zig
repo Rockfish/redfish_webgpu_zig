@@ -6,6 +6,7 @@
 //! | Pattern       | State         | Result                                        |
 //! |---------------|---------------|-----------------------------------------------|
 //! | `SmoothFollow`| position, aim | damped camera position and look-at point      |
+//! | `PathFollow`  | distance      | position moving along waypoints at a speed    |
 //! | `dampLookAt`  | none          | rotation turned part way toward a focus       |
 //! | `moveToward`  | none          | position stepped toward a goal, no overshoot  |
 //! | `dampVec3`    | none          | vector moved part way toward a goal           |
@@ -58,6 +59,209 @@ pub const SmoothFollow = struct {
         movement.reset(self.position, self.aim);
     }
 };
+
+/// A position moving along waypoints at a steady speed: a scripted camera flythrough, a
+/// patrol route, a moving platform. Progress is distance traveled along the path, not
+/// time, so the speed is the same however the points are spaced.
+///
+/// `shape` joins the points with straight segments or with a Catmull-Rom curve through
+/// them; `repeat` says what happens at the end. Allocates nothing: `points` belongs to the
+/// caller and must outlive this. Segment lengths are recomputed on each call, which is
+/// cheap for the tens of points a path has.
+pub const PathFollow = struct {
+    /// At least two.
+    points: []const Vec3,
+    /// Units per second along the path.
+    speed: f32,
+    shape: Shape = .linear,
+    repeat: Repeat = .once,
+    /// Distance traveled from the first point, 0 to `length()`.
+    distance: f32 = 0.0,
+    /// 1 moving toward the last point, -1 toward the first (only `ping_pong` turns back).
+    heading: f32 = 1.0,
+    /// Set when a `.once` path reaches its last point; `update` then stays there.
+    finished: bool = false,
+
+    const Self = @This();
+
+    pub const Shape = enum {
+        /// Straight segments; the direction changes abruptly at each point.
+        linear,
+        /// A smooth curve through every point: each segment is a cubic Hermite curve
+        /// whose tangent at a point is `(next - previous) / 2`, the same basis as glTF's
+        /// cubic-spline animation (animator.zig) with tangents taken from the neighbors.
+        catmull_rom,
+    };
+
+    pub const Repeat = enum {
+        /// Stop at the last point.
+        once,
+        /// Go on from the last point back to the first: the path is closed.
+        loop,
+        /// Turn back at each end.
+        ping_pong,
+    };
+
+    /// Moves `speed * dt` along the path and returns the new position.
+    pub fn update(self: *Self, dt: f32) Vec3 {
+        const total = self.length();
+        if (self.finished or total == 0.0) {
+            return self.position();
+        }
+
+        self.distance += self.heading * self.speed * dt;
+        switch (self.repeat) {
+            .once => if (self.distance >= total) {
+                self.distance = total;
+                self.finished = true;
+            },
+            .loop => self.distance = @mod(self.distance, total),
+            .ping_pong => {
+                // Fold back into 0..total, turning around at each end passed
+                while (self.distance > total or self.distance < 0.0) {
+                    if (self.distance > total) {
+                        self.distance = 2.0 * total - self.distance;
+                        self.heading = -1.0;
+                    } else {
+                        self.distance = -self.distance;
+                        self.heading = 1.0;
+                    }
+                }
+            },
+        }
+        return self.position();
+    }
+
+    /// Where `distance` is on the path.
+    pub fn position(self: *const Self) Vec3 {
+        const at = self.locate(self.distance);
+        return self.segmentPoint(at.segment, at.t);
+    }
+
+    /// Unit direction of travel at the current position, for facing along the path.
+    /// Reverses with `heading`.
+    pub fn tangent(self: *const Self) Vec3 {
+        const at = self.locate(self.distance);
+        return self.segmentDerivative(at.segment, at.t).mulScalar(self.heading).toNormalized();
+    }
+
+    /// Total length: through all points, and back to the first for `.loop`.
+    pub fn length(self: *const Self) f32 {
+        var total: f32 = 0.0;
+        for (0..self.segmentCount()) |segment| {
+            total += self.segmentLength(segment);
+        }
+        return total;
+    }
+
+    /// Segment `i` joins point `i` to point `i + 1`; a loop adds last-to-first.
+    fn segmentCount(self: *const Self) usize {
+        return if (self.repeat == .loop) self.points.len else self.points.len - 1;
+    }
+
+    /// The segment containing `distance`, and how far along it (0 to 1). Within a curved
+    /// segment the fraction grows linearly with distance, so speed along a Catmull-Rom
+    /// curve is steady from segment to segment and close to steady within one.
+    fn locate(self: *const Self, distance: f32) struct { segment: usize, t: f32 } {
+        const count = self.segmentCount();
+        var remaining = distance;
+        for (0..count) |segment| {
+            const segment_length = self.segmentLength(segment);
+            if (remaining <= segment_length or segment == count - 1) {
+                const t = if (segment_length > 0.0) remaining / segment_length else 0.0;
+                return .{ .segment = segment, .t = std.math.clamp(t, 0.0, 1.0) };
+            }
+            remaining -= segment_length;
+        }
+        unreachable;
+    }
+
+    fn segmentLength(self: *const Self, segment: usize) f32 {
+        switch (self.shape) {
+            .linear => {
+                const ends = self.segmentEnds(segment);
+                return ends.start.distance(ends.end);
+            },
+            // Sum of short chords along the curve
+            .catmull_rom => {
+                var total: f32 = 0.0;
+                var previous = self.segmentPoint(segment, 0.0);
+                for (1..CURVE_SAMPLES + 1) |i| {
+                    const t = @as(f32, @floatFromInt(i)) / CURVE_SAMPLES;
+                    const point = self.segmentPoint(segment, t);
+                    total += previous.distance(point);
+                    previous = point;
+                }
+                return total;
+            },
+        }
+    }
+
+    const CURVE_SAMPLES = 16;
+
+    fn segmentPoint(self: *const Self, segment: usize, t: f32) Vec3 {
+        const ends = self.segmentEnds(segment);
+        return switch (self.shape) {
+            .linear => ends.start.lerp(ends.end, t),
+            .catmull_rom => blk: {
+                const tangents = self.catmullRomTangents(segment);
+                break :blk hermite(ends.start, tangents.start, ends.end, tangents.end, t);
+            },
+        };
+    }
+
+    fn segmentDerivative(self: *const Self, segment: usize, t: f32) Vec3 {
+        const ends = self.segmentEnds(segment);
+        return switch (self.shape) {
+            .linear => ends.end.sub(ends.start),
+            .catmull_rom => blk: {
+                const tangents = self.catmullRomTangents(segment);
+                break :blk hermiteDerivative(ends.start, tangents.start, ends.end, tangents.end, t);
+            },
+        };
+    }
+
+    fn segmentEnds(self: *const Self, segment: usize) struct { start: Vec3, end: Vec3 } {
+        return .{ .start = self.points[segment], .end = self.points[(segment + 1) % self.points.len] };
+    }
+
+    /// `(next - previous) / 2` at both ends of `segment`. Past the ends of an open path the
+    /// missing neighbor is mirrored (`2 * end - inner`), which keeps the curve heading
+    /// straight out of its first and last points; a loop wraps around.
+    fn catmullRomTangents(self: *const Self, segment: usize) struct { start: Vec3, end: Vec3 } {
+        const n = self.points.len;
+        const p1 = self.points[segment];
+        const p2 = self.points[(segment + 1) % n];
+        const p0 = if (segment > 0 or self.repeat == .loop)
+            self.points[(segment + n - 1) % n]
+        else
+            p1.mulScalar(2.0).sub(p2);
+        const p3 = if (segment + 2 < n or self.repeat == .loop)
+            self.points[(segment + 2) % n]
+        else
+            p2.mulScalar(2.0).sub(p1);
+        return .{ .start = p2.sub(p0).mulScalar(0.5), .end = p3.sub(p1).mulScalar(0.5) };
+    }
+};
+
+/// Cubic Hermite curve from `p0` (tangent `m0`) to `p1` (tangent `m1`) at `t` in 0..1.
+fn hermite(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: f32) Vec3 {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return p0.mulScalar(2.0 * t3 - 3.0 * t2 + 1.0)
+        .add(m0.mulScalar(t3 - 2.0 * t2 + t))
+        .add(p1.mulScalar(-2.0 * t3 + 3.0 * t2))
+        .add(m1.mulScalar(t3 - t2));
+}
+
+/// d/dt of `hermite`.
+fn hermiteDerivative(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: f32) Vec3 {
+    const t2 = t * t;
+    return p0.mulScalar(6.0 * t2 - 6.0 * t)
+        .add(m0.mulScalar(3.0 * t2 - 4.0 * t + 1.0))
+        .add(p1.mulScalar(-6.0 * t2 + 6.0 * t))
+        .add(m1.mulScalar(3.0 * t2 - 2.0 * t));
+}
 
 /// `rotation` turned part way toward looking from `position` at `focus`, as a turret or
 /// head that settles on its target instead of snapping. With `up` as the up direction; the
@@ -182,6 +386,91 @@ test "dampLookAt: turns part way, then settles on the focus" {
         rotation = dampLookAt(rotation, position, focus, up, 5.0, 1.0 / 60.0);
     }
     try expectVec3ApproxEq(Vec3.init(1.0, 0.0, 0.0), rotation.forward(), 1e-3);
+}
+
+/// An L-shaped route: 3 units along X, then 4 along Z. Length 7 open, 12 closed.
+const test_route = [_]Vec3{
+    Vec3.init(0.0, 0.0, 0.0),
+    Vec3.init(3.0, 0.0, 0.0),
+    Vec3.init(3.0, 0.0, 4.0),
+};
+
+test "PathFollow once: passes each point at its distance, stops at the last" {
+    var path: PathFollow = .{ .points = &test_route, .speed = 1.0 };
+    try std.testing.expectApproxEqAbs(@as(f32, 7.0), path.length(), 1e-6);
+
+    try expectVec3ApproxEq(test_route[1], path.update(3.0), 1e-5);
+    try expectVec3ApproxEq(Vec3.init(3.0, 0.0, 2.0), path.update(2.0), 1e-5);
+    try std.testing.expect(!path.finished);
+
+    // Past the end: stops on the last point and stays there
+    try expectVec3ApproxEq(test_route[2], path.update(10.0), 1e-5);
+    try std.testing.expect(path.finished);
+    try expectVec3ApproxEq(test_route[2], path.update(1.0), 1e-5);
+}
+
+test "PathFollow loop: one full length later it is back at the start, and goes on" {
+    var path: PathFollow = .{ .points = &test_route, .speed = 2.0, .repeat = .loop };
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), path.length(), 1e-5);
+
+    try expectVec3ApproxEq(test_route[0], path.update(6.0), 1e-4);
+    try expectVec3ApproxEq(test_route[1], path.update(1.5), 1e-4);
+    try std.testing.expect(!path.finished);
+}
+
+test "PathFollow ping-pong: turns back at the end, and its tangent turns with it" {
+    var path: PathFollow = .{ .points = &test_route, .speed = 1.0, .repeat = .ping_pong };
+
+    _ = path.update(1.0);
+    try expectVec3ApproxEq(Vec3.init(1.0, 0.0, 0.0), path.tangent(), 1e-5);
+
+    // 7 units out and 1 back: one unit short of the last point, heading back along -Z
+    try expectVec3ApproxEq(Vec3.init(3.0, 0.0, 3.0), path.update(7.0), 1e-5);
+    try expectVec3ApproxEq(Vec3.init(0.0, 0.0, -1.0), path.tangent(), 1e-5);
+
+    // All the way back to the first point, then out again
+    try expectVec3ApproxEq(Vec3.init(1.0, 0.0, 0.0), path.update(7.0), 1e-5);
+    try expectVec3ApproxEq(Vec3.init(1.0, 0.0, 0.0), path.tangent(), 1e-5);
+}
+
+test "PathFollow: one second lands in the same place at 10, 60, and 144 fps" {
+    for ([_]PathFollow.Shape{ .linear, .catmull_rom }) |shape| {
+        var at: [3]Vec3 = undefined;
+        for ([_]u32{ 10, 60, 144 }, 0..) |steps, i| {
+            var path: PathFollow = .{ .points = &test_route, .speed = 5.0, .shape = shape };
+            const dt = 1.0 / @as(f32, @floatFromInt(steps));
+            for (0..steps) |_| {
+                at[i] = path.update(dt);
+            }
+        }
+        try expectVec3ApproxEq(at[1], at[0], 1e-4);
+        try expectVec3ApproxEq(at[1], at[2], 1e-4);
+    }
+}
+
+test "PathFollow Catmull-Rom: goes through every point without the linear path's corner" {
+    var linear: PathFollow = .{ .points = &test_route, .speed = 1.0 };
+    var curve: PathFollow = .{ .points = &test_route, .speed = 1.0, .shape = .catmull_rom };
+
+    // Through every point: segment ends are the points
+    for (0..2) |segment| {
+        try expectVec3ApproxEq(test_route[segment], curve.segmentPoint(segment, 0.0), 1e-6);
+        try expectVec3ApproxEq(test_route[segment + 1], curve.segmentPoint(segment, 1.0), 1e-6);
+    }
+
+    // Just before and after the middle point: the line turns 90 degrees there, the curve
+    // doesn't change direction
+    const corner = linear.segmentLength(0);
+    const curve_corner = curve.segmentLength(0);
+    linear.distance = corner - 0.01;
+    const linear_before = linear.tangent();
+    linear.distance = corner + 0.01;
+    try std.testing.expect(linear_before.dot(linear.tangent()) < 0.01);
+
+    curve.distance = curve_corner - 0.01;
+    const curve_before = curve.tangent();
+    curve.distance = curve_corner + 0.01;
+    try std.testing.expect(curve_before.dot(curve.tangent()) > 0.99);
 }
 
 fn dampSteps(start: Vec3, goal: Vec3, rate: f32, steps_per_second: u32) Vec3 {
