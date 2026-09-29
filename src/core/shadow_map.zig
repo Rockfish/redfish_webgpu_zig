@@ -19,16 +19,38 @@ const PassTarget = gpu_context.PassTarget;
 
 pub const ShadowMap = struct {
     size: u32,
+    filter: Filter,
     texture: c.WGPUTexture,
     view: c.WGPUTextureView,
-    /// `LessEqual` comparison, nearest (redfish's single-sample test), clamp to edge.
+    /// `LessEqual` comparison with the map's `filter`, clamp to edge.
     sampler: c.WGPUSampler,
     bind_group: c.WGPUBindGroup,
 
     const Self = @This();
 
-    /// `size` × `size` texels. Fixed for the map's lifetime (not tied to the window).
-    pub fn init(gpu: *const GpuContext, size: u32) Self {
+    /// How one `textureSampleCompareLevel` reads the map.
+    pub const Filter = enum {
+        /// One texel, lit or not: hard, stair-stepped edges (redfish's single-sample test).
+        nearest,
+        /// The four nearest texels are each compared, and the results blended by the
+        /// sample position: a 2x2 percentage-closer filter from one sample, done by the
+        /// hardware. Softens shadow edges; shaders that take several samples (PCF) get
+        /// smoother results for the same count.
+        linear,
+    };
+
+    pub const Config = struct {
+        /// `size` × `size` texels. Fixed for the map's lifetime (not tied to the window).
+        size: u32,
+        filter: Filter = .nearest,
+    };
+
+    pub fn init(gpu: *const GpuContext, config: Config) Self {
+        const size = config.size;
+        const filter_mode: c.WGPUFilterMode = switch (config.filter) {
+            .nearest => c.WGPUFilterMode_Nearest,
+            .linear => c.WGPUFilterMode_Linear,
+        };
         const texture = c.wgpuDeviceCreateTexture(gpu.device, &.{
             .label = stringView("shadow map"),
             .usage = c.WGPUTextureUsage_RenderAttachment | c.WGPUTextureUsage_TextureBinding,
@@ -44,8 +66,8 @@ pub const ShadowMap = struct {
             .addressModeU = c.WGPUAddressMode_ClampToEdge,
             .addressModeV = c.WGPUAddressMode_ClampToEdge,
             .addressModeW = c.WGPUAddressMode_ClampToEdge,
-            .magFilter = c.WGPUFilterMode_Nearest,
-            .minFilter = c.WGPUFilterMode_Nearest,
+            .magFilter = filter_mode,
+            .minFilter = filter_mode,
             .mipmapFilter = c.WGPUMipmapFilterMode_Nearest,
             .lodMaxClamp = 32.0,
             .compare = c.WGPUCompareFunction_LessEqual,
@@ -58,6 +80,7 @@ pub const ShadowMap = struct {
         };
         return .{
             .size = size,
+            .filter = config.filter,
             .texture = texture,
             .view = view,
             .sampler = sampler,

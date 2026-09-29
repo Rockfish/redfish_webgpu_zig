@@ -218,7 +218,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
 
     // -- Framebuffers ---
 
-    var shadow_map = ShadowMap.init(gpu, fb.SHADOW_SIZE);
+    var shadow_map = ShadowMap.init(gpu, .{ .size = fb.SHADOW_SIZE });
     defer shadow_map.releaseGpuObjects();
 
     var frame_buffers = try fb.FrameBuffers.init(context.alloc, gpu);

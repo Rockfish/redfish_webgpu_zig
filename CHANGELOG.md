@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Shadow bias and filtering, plan 017 phase 2
+- **core.pipeline.DepthBias**: slope-scaled depth bias for shadow casters (`ShaderConfig.depth_bias`)
+- **ShadowMap**: `init(gpu, .{ .size, .filter })`; `.linear` is the hardware 2x2 comparison filter (default `.nearest`, angrybot unchanged)
+- **examples/shadows**: panel controls for shader bias, pipeline bias, filter, and PCF radius; defaults are the tested combination (caster slope bias plus a small receiver bias, linear, 3x3 PCF)
+- **Fix**: examples/shadows gave ImGui an arena allocator (ImGui's frees were no-ops); it now uses the general-purpose allocator like the other apps
+
 ### 2026-09-29 - Shadows example, plan 017 phase 1
 - **examples/shadows**: shadow map test bed: flat and sloped receivers, one directional light with panel controls (direction, orthographic box, bias), `zig build shadows-run`
 - **Debug views**: the shadow map as an overlay (`textureLoad`, adjustable depth range) and the scene drawn from the light

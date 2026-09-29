@@ -53,13 +53,32 @@ const Settings = struct {
     light_near: f32 = 1.0,
     light_far: f32 = 50.0,
     light_distance: f32 = 25.0,
-    shadow_bias: f32 = 0.002,
+    /// The defaults are the combination that showed no acne (plan 017, phase 2 notes):
+    /// slope-scaled bias on the casters for sloped surfaces, plus a small bias on the
+    /// receivers for PCF, whose outer samples land on texels deeper along the slope.
+    /// Turn each off to see what it fixes.
+    ///
+    /// Subtracted from a receiver's depth before the shadow comparison (in the shader).
+    shadow_bias: f32 = 0.0005,
+    /// Depth bias on the caster pipelines (see `core.pipeline.DepthBias`).
+    pipeline_bias: bool = true,
+    bias_constant: i32 = 2,
+    bias_slope_scale: f32 = 2.0,
+    filter: ShadowMap.Filter = .linear,
+    /// Comparison samples around each lookup: 0 is one sample, 1 a 3x3 grid, 2 a 5x5.
+    pcf_radius: i32 = 1,
     debug_view: DebugView = .off,
     /// The depth range the overlay shows black to white.
     overlay_depth_min: f32 = 0.0,
     overlay_depth_max: f32 = 1.0,
     /// Overlay height as a fraction of the window height.
     overlay_size: f32 = 0.4,
+};
+
+/// Panel edits that need GPU objects rebuilt, applied before the next frame.
+const Rebuild = struct {
+    caster_shader: bool = false,
+    shadow_map: bool = false,
 };
 
 /// One shape in the scene, with its placement and color.
@@ -96,25 +115,25 @@ pub fn main(init: std.process.Init) !void {
     var arenas = try Arenas.init(allocator);
     defer arenas.deinit();
 
-    try run(arenas.context(init.io), window, &gpu);
+    try run(allocator, arenas.context(init.io), window, &gpu);
 }
 
-fn run(context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
+/// `allocator` is for ImGui, which frees in any order; an arena would only reclaim its
+/// last allocation, so the rest of ImGui's frees would never return memory.
+fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
     const shape_layouts = &Shape.vertex_buffer_layouts;
 
-    // One WGSL file, two pipelines: lit and shadow-receiving for the window pass, and the
-    // depth-only caster for the shadow pass (no fragment stage, no group 3).
+    // Lit and shadow-receiving, for the window pass. The same file is also the shadow
+    // pass's caster (`createCasterShader`).
     const scene_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_scene.wgsl", .{
         .vertex_buffers = shape_layouts,
         .pass = .shadow,
     });
     defer scene_shader.releaseGpuObjects();
 
-    const caster_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_scene.wgsl", .{
-        .vertex_buffers = shape_layouts,
-        .color_target = .none,
-        .constants = &.{.{ .key = "DEPTH_MODE", .value = 1.0 }},
-    });
+    var settings: Settings = .{};
+
+    var caster_shader = try createCasterShader(context, gpu, settings);
     defer caster_shader.releaseGpuObjects();
 
     const overlay_shader = try Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_map_overlay.wgsl", .{
@@ -123,7 +142,7 @@ fn run(context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
     });
     defer overlay_shader.releaseGpuObjects();
 
-    var shadow_map = ShadowMap.init(gpu, SHADOW_MAP_SIZE);
+    var shadow_map = ShadowMap.init(gpu, .{ .size = SHADOW_MAP_SIZE, .filter = settings.filter });
     defer shadow_map.releaseGpuObjects();
 
     // Drawn on top of everything, from either side
@@ -144,10 +163,10 @@ fn run(context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
         .scr_height = @floatFromInt(gpu.height),
     });
 
-    gui.init(context.alloc, window, gpu);
+    gui.init(allocator, window, gpu);
     defer gui.deinit();
 
-    var settings: Settings = .{};
+    var rebuild: Rebuild = .{};
     var last_time: f32 = @floatCast(zglfw.getTime());
 
     while (!window.shouldClose()) {
@@ -161,6 +180,19 @@ fn run(context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
         last_time = time;
 
         processKeys(window, camera, delta_time);
+
+        // Depth bias is pipeline state and filtering is sampler state, both fixed when
+        // created, so a change in the panel means new ones. Between frames, not while the
+        // old ones are in use by commands still being recorded.
+        if (rebuild.caster_shader) {
+            caster_shader.releaseGpuObjects();
+            caster_shader = try createCasterShader(context, gpu, settings);
+        }
+        if (rebuild.shadow_map) {
+            shadow_map.releaseGpuObjects();
+            shadow_map = ShadowMap.init(gpu, .{ .size = SHADOW_MAP_SIZE, .filter = settings.filter });
+        }
+        rebuild = .{};
         if (settings.animate_light) {
             settings.light_azimuth = @mod(settings.light_azimuth + 20.0 * delta_time, 360.0);
         }
@@ -173,23 +205,38 @@ fn run(context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
 
         // Shadow pass: every shape from the light, depth only
         frame.beginPass(shadow_map.passTarget());
-        drawObjects(&frame, caster_shader, &objects, settings.shadow_bias);
+        drawObjects(&frame, caster_shader, &objects, settings);
         frame.endPass();
 
         // Window pass: every shape from the camera (or the light), sampling the map
         frame.beginSurfacePass(CLEAR_COLOR);
         shadow_map.bind(&frame);
-        drawObjects(&frame, scene_shader, &objects, settings.shadow_bias);
+        drawObjects(&frame, scene_shader, &objects, settings);
         if (settings.debug_view == .overlay) {
             drawOverlay(&frame, overlay_shader, overlay_quad, settings, gpu);
         }
 
         gui.newFrame();
-        drawPanel(&settings);
+        rebuild = drawPanel(&settings);
         gui.draw(frame);
 
         gpu.endFrame(frame);
     }
+}
+
+/// The shadow pass's pipelines: shadow_scene.wgsl with `DEPTH_MODE`, depth only (no
+/// fragment stage, no group 3), with the panel's depth bias when it's on.
+fn createCasterShader(context: core.Context, gpu: *GpuContext, settings: Settings) !*Shader {
+    const depth_bias: core.pipeline.DepthBias = if (settings.pipeline_bias)
+        .{ .constant = settings.bias_constant, .slope_scale = settings.bias_slope_scale }
+    else
+        .{};
+    return Shader.init(context.io, context.alloc, gpu, "examples/shadows/shaders/shadow_scene.wgsl", .{
+        .vertex_buffers = &Shape.vertex_buffer_layouts,
+        .color_target = .none,
+        .constants = &.{.{ .key = "DEPTH_MODE", .value = 1.0 }},
+        .depth_bias = depth_bias,
+    });
 }
 
 /// The shapes, created once, and where each one goes.
@@ -311,10 +358,11 @@ fn frameUniforms(camera: *Camera, light: LightView, settings: Settings, gpu: *co
     return uniforms;
 }
 
-fn drawObjects(frame: *const Frame, shader: *const Shader, objects: []const SceneObject, shadow_bias: f32) void {
+fn drawObjects(frame: *const Frame, shader: *const Shader, objects: []const SceneObject, settings: Settings) void {
+    const pcf_radius: f32 = @floatFromInt(settings.pcf_radius);
     for (objects) |object| {
         var draw_uniforms = DrawUniforms.init(object.model, object.color);
-        draw_uniforms.params = vec4(shadow_bias, 0.0, 0.0, 0.0);
+        draw_uniforms.params = vec4(settings.shadow_bias, pcf_radius, 0.0, 0.0);
         object.shape.draw(frame, shader, draw_uniforms);
     }
 }
@@ -334,7 +382,10 @@ fn drawOverlay(frame: *const Frame, shader: *const Shader, quad: *const Shape, s
     quad.draw(frame, shader, draw_uniforms);
 }
 
-fn drawPanel(settings: *Settings) void {
+/// Returns the GPU objects the edits made this frame need rebuilt. Sliders that change
+/// pipeline state ask for the rebuild when the drag ends, not on every step of it.
+fn drawPanel(settings: *Settings) Rebuild {
+    var rebuild: Rebuild = .{};
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = 300, .h = 0, .cond = .first_use_ever });
     if (zgui.begin("shadows", .{})) {
@@ -349,7 +400,22 @@ fn drawPanel(settings: *Settings) void {
         _ = zgui.sliderFloat("distance", .{ .v = &settings.light_distance, .min = 5.0, .max = 60.0 });
         _ = zgui.sliderFloat("near", .{ .v = &settings.light_near, .min = 0.1, .max = 20.0 });
         _ = zgui.sliderFloat("far", .{ .v = &settings.light_far, .min = 10.0, .max = 100.0 });
-        _ = zgui.sliderFloat("shadow bias", .{ .v = &settings.shadow_bias, .min = 0.0, .max = 0.02, .cfmt = "%.4f" });
+
+        zgui.separatorText("Shadows");
+        _ = zgui.sliderFloat("shader bias", .{ .v = &settings.shadow_bias, .min = 0.0, .max = 0.02, .cfmt = "%.4f" });
+        if (zgui.checkbox("pipeline bias", .{ .v = &settings.pipeline_bias })) {
+            rebuild.caster_shader = true;
+        }
+        if (settings.pipeline_bias) {
+            _ = zgui.sliderInt("constant", .{ .v = &settings.bias_constant, .min = 0, .max = 1000 });
+            rebuild.caster_shader = rebuild.caster_shader or zgui.isItemDeactivatedAfterEdit();
+            _ = zgui.sliderFloat("slope scale", .{ .v = &settings.bias_slope_scale, .min = 0.0, .max = 10.0 });
+            rebuild.caster_shader = rebuild.caster_shader or zgui.isItemDeactivatedAfterEdit();
+        }
+        if (zgui.comboFromEnum("filter", &settings.filter)) {
+            rebuild.shadow_map = true;
+        }
+        _ = zgui.sliderInt("PCF radius", .{ .v = &settings.pcf_radius, .min = 0, .max = 2 });
 
         zgui.separatorText("Debug view");
         _ = zgui.comboFromEnum("view", &settings.debug_view);
@@ -360,4 +426,5 @@ fn drawPanel(settings: *Settings) void {
         }
     }
     zgui.end();
+    return rebuild;
 }

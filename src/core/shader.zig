@@ -25,6 +25,7 @@ const PassKind = bindings.PassKind;
 const Topology = pipeline.Topology;
 const ColorTarget = pipeline.ColorTarget;
 const OverrideConstant = pipeline.OverrideConstant;
+const DepthBias = pipeline.DepthBias;
 
 /// How a shader's pipelines are built.
 pub const ShaderConfig = struct {
@@ -48,6 +49,8 @@ pub const ShaderConfig = struct {
     /// Values for the shader's `override` constants, e.g. `DEPTH_MODE` for a shadow
     /// pipeline made from a lit shader.
     constants: []const OverrideConstant = &.{},
+    /// Depth bias for shadow casters (see `DepthBias`); zero for everything else.
+    depth_bias: DepthBias = .{},
 };
 
 const log = std.log.scoped(.shader);
@@ -100,6 +103,7 @@ pub const Shader = struct {
                 .depth_format = if (config.depth) gpu_context.depth_format else null,
                 .constants = config.constants,
                 .color_writes = config.color_writes,
+                .depth_bias = config.depth_bias,
             }),
         };
         return shader;

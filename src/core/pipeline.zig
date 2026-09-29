@@ -74,6 +74,21 @@ pub const OverrideConstant = struct {
     value: f64,
 };
 
+/// Pushes a triangle's depth away from the viewer before the depth test and write. Set on
+/// shadow casters, so a lit surface isn't shadowed by its own stored depth ("shadow acne").
+/// The bias is `constant` × the smallest depth step at the triangle's depth plus
+/// `slope_scale` × the triangle's depth slope (how fast depth changes across a pixel), at
+/// most `clamp` when that is nonzero. The slope term grows on surfaces seen edge-on from
+/// the light, where a constant bias is either too small or, raised to fit, detaches
+/// shadows from their casters ("peter-panning"). With `Depth32Float` the smallest step
+/// near depth 0.5 is about 2^-24, so `constant` adds little; the slope term does the work.
+/// Triangle topologies only.
+pub const DepthBias = struct {
+    constant: i32 = 0,
+    slope_scale: f32 = 0.0,
+    clamp: f32 = 0.0,
+};
+
 /// Everything a pipeline needs except its render state.
 pub const PipelineConfig = struct {
     label: []const u8,
@@ -91,6 +106,7 @@ pub const PipelineConfig = struct {
     /// Overrides `Less` (or `Always` with `no_depth_test`), e.g. `LessEqual` for a skybox
     /// drawn at depth 1.
     depth_compare: ?c.WGPUCompareFunction = null,
+    depth_bias: DepthBias = .{},
 };
 
 pub const PipelineVariants = struct {
@@ -146,7 +162,11 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
         .depthCompare = config.depth_compare orelse if (state.no_depth_test) c.WGPUCompareFunction_Always else c.WGPUCompareFunction_Less,
         .stencilFront = keep_stencil,
         .stencilBack = keep_stencil,
+        .depthBias = config.depth_bias.constant,
+        .depthBiasSlopeScale = config.depth_bias.slope_scale,
+        .depthBiasClamp = config.depth_bias.clamp,
     };
+    std.debug.assert(config.topology == .triangle_list or std.meta.eql(config.depth_bias, DepthBias{}));
 
     return c.wgpuDeviceCreateRenderPipeline(device, &.{
         .label = stringView(config.label),

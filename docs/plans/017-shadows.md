@@ -1,6 +1,6 @@
 # Plan 017 - Shadows: example, debug view, bias and filtering, several lights
 
-## Status: Active (phase 1 done 2026-09-29)
+## Status: Active (phases 1-2 done 2026-09-29, except the angrybot trial)
 
 ## Context
 
@@ -71,7 +71,7 @@ detaches shadows from their casters on flat ones ("peter-panning").
 
 Open question: keep `SHADOW_BIAS` in the receiving shaders alongside the pipeline bias, or
 drop it. Decide in the example by looking at acne and peter-panning on both flat and sloped
-receivers.
+receivers. **Decided (2026-09-29): keep both** (see the phase 2 note).
 
 ### Filtering
 
@@ -138,12 +138,14 @@ it's optional and only used when the adapter has it. Try it last; it may not be 
 - [x] Screenshot check; angrybot unchanged
 
 ### Phase 2 - Bias and filtering
-- [ ] `depth_bias` in `PipelineConfig` / `ShaderConfig`, set on caster pipelines
-- [ ] Decide whether receivers keep `SHADOW_BIAS` (acne vs. peter-panning, flat and sloped)
-- [ ] `ShadowMap` filter option (nearest default, linear); panel toggle; PCF kernel size in
+- [x] `depth_bias` in `PipelineConfig` / `ShaderConfig`, set on caster pipelines
+- [x] Decide whether receivers keep `SHADOW_BIAS` (acne vs. peter-panning, flat and sloped):
+      keep both
+- [x] `ShadowMap` filter option (nearest default, linear); panel toggle; PCF kernel size in
       the example shader
 - [ ] Try slope bias and linear filtering in angrybot; keep them only if it looks as
-      good or better than now (angrybot is the regression reference)
+      good or better than now (angrybot is the regression reference). Not done yet: see
+      the phase 2 note
 
 ### Phase 3 - Several lights
 - [x] Decide how casters get the pass's light matrix: a group 3 bind group per shadow
@@ -198,3 +200,46 @@ pass level; the code will carry a comment explaining it.
   the middle square. No shadows are visible in this view, as expected.
 - Checked: screenshots of all three views; `zig build test` (69 pass); draw_test, angrybot,
   and shadows run with no GPU errors.
+
+**2026-09-29**: Phase 2 done in core and the example; the angrybot trial is still open.
+- `core.pipeline.DepthBias` (`constant`, `slope_scale`, `clamp`) on `PipelineConfig` and
+  `ShaderConfig.depth_bias`; asserted zero for line topologies. With `Depth32Float` the
+  constant term is tiny (about 2^-24 per step near depth 0.5); the slope term does the work.
+- `ShadowMap.init(gpu, .{ .size, .filter })`: `Filter.nearest` (default, angrybot's look) or
+  `.linear`, the hardware 2x2 comparison filter. angrybot's call updated, behavior unchanged.
+- Example: panel "Shadows" section with shader bias, pipeline bias on/off with constant and
+  slope scale, filter, and PCF radius 0-2 (`draw.params.y`). Pipeline and sampler state are
+  fixed at creation, so edits rebuild the caster shader or the shadow map between frames;
+  bias sliders rebuild when the drag ends (`zgui.isItemDeactivatedAfterEdit`), not on
+  every step.
+- **Bias findings** (light elevation 25°, offscreen captures):
+  - No bias: acne everywhere (moiré rings on spheres, bands on the floor).
+  - Shader bias 0.002 alone, or pipeline bias 2 / 2.0 alone, with a single sample: clean.
+  - Pipeline bias 2 / 2.0 with 3x3 PCF: faceted acne returns on the spheres. PCF compares
+    the fragment's depth with neighboring texels, which on a curved or sloped surface are
+    deeper by about slope × offset; the caster-side slope term only covers one texel.
+    Slope scale 4 nearly fixes it (a few faint lines).
+  - Pipeline 2 / 2.0 plus shader bias 0.0005 with PCF: clean. So is shader 0.002 alone
+    with PCF; no peter-panning was visible at this scene's scale (0.002 of a 49-unit depth
+    range is about 0.1 units).
+  - Decision: keep both. The slope-scaled caster bias handles steep surfaces, and a small
+    receiver bias covers PCF's neighbor samples. Example defaults: pipeline 2 / 2.0, shader
+    0.0005, linear, PCF radius 1.
+- **angrybot trial not done.** `screencapture` stopped being able to read windows during
+  this session, and angrybot has no offscreen capture path (its frame goes through several
+  render targets before the composite), so there was no way to compare before and after.
+  Its map is 6144 texels over 20 units (about 3 mm per texel), and the floor already does a
+  3x3 PCF, so the expected difference is small. Next: try `.filter = .linear` and a caster
+  `depth_bias` in angrybot and compare on screen.
+- Tooling note: the example's check used a temporary edit that draws one offscreen frame
+  with `core.ScreenCapture` at frame 30, writes a PNG, and exits. It works without
+  screen-recording permission.
+
+**2026-09-29**: Memory check after a system freeze (macOS reported the shadows app at 1.2 GB
+just before it). Not reproduced: the physical footprint (`footprint -p`) held at 81-85 MB
+idle, with the shadow map or caster shader rebuilt every frame, in both debug views, with
+the light animated, with the window resized every frame, and with simulated panel input.
+There was no JetsamEvent report to name the process. One real fix: the example gave ImGui
+the arena allocator, and ImGui frees in any order, while an arena only reclaims its most
+recent allocation. It now gets the general-purpose allocator, like the other apps. If it
+happens again, watch the Memory column in Activity Monitor for `shadows`.
