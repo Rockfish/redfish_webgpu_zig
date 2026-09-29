@@ -1,6 +1,6 @@
 # Plan 018 - Anti-aliasing (MSAA)
 
-## Status: Active (phases 1-2 done 2026-09-29; phase 3 optional)
+## Status: Completed 2026-09-29 (phases 1-3)
 
 ## Context
 
@@ -132,9 +132,10 @@ same view with and without MSAA, enlarged.
 - [x] Screenshots: edges smooth, bloom unchanged; cost noted
 
 ### Phase 3 - Optional
-- [ ] Alpha-to-coverage for glTF alpha MASK materials (`pbr.wgsl` discards below the
+- [x] Alpha-to-coverage for glTF alpha MASK materials (`pbr.wgsl` discards below the
       cutoff, so cutout edges stay jagged under MSAA; with alpha-to-coverage the alpha
-      decides how many samples are covered). Only if a model shows it
+      decides how many samples are covered). Test model: glTF-Sample-Models
+      `AlphaBlendModeTest` (see the note below)
 - [x] Decide the default (on / off): on, as a build option (phase 1)
 
 Each phase ends with a `CHANGELOG.md` entry and a commit, `zig build test` passing, and all
@@ -188,3 +189,42 @@ reach it.
   bloom unchanged.
 - Cost: angrybot's footprint 663 MB off, 739 MB on at 1500 x 1000 (the window's 4x color
   and depth plus the 4x `rgba16float`).
+
+**2026-09-29**: Phase 3 test model: `assets_nas/glTF-Sample-Models/2.0/AlphaBlendModeTest`
+(commented out in demo_app's `assets_list.zig`).
+- Its MASK boxes use a texture with a linear alpha ramp, cut at 0.25, 0.5 (default), and
+  0.75: a diagonal cutoff edge inside each quad, drawn by the texture, not by geometry.
+  With `discard` all samples of a pixel are kept or dropped together, so that edge stays
+  jagged under MSAA.
+- Plain alpha-to-coverage would be wrong for MASK: coverage would follow the ramp and fade
+  across the whole box instead of cutting at `alphaCutoff` (the README's "alphaCutoff not
+  respected" failure). Use the sharpened form: output alpha
+  `(alpha - cutoff) / max(fwidth(alpha), 1e-4) + 0.5` with `alphaToCoverageEnabled` on the
+  pipeline, so the cut stays at the cutoff and only its last pixel is spread across
+  samples. Without MSAA (1 sample) keep `discard`.
+- The OPAQUE and BLEND boxes are the regression check (their red X's appear only if a mode
+  is wrong).
+- The README's mipmapping note: at a distance, mip blending thins the opaque border below a
+  high cutoff. Not a failure; compare up close.
+
+**2026-09-29**: Phase 3 done; plan finished.
+- `PipelineConfig.alpha_to_coverage` / `ShaderConfig.alpha_to_coverage`: on in the
+  variants that are multisampled and not blended (`transparent` variants keep alpha for
+  blending, and 1 sample has nothing to cover). No new `RenderState` bit, so no extra
+  pipelines. The pipeline sets the shader's `override ALPHA_TO_COVERAGE` per variant; a
+  module that doesn't declare it can't opt in (WebGPU rejects unknown constants).
+- pbr.wgsl: with `ALPHA_TO_COVERAGE`, alpha is 1 for OPAQUE materials (the
+  AlphaBlendModeTest OPAQUE box's texture carries an alpha ramp that would otherwise thin
+  its coverage) and `maskCoverage` for MASK: `(alpha - cutoff) / fwidth(alpha) + 0.5`,
+  clamped, with `fwidth` taken before any `discard`. Without it, MASK still discards.
+- The seven places that create a pbr.wgsl `Shader` opt in (demo_app, level_01, scene_tree,
+  animation_example for pbr.wgsl only, and bullets' three).
+- demo_app lists AlphaBlendModeTest (index 22).
+- Checked: the MASK boxes' cut stays at 0.25 / 0.5 / 0.75, and the OPAQUE and BLEND boxes
+  keep their green checks. Angled view, 3x crops: the slanted cutoff edge is stair-stepped
+  without alpha-to-coverage (identical with and without MSAA before this phase) and smooth
+  with it; the thin border next to it is cleaner too. All apps run with no GPU errors
+  with MSAA, and the pbr apps with `-Dmsaa=false` (the `discard` path).
+
+Outcome: 4x MSAA in every app (`-Dmsaa`, default on), including angrybot's render targets,
+and alpha-to-coverage for glTF MASK materials in pbr.wgsl.

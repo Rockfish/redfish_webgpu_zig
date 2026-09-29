@@ -110,6 +110,11 @@ pub const PipelineConfig = struct {
     /// Samples per pixel of the pass the pipeline draws in: 1, or 4 for a multisampled
     /// (MSAA) pass. Must match the pass's attachments.
     sample_count: u32 = 1,
+    /// Alpha-to-coverage in the multisampled, non-blended variants: the fragment's alpha
+    /// sets how many of the pixel's samples it covers, which smooths alpha-cutout (glTF
+    /// MASK) edges. The shader must declare `override ALPHA_TO_COVERAGE: bool`, which is
+    /// set per variant to whether it's on (see pbr.wgsl).
+    alpha_to_coverage: bool = false,
 };
 
 pub const PipelineVariants = struct {
@@ -140,10 +145,18 @@ pub const PipelineVariants = struct {
 /// Entry points are `vs_main` / `fs_main` (STYLE.md section 10). Every zero default that
 /// would be wrong (write mask, sample count, step mode) is set here explicitly.
 pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state: RenderState) c.WGPURenderPipeline {
-    var constants: [8]c.WGPUConstantEntry = undefined;
-    std.debug.assert(config.constants.len <= constants.len);
+    // Coverage needs samples to cover, and a blended draw keeps its alpha for blending
+    const alpha_to_coverage = config.alpha_to_coverage and config.sample_count > 1 and !state.transparent;
+
+    var constants: [9]c.WGPUConstantEntry = undefined;
+    std.debug.assert(config.constants.len < constants.len);
     for (config.constants, 0..) |constant, i| {
         constants[i] = .{ .key = stringView(constant.key), .value = constant.value };
+    }
+    var constant_count = config.constants.len;
+    if (config.alpha_to_coverage) {
+        constants[constant_count] = .{ .key = stringView("ALPHA_TO_COVERAGE"), .value = if (alpha_to_coverage) 1.0 else 0.0 };
+        constant_count += 1;
     }
 
     const color_target: c.WGPUColorTargetState = .{
@@ -154,7 +167,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
     const fragment: c.WGPUFragmentState = .{
         .module = config.module,
         .entryPoint = stringView("fs_main"),
-        .constantCount = config.constants.len,
+        .constantCount = constant_count,
         .constants = &constants,
         .targetCount = 1,
         .targets = &color_target,
@@ -177,7 +190,7 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
         .vertex = .{
             .module = config.module,
             .entryPoint = stringView("vs_main"),
-            .constantCount = config.constants.len,
+            .constantCount = constant_count,
             .constants = &constants,
             .bufferCount = config.vertex_buffers.len,
             .buffers = config.vertex_buffers.ptr,
@@ -188,7 +201,11 @@ pub fn createRenderPipeline(device: c.WGPUDevice, config: PipelineConfig, state:
             .cullMode = if (state.double_sided) c.WGPUCullMode_None else c.WGPUCullMode_Back,
         },
         .depthStencil = if (config.depth_format != null) &depth_stencil else null,
-        .multisample = .{ .count = config.sample_count, .mask = 0xFFFF_FFFF },
+        .multisample = .{
+            .count = config.sample_count,
+            .mask = 0xFFFF_FFFF,
+            .alphaToCoverageEnabled = @intFromBool(alpha_to_coverage),
+        },
         .fragment = if (config.color_format != null) &fragment else null,
     });
 }

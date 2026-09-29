@@ -1,6 +1,7 @@
 // glTF metallic-roughness PBR, ported from redfish's pbr.vert / pbr.frag.
 // Changes: no manual gamma (the surface is sRGB), emissive = factor * texture as glTF
-// specifies, alpha MASK discards, lights from the frame's SceneLights (group 0).
+// specifies, alpha MASK discards (or, with MSAA, smooths its edge through alpha-to-coverage),
+// lights from the frame's SceneLights (group 0).
 // Skinning reads `joints` (group 2) from `draw.joint_offset`, for live and baked animation
 // alike; this replaces redfish's separate pbr_anim_baked.vert.
 
@@ -15,6 +16,12 @@
 @group(GROUP_MATERIAL) @binding(8) var normal_sampler: sampler;
 @group(GROUP_MATERIAL) @binding(9) var occlusion_sampler: sampler;
 @group(GROUP_MATERIAL) @binding(10) var emissive_sampler: sampler;
+
+/// True in pipelines with alpha-to-coverage on (`ShaderConfig.alpha_to_coverage`, set per
+/// variant: multisampled and not blended). The fragment's alpha then sets how many of the
+/// pixel's samples it covers, so it must be 1 for opaque surfaces, and for MASK it is the
+/// sharpened alpha from `maskCoverage`.
+override ALPHA_TO_COVERAGE: bool = false;
 
 const PI: f32 = 3.14159265359;
 /// NdotV below which specular fades out when `frame.lights.fade_grazing_specular` is on.
@@ -81,7 +88,15 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loca
     let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.texcoord).rgb;
 
     var base_color = material.base_color_factor * base_color_sample * in.color;
-    if (hasFlag(MATERIAL_FLAG_ALPHA_MASK) && base_color.a < material.alpha_cutoff) {
+    // Derivatives must be taken before any discard (uniform control flow)
+    let alpha_change = fwidth(base_color.a);
+    var output_alpha = base_color.a;
+    if (ALPHA_TO_COVERAGE) {
+        output_alpha = 1.0;
+        if (hasFlag(MATERIAL_FLAG_ALPHA_MASK)) {
+            output_alpha = maskCoverage(base_color.a, alpha_change);
+        }
+    } else if (hasFlag(MATERIAL_FLAG_ALPHA_MASK) && base_color.a < material.alpha_cutoff) {
         discard;
     }
     // Minimum brightness keeps very dark materials visible (as redfish)
@@ -113,7 +128,15 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loca
 
     // Reinhard tone mapping; the sRGB surface does the gamma encode
     color = color / (color + vec3f(1.0));
-    return vec4f(color, base_color.a);
+    return vec4f(color, output_alpha);
+}
+
+/// Alpha for alpha-to-coverage on a MASK material: 0 below the cutoff, 1 above, with the
+/// step spread over the one pixel where alpha crosses it. `alpha_change` is how much alpha
+/// changes across that pixel (`fwidth`). Plain alpha would be wrong here: coverage would
+/// follow the texture's alpha everywhere instead of cutting at `alpha_cutoff`.
+fn maskCoverage(alpha: f32, alpha_change: f32) -> f32 {
+    return clamp((alpha - material.alpha_cutoff) / max(alpha_change, 1e-4) + 0.5, 0.0, 1.0);
 }
 
 /// The shading normal of the visible side. Back faces (double-sided materials) use the

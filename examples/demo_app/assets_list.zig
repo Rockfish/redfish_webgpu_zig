@@ -176,6 +176,13 @@ pub const model_infos = [_]ModelInfo{
         .category = "Edge Case",
         .description = "Interleaved vertex data",
     },
+    .{
+        .path = "assets_nas/glTF-Sample-Models/2.0/AlphaBlendModeTest/glTF/AlphaBlendModeTest.gltf",
+        .name = "Alpha Blend Mode Test",
+        .format = "glTF",
+        .category = "Edge Case",
+        .description = "OPAQUE, BLEND, and MASK with cutoffs 0.25 / 0.5 / 0.75 (plan 018 phase 3)",
+    },
     // Extra models for variety
 };
 

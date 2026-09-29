@@ -147,7 +147,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
         context.alloc,
         gpu,
         "src/core/shaders/pbr.wgsl",
-        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr },
+        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr, .alpha_to_coverage = true },
     );
     defer model_shader.releaseGpuObjects();
 

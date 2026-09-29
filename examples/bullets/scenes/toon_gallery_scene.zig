@@ -109,6 +109,7 @@ pub const ToonGalleryScene = struct {
         const shader = try rm.createShader("src/core/shaders/pbr.wgsl", .{
             .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts,
             .material = .pbr,
+            .alpha_to_coverage = true,
         });
 
         var models: [gltf_files.len]*ModelInstance = undefined;

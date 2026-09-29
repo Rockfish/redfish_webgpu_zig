@@ -55,6 +55,10 @@ pub const ShaderConfig = struct {
     /// target has a `resolve` view: it gets the window's sample count
     /// (`gpu_context.window_sample_count`, 1 without MSAA). `.surface` pipelines always do.
     multisampled: bool = false,
+    /// Smooth alpha-cutout edges with alpha-to-coverage under MSAA (see
+    /// `PipelineConfig.alpha_to_coverage`). For shaders that declare
+    /// `override ALPHA_TO_COVERAGE: bool`, like pbr.wgsl.
+    alpha_to_coverage: bool = false,
 };
 
 const log = std.log.scoped(.shader);
@@ -111,6 +115,7 @@ pub const Shader = struct {
                 // The window pass is multisampled with MSAA; render targets only when the
                 // shader says so, and shadow passes never
                 .sample_count = if (config.color_target == .surface or config.multisampled) gpu_context.window_sample_count else 1,
+                .alpha_to_coverage = config.alpha_to_coverage,
             }),
         };
         return shader;

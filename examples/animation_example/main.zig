@@ -335,7 +335,12 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_d
         "examples/animation_example/shaders/player.wgsl"
     else
         "src/core/shaders/pbr.wgsl";
-    const shader = try Shader.init(init.io, context.alloc, gpu, shader_path, .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr });
+    const shader = try Shader.init(init.io, context.alloc, gpu, shader_path, .{
+        .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts,
+        .material = .pbr,
+        // player.wgsl has no ALPHA_TO_COVERAGE override
+        .alpha_to_coverage = SELECTED_MODEL != .player,
+    });
 
     const model_config = blk: {
         for (model_configs) |config| {

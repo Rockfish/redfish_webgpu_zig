@@ -333,7 +333,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, initi
         context.alloc,
         gpu,
         SHADER_PATH,
-        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr },
+        .{ .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts, .material = .pbr, .alpha_to_coverage = true },
     );
 
     std.debug.print("\n--- Build gltf model ----------------------\n\n", .{});

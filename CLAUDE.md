@@ -28,8 +28,8 @@ the regression check. Since then: PBR edge-highlight fixes, orthographic picking
 demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
 phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
 follow camera), and plan 017 shadows (`examples/shadows`, `DepthBias`, `ShadowMap` filter,
-`ShadowMapArray`). Active plan: 018 anti-aliasing (phases 1-2 done: 4x MSAA, `-Dmsaa`, in
-every app including angrybot; next: optional phase 3); 016 parked. See `docs/plans/active-plans.md`.
+`ShadowMapArray`), and plan 018 anti-aliasing (4x MSAA, `-Dmsaa`, default on; alpha-to-coverage
+for glTF MASK). No active plan; 016 is parked at phase 3. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

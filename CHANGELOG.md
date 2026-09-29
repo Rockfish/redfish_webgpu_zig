@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-09-29 - Alpha-to-coverage for MASK materials, plan 018 phase 3 (plan finished)
+- **pbr.wgsl**: with MSAA, glTF alpha MASK edges are smoothed through alpha-to-coverage (alpha sharpened around the cutoff, so the cut stays where glTF puts it); without MSAA it still discards
+- **core**: `ShaderConfig.alpha_to_coverage` / `PipelineConfig.alpha_to_coverage`, on in multisampled, non-blended variants; the pipeline sets the shader's `ALPHA_TO_COVERAGE` override
+- **demo_app**: AlphaBlendModeTest added to the model list (index 22)
+- **Plans**: 018 anti-aliasing completed
+
 ### 2026-09-29 - Anti-aliasing in angrybot, plan 018 phase 2
 - **angrybot**: the emission and scene passes are 4x multisampled and resolve into their render targets; blur and composite unchanged
 - **core**: `gpu_context.Attachment` (render-only textures; `GpuContext`'s depth and MSAA textures use it), `ShaderConfig.multisampled` for render-target pipelines in multisampled passes

@@ -4,10 +4,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[018-anti-aliasing.md](018-anti-aliasing.md)**: 4x MSAA, a build option on by default
-  (`-Dmsaa=false` turns it off).
-  - Phases 1-2 done 2026-09-29: the window pass in every app, and angrybot's scene and
-    emission passes. Next: phase 3 (alpha-to-coverage, optional), or finish the plan.
+- None. Next: resume a parked plan (016 phase 3, `PathFollow`, is ready), or start one
+  from `backlog.md`.
 
 ## ⏸️ Parked
 
@@ -31,6 +29,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## ✅ Completed
 
+- **[018-anti-aliasing.md](018-anti-aliasing.md)**: 2026-09-29. 4x MSAA in every app
+  (`-Dmsaa`, default on), angrybot's render targets included; alpha-to-coverage for glTF
+  MASK materials in pbr.wgsl.
 - **[017-shadows.md](017-shadows.md)**: 2026-09-29. `examples/shadows` (debug views,
   bias, filter, and PCF controls), `DepthBias`, the `ShadowMap` filter option (both in
   angrybot), and `ShadowMapArray` for several lights. Phase 4 (unclipped depth) left
@@ -75,3 +76,4 @@ session notes stay in redfish_gl_zig's `active-plans.md`. Plan 016 phases 1-2 do
 (`docs/reviews/2026-09-29-rust-wgpu-projects-review.md`). Plan 017 (shadows) drafted and
 made active; 016 parked after phases 1-2.
 Plan 017 finished (phases 1-3); angrybot's emission pass fixed (occluders drawn first).
+Plan 018 (anti-aliasing) drafted and finished: MSAA, angrybot's render targets, alpha-to-coverage.

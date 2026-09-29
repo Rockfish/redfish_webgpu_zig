@@ -117,6 +117,7 @@ pub const Spacesuit = struct {
         const shader = try rm.createShader("src/core/shaders/pbr.wgsl", .{
             .vertex_buffers = &MeshPrimitive.vertex_buffer_layouts,
             .material = .pbr,
+            .alpha_to_coverage = true,
         });
 
         const model = try rm.loadModel("spacesuit", path);
