@@ -4,10 +4,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[016-motion-patterns.md](016-motion-patterns.md)**: `core.motion` (`dampAlpha`,
-  `moveToward`, `SmoothFollow`, `dampLookAt`, `PathFollow`).
-  - Phases 1-3 done (phase 3 on 2026-09-29: `PathFollow`, linear and Catmull-Rom, with a
-    camera flythrough in the shadows example). Next: phase 4 (`Shake`, `CameraGimbal`).
+- None. Next: a parked plan (012 animation FSM, 005 scene management, ...) or one from
+  `backlog.md`.
 
 ## ⏸️ Parked
 
@@ -28,6 +26,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## ✅ Completed
 
+- **[016-motion-patterns.md](016-motion-patterns.md)**: 2026-09-30. `core.motion`
+  (`dampAlpha`, `moveToward`, `SmoothFollow`, `dampLookAt`, `PathFollow`, `Shake`);
+  `CameraGimbal` revived (tilted or level mount) with `examples/camera_rig`.
 - **[018-anti-aliasing.md](018-anti-aliasing.md)**: 2026-09-29. 4x MSAA in every app
   (`-Dmsaa`, default on), angrybot's render targets included; alpha-to-coverage for glTF
   MASK materials in pbr.wgsl.
@@ -77,3 +78,5 @@ made active; 016 parked after phases 1-2.
 Plan 017 finished (phases 1-3); angrybot's emission pass fixed (occluders drawn first).
 Plan 018 (anti-aliasing) drafted and finished: MSAA, angrybot's render targets, alpha-to-coverage.
 Plan 016 resumed: phase 3 (`PathFollow`) done.
+
+**2026-09-30**: Plan 016 finished: `Shake`, `CameraGimbal` revived, `examples/camera_rig`.

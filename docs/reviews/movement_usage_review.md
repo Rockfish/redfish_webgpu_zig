@@ -65,7 +65,7 @@ helper that calls `applyMovement(direction, 0, angle, angle)` — exact, with
 no speed coupling.
 
 ### 4. `camera_gimbal.zig` contains code that cannot compile
-**Status: OPEN — keep and repair (decision: John)**
+**Status: RESOLVED 2026-09-30 in redfish_webgpu_zig (plan 016 phase 4) — kept and repaired (decision: John)**
 
 - `processMovement` switches on `.look_left/.look_right/.look_up/.look_down`
   (`camera_gimbal.zig:330-333`) — these variants do not exist in
@@ -84,10 +84,17 @@ is a natural showcase for the motion-patterns plan
 ([016-motion-patterns.md](../plans/016-motion-patterns.md)).
 
 Repair checklist:
-- [ ] Remove or properly add the `look_*` variants (map to `rotate_*`?)
-- [ ] Update `rotateVec` / `dot` calls to the by-value math API
-- [ ] Wire its tests into a test step
-- [ ] Add a usage example (orbit base + gimbal aim) in an example app
+- [x] Remove or properly add the `look_*` variants (map to `rotate_*`?): removed in the port
+- [x] Update `rotateVec` / `dot` calls to the by-value math API: done in the port
+- [x] Wire its tests into a test step: `core`'s `refAllDecls` runs them (checked
+      2026-09-30 by making one fail)
+- [x] Add a usage example (orbit base + gimbal aim) in an example app:
+      `examples/camera_rig`
+- Also (2026-09-30): two mount modes, `.gimbal` (follows the base's pitch and tilt) and
+  `.gimbal_level` (the base's heading, level with the horizontal plane), both built by
+  `getCameraTransform()`, so `getCameraPosition` / `getCameraForward` match the view in
+  every mode (they disagreed when the base was pitched, and in `.base` mode);
+  `updateGimbalToFollowHorizontal` was removed.
 
 ### 5. Stale example code (same lazy-analysis category)
 **Status: OPEN**

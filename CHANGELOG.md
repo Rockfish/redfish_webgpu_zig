@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-09-30 - Camera shake and gimbal rig, plan 016 phase 4 (plan finished)
+- **core.motion.Shake**: trauma-model camera shake (strength trauma², smooth noise, frame-rate independent), applied to the frame's `RenderContext` after the camera controller
+- **CameraGimbal**: two mount modes, `.gimbal` (the base's pitch and tilt, as a satellite) and `.gimbal_level` (the base's heading, level with the horizontal plane); `getCameraTransform()` makes the view, `getCameraPosition`, and `getCameraForward` agree in every mode (also fixes `.base` mode's position)
+- **examples/camera_rig**: a gimbal rig following a focus on a Catmull-Rom loop; circle, radius, base tilt, gimbal aim, the three view modes, and shake
+- **Plans**: 016 motion patterns completed; movement review item 4 (CameraGimbal) resolved
+
 ### 2026-09-29 - Motion paths, plan 016 phase 3
 - **core.motion.PathFollow**: moves along waypoints at a steady speed; straight segments or a Catmull-Rom curve through the points; once, loop, or ping-pong; `tangent()` for facing. Invariant tests (frame-rate independence, loop and ping-pong ends, no corner on the curve)
 - **examples/shadows**: camera flythrough around the scene (linear or Catmull-Rom, look at the center or ahead), with the path drawn as lines

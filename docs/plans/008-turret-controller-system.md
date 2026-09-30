@@ -854,3 +854,9 @@ Same pattern applies to:
 - Each turret owning its shader eliminates entire class of bugs
 - Directory structure mirrors bullets for consistency
 - Pattern is proven and extensible
+
+**2026-09-30** (redfish_webgpu_zig): `core.motion.dampLookAt(rotation, position, focus, up,
+rate, dt)` exists for this plan's aim: it turns a rotation part way toward looking at a
+focus each frame, frame-rate independent (plan 016). Turret aim is its intended first user
+(confirmed by John). A two-axis turret would damp yaw on the base and pitch on the barrel,
+or damp the combined look-at and split it.

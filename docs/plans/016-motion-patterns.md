@@ -1,9 +1,9 @@
 # Plan 016 - Motion Patterns (motion.zig)
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Active: phases 1-3 done (2026-09-29). See Notes & Decisions at the end.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Completed 2026-09-30 (phases 1-4). See Notes & Decisions at the end.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-## Status: Active (phases 1-3 done, 2026-09-29)
+## Status: Completed (phases 1-4, 2026-09-30)
 
 ## Context
 
@@ -167,8 +167,8 @@ is the composition boundary (§1), not the field lists.
 - [x] Example: scripted flythrough in an example app (the shadows example)
 
 ### Phase 4 — Shake + showcase
-- [ ] `Shake` with trauma model, composed as a post-controller offset
-- [ ] Revive `CameraGimbal` as the showcase: base orbits/circles a focus via
+- [x] `Shake` with trauma model, composed as a post-controller offset
+- [x] Revive `CameraGimbal` as the showcase: base orbits/circles a focus via
       `Movement`, `SmoothFollow` damps the base target, gimbal aims on top
       (repair items tracked in movement_usage_review.md, item 4)
 
@@ -243,3 +243,47 @@ phase 4.
   bullets example's line shader). The path is sampled from a copy of the `PathFollow`, so
   drawing doesn't move the camera.
 - Next: phase 4 (`Shake`, `CameraGimbal` revival), or park the plan.
+
+**2026-09-30**: Phase 4 done; plan finished.
+- `Shake` (`motion.zig`): `trauma` 0-1 (`addTrauma` clamps), linear `decay` per second,
+  strength trauma² (Eiserloh, GDC 2016), `max_offset` / `max_angle` / `frequency`.
+  `update(dt)` returns an `Offset` (world translation, plus pitch / yaw / roll about the
+  view's axes) from smooth noise: three sines per channel with frequencies that aren't
+  whole multiples, depending only on time, so frame-rate independent.
+  `Offset.apply(RenderContext)` returns the shaken context (view, projection_view,
+  view_position); the camera controller is never touched. Tests: calm until hit, bounded
+  by max × trauma², calm again after 1 / decay seconds; the same at 10 / 60 / 144 fps;
+  `apply` moves the view with the camera.
+- `CameraGimbal` revived. Decision (John), revised the same day: both mounts are view
+  modes, since which one looks right depends on the scenario:
+  - `.gimbal`: the mount follows the base's full orientation, pitch and tilt included
+    (a satellite's camera tilts with its body against the orbit).
+  - `.gimbal_level`: the mount keeps the base's heading but stays level with the
+    horizontal plane (a stabilized camera). The heading is the base's forward flattened
+    onto the horizontal plane (the base's up when it looks straight down), instead of the
+    old base-to-target direction, so it also works for a base steered without a target.
+  `getCameraTransform()` builds the camera's world transform for the current mode; the
+  view, `getCameraPosition`, and `getCameraForward` all read it, so they always agree.
+  This also fixed `.base` mode, where `getCameraPosition` added the gimbal's mount offset
+  that the base view doesn't have. Removed: `getBaseView`, `getGimbalView`,
+  `getHorizontalFollowView`, `updateGimbalToFollowHorizontal` (it set a target and reset
+  it at once). New tests: position and forward equal the view's in all three modes, with
+  the base pitched and tilted and the gimbal offset and turned; a tilted base tilts the
+  `.gimbal` view's up and leaves `.gimbal_level` level on the base's heading. The review's
+  other repair items were already done in the port (movement_usage_review.md, item 4).
+- `examples/camera_rig` (new): a focus sphere on a Catmull-Rom loop (`PathFollow`); the
+  base follows it with a lag, circles it (arrows), and moves in and out (W / S) through
+  `Movement`; a base tilt slider banks it; the gimbal aims on top (I / J / K / L, C
+  recenters); Space adds shake trauma. View mode base / gimbal / gimbal_level in the
+  panel.
+- Deviation from §4's "SmoothFollow damps the base target": `SmoothFollow` sets the
+  camera's position outright each frame, which would undo circling. The rig damps the
+  focus point with `dampVec3` and moves the base by as much as the damped focus moved,
+  so circle and radius changes stay. The look-at rebuilds the base's orientation level
+  each frame, so the tilt is applied fresh each frame and doesn't add up.
+- `dampLookAt` still has no user. The turret (plan 008) is its scenario (confirmed by
+  John); a note there points back here.
+
+Outcome: `core.motion` with `dampAlpha`, `moveToward`, `SmoothFollow`, `dampLookAt`,
+`PathFollow`, `Shake`; users in level_01, angrybot, the shadows example (flythrough), and
+`examples/camera_rig`.

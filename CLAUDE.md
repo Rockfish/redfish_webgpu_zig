@@ -24,13 +24,14 @@ porting a file, open the redfish_gl_zig version side by side and keep it recogni
 ## Status
 
 The port is complete (plan 000, 2026-09-27): all apps run on wgpu-native, and `angrybot` is
-the regression check. Since then: PBR edge-highlight fixes, orthographic picking, softer
-demo_app lights with an optional grazing-specular fade, the brace style pass, and plan 016
-phases 1-2 (`src/core/motion.zig`: `SmoothFollow`, `dampLookAt`, `moveToward`; angrybot's
-follow camera), and plan 017 shadows (`examples/shadows`, `DepthBias`, `ShadowMap` filter,
-`ShadowMapArray`), and plan 018 anti-aliasing (4x MSAA, `-Dmsaa`, default on; alpha-to-coverage
-for glTF MASK). Active plan: 016 motion patterns (phase 3 done: `PathFollow`; next: phase 4,
-`Shake` and `CameraGimbal`). See `docs/plans/active-plans.md`.
+the regression check. Since then:
+- PBR edge-highlight fixes, orthographic picking, softer demo_app lights, the brace style pass
+- Plan 016 motion patterns: `src/core/motion.zig` (`SmoothFollow`, `dampLookAt`,
+  `moveToward`, `PathFollow`, `Shake`); `CameraGimbal` revived in `examples/camera_rig`
+- Plan 017 shadows: `examples/shadows`, `DepthBias`, `ShadowMap` filter, `ShadowMapArray`
+- Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
+
+No active plan. See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -40,7 +41,7 @@ src/
 │   └── wgpu/     # webgpu.h translated by the build, string-view helpers, Metal layer
 ├── math/         # Vec/Mat/Quat, column-major
 └── containers/
-examples/         # gpu_caps, draw_test, scene_tree, demo_app, animation_example, bullets, skybox, shadows
+examples/         # gpu_caps, draw_test, scene_tree, demo_app, animation_example, bullets, skybox, shadows, camera_rig
 games/            # level_01, angrybot (regression reference)
 assets/           # symlink to ../redfish_gl_zig/assets
 assets_nas/       # symlink to /Volumes/Dev/Assets (glTF sample models), as in redfish

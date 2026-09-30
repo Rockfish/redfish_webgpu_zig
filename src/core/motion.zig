@@ -7,6 +7,7 @@
 //! |---------------|---------------|-----------------------------------------------|
 //! | `SmoothFollow`| position, aim | damped camera position and look-at point      |
 //! | `PathFollow`  | distance      | position moving along waypoints at a speed    |
+//! | `Shake`       | trauma, time  | offset added to the frame's view, after it    |
 //! | `dampLookAt`  | none          | rotation turned part way toward a focus       |
 //! | `moveToward`  | none          | position stepped toward a goal, no overshoot  |
 //! | `dampVec3`    | none          | vector moved part way toward a goal           |
@@ -19,8 +20,10 @@
 const std = @import("std");
 const math = @import("math");
 const Movement = @import("movement.zig").Movement;
+const RenderContext = @import("render_context.zig").RenderContext;
 
 const Vec3 = math.Vec3;
+const Mat4 = math.Mat4;
 const Quat = math.Quat;
 
 /// A follower (usually a camera) that trails a moving followee: it sits at
@@ -59,6 +62,97 @@ pub const SmoothFollow = struct {
         movement.reset(self.position, self.aim);
     }
 };
+
+/// Camera shake for impacts and explosions, with the trauma model (Squirrel Eiserloh,
+/// "Math for Game Programmers: Juicing Your Cameras With Math", GDC 2016): `addTrauma` on a
+/// hit; trauma (0 to 1) wears off at `decay` per second; the shake's strength is trauma²,
+/// so small hits barely move the camera, big ones do, and the fade-out ends softly.
+///
+/// The shake is an offset applied to the frame's view after the camera controller has
+/// run (`Offset.apply` on the `RenderContext`), never to the controller: its position
+/// and target stay where the game put them, and the shake stops exactly when trauma
+/// reaches 0.
+pub const Shake = struct {
+    /// 0 (calm) to 1 (the most shake).
+    trauma: f32 = 0.0,
+    /// Trauma lost per second: a full shake lasts `1 / decay` seconds.
+    decay: f32 = 1.0,
+    /// Offset at trauma 1, in world units along each axis.
+    max_offset: f32 = 0.3,
+    /// Rotation at trauma 1, in radians about each of the view's axes.
+    max_angle: f32 = 0.05,
+    /// How fast the shake wiggles, in Hz.
+    frequency: f32 = 12.0,
+    /// Seconds since the shake started; drives the noise.
+    time: f32 = 0.0,
+
+    const Self = @This();
+
+    /// How far the camera is shaken this frame.
+    pub const Offset = struct {
+        /// World-space move of the camera.
+        translation: Vec3,
+        /// Turn about the view's own axes, in radians: x pitch, y yaw, z roll.
+        rotation: Vec3,
+
+        pub const none: Offset = .{ .translation = Vec3.Zero, .rotation = Vec3.Zero };
+
+        /// `context` seen from the shaken camera: moved by `translation`, then turned by
+        /// `rotation` about its own axes. The camera itself isn't touched.
+        pub fn apply(self: Offset, context: RenderContext) RenderContext {
+            // The camera's world transform becomes move * camera * turn, so the view (its
+            // inverse) becomes turn⁻¹ * view * move⁻¹.
+            const move_back = Mat4.fromTranslation(self.translation.mulScalar(-1.0));
+            const turn_back = Mat4.fromAxisAngle(Vec3.init(0.0, 0.0, 1.0), -self.rotation.z)
+                .mulMat4(&Mat4.fromAxisAngle(Vec3.init(0.0, 1.0, 0.0), -self.rotation.y))
+                .mulMat4(&Mat4.fromAxisAngle(Vec3.init(1.0, 0.0, 0.0), -self.rotation.x));
+            const view = turn_back.mulMat4(&context.view).mulMat4(&move_back);
+
+            var shaken = context;
+            shaken.view = view;
+            shaken.projection_view = context.projection.mulMat4(&view);
+            shaken.view_position = context.view_position.add(self.translation);
+            return shaken;
+        }
+    };
+
+    /// A hit: more trauma, at most 1.
+    pub fn addTrauma(self: *Self, amount: f32) void {
+        self.trauma = @min(self.trauma + amount, 1.0);
+    }
+
+    /// Advances the shake by `dt` and returns this frame's offset (`Offset.none` once
+    /// trauma is gone).
+    pub fn update(self: *Self, dt: f32) Offset {
+        self.trauma = @max(self.trauma - self.decay * dt, 0.0);
+        if (self.trauma == 0.0) {
+            self.time = 0.0;
+            return .none;
+        }
+        self.time += dt;
+
+        const strength = self.trauma * self.trauma;
+        const phase = self.time * self.frequency;
+        const move = self.max_offset * strength;
+        const turn = self.max_angle * strength;
+        return .{
+            .translation = Vec3.init(shakeNoise(0, phase) * move, shakeNoise(1, phase) * move, shakeNoise(2, phase) * move),
+            .rotation = Vec3.init(shakeNoise(3, phase) * turn, shakeNoise(4, phase) * turn, shakeNoise(5, phase) * turn),
+        };
+    }
+};
+
+/// Smooth noise in -1..1 for channel `channel` at `phase` (time × frequency): three sines
+/// whose frequencies aren't whole multiples of each other, so the sum doesn't visibly
+/// repeat, each channel shifted so the axes move independently. Smooth where random
+/// numbers per frame would jitter, and the same at any frame rate.
+fn shakeNoise(channel: u32, phase: f32) f32 {
+    const shift = @as(f32, @floatFromInt(channel)) * 1.7;
+    const tau = 2.0 * std.math.pi;
+    return 0.5 * @sin(tau * phase + shift) +
+        0.3 * @sin(tau * phase * 2.13 + shift * 2.9) +
+        0.2 * @sin(tau * phase * 4.37 + shift * 5.3);
+}
 
 /// A position moving along waypoints at a steady speed: a scripted camera flythrough, a
 /// patrol route, a moving platform. Progress is distance traveled along the path, not
@@ -471,6 +565,75 @@ test "PathFollow Catmull-Rom: goes through every point without the linear path's
     const curve_before = curve.tangent();
     curve.distance = curve_corner + 0.01;
     try std.testing.expect(curve_before.dot(curve.tangent()) > 0.99);
+}
+
+test "Shake: calm until hit, never past its maximum, calm again after 1 / decay seconds" {
+    var shake: Shake = .{ .decay = 2.0, .max_offset = 0.5, .max_angle = 0.1 };
+    try std.testing.expectEqual(Shake.Offset.none, shake.update(1.0 / 60.0));
+
+    shake.addTrauma(0.6);
+    shake.addTrauma(0.6);
+    try std.testing.expectEqual(@as(f32, 1.0), shake.trauma); // at most 1
+
+    // Strength is trauma²: every offset within max × trauma²
+    var moved = false;
+    for (0..60) |_| {
+        const offset = shake.update(1.0 / 120.0);
+        const strength = shake.trauma * shake.trauma;
+        for ([_]f32{ offset.translation.x, offset.translation.y, offset.translation.z }) |value| {
+            try std.testing.expect(@abs(value) <= 0.5 * strength + 1e-6);
+            moved = moved or value != 0.0;
+        }
+        for ([_]f32{ offset.rotation.x, offset.rotation.y, offset.rotation.z }) |value| {
+            try std.testing.expect(@abs(value) <= 0.1 * strength + 1e-6);
+        }
+    }
+    try std.testing.expect(moved);
+
+    // 1 / decay = 0.5 s in all: the remaining 0.5 - 60 / 120 = 0 s, so it's calm and stays so
+    try std.testing.expectEqual(Shake.Offset.none, shake.update(1.0 / 120.0));
+    try std.testing.expectEqual(Shake.Offset.none, shake.update(1.0));
+}
+
+test "Shake: the same shake at 10, 60, and 144 fps" {
+    var at: [3]Shake.Offset = undefined;
+    for ([_]u32{ 10, 60, 144 }, 0..) |steps, i| {
+        var shake: Shake = .{ .decay = 0.5 };
+        shake.addTrauma(1.0);
+        const dt = 0.5 / @as(f32, @floatFromInt(steps));
+        for (0..steps) |_| {
+            at[i] = shake.update(dt);
+        }
+    }
+    try expectVec3ApproxEq(at[1].translation, at[0].translation, 1e-4);
+    try expectVec3ApproxEq(at[1].translation, at[2].translation, 1e-4);
+    try expectVec3ApproxEq(at[1].rotation, at[2].rotation, 1e-4);
+}
+
+test "Shake.Offset.apply: moves the view with the camera and leaves the rest" {
+    const view = Mat4.lookAtRhGl(Vec3.init(0.0, 2.0, 5.0), Vec3.Zero, Vec3.init(0.0, 1.0, 0.0));
+    const projection = Mat4.perspectiveRhZo(1.0, 1.5, 0.1, 100.0);
+    const context: RenderContext = .{
+        .projection = projection,
+        .projection_view = projection.mulMat4(&view),
+        .view = view,
+        .view_position = Vec3.init(0.0, 2.0, 5.0),
+    };
+
+    // No offset: unchanged
+    try std.testing.expectEqual(context.view, Shake.Offset.none.apply(context).view);
+
+    // A pure move: a point moved with the camera looks the same as before
+    const offset: Shake.Offset = .{ .translation = Vec3.init(0.2, -0.1, 0.3), .rotation = Vec3.Zero };
+    const shaken = offset.apply(context);
+    const point = Vec3.init(1.0, 0.5, -2.0);
+    const before = context.view.mulVec4(math.vec4(point.x, point.y, point.z, 1.0));
+    const moved = point.add(offset.translation);
+    const after = shaken.view.mulVec4(math.vec4(moved.x, moved.y, moved.z, 1.0));
+    try std.testing.expectApproxEqAbs(before.x, after.x, 1e-5);
+    try std.testing.expectApproxEqAbs(before.y, after.y, 1e-5);
+    try std.testing.expectApproxEqAbs(before.z, after.z, 1e-5);
+    try expectVec3ApproxEq(Vec3.init(0.2, 1.9, 5.3), shaken.view_position, 1e-6);
 }
 
 fn dampSteps(start: Vec3, goal: Vec3, rate: f32, steps_per_second: u32) Vec3 {

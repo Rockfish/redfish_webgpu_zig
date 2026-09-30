@@ -18,11 +18,17 @@ pub const ProjectionType = enum {
     Orthographic,
 };
 
+/// Which camera the view shows. Each scenario picks what looks right in practice.
 pub const ViewMode = enum {
-    /// Use base movement transform only (like a fixed camera)
+    /// The base's transform only (like a fixed camera)
     base,
-    /// Use base * gimbal transforms (like a camera on a gimbal mount)
+    /// The gimbal on a mount that follows the base's full orientation, pitch and tilt
+    /// included: a satellite's camera tilts with the satellite's body.
     gimbal,
+    /// The gimbal on a mount that keeps the base's heading but stays level with the
+    /// horizontal plane: a vehicle's stabilized camera, whatever the vehicle's pitch or
+    /// tilt. The gimbal's own aim still adds pitch.
+    gimbal_level,
 };
 
 /// Dual Movement camera system with base and gimbal
@@ -164,11 +170,7 @@ pub const Camera = struct {
             gimbal_tick != self.cached_gimbal_tick or
             self.view_mode != self.cached_view_mode)
         {
-            self.cached_view = switch (self.view_mode) {
-                .base => self.getBaseView(),
-                // .Gimbal => self.getGimbalView(),
-                .gimbal => self.getHorizontalFollowView(),
-            };
+            self.cached_view = self.getCameraTransform().toViewMatrix();
 
             self.cached_base_tick = base_tick;
             self.cached_gimbal_tick = gimbal_tick;
@@ -178,85 +180,35 @@ pub const Camera = struct {
         return self.cached_view;
     }
 
-    /// Get view matrix using only base transform
-    pub fn getBaseView(self: *Self) Mat4 {
-        return self.base_movement.getTransform().toViewMatrix();
+    /// The camera's world transform in the current view mode: the base alone, or the
+    /// gimbal's transform on top of its mount (the base, or the base leveled). The view is
+    /// its inverse, and `getCameraPosition` / `getCameraForward` read it, so all three
+    /// always describe the same camera.
+    pub fn getCameraTransform(self: *const Self) Transform {
+        const base = self.base_movement.getTransform().*;
+        const gimbal = self.gimbal_movement.getTransform().*;
+        return switch (self.view_mode) {
+            .base => base,
+            .gimbal => base.composeTransforms(gimbal),
+            .gimbal_level => levelMount(base).composeTransforms(gimbal),
+        };
     }
 
-    /// Get view matrix using base * gimbal transforms
-    pub fn getGimbalView(self: *Self) Mat4 {
-        // Combine base and gimbal transforms
-        const base_transform = self.base_movement.getTransform().*;
-        const gimbal_transform = self.gimbal_movement.getTransform().*;
-
-        // Gimbal transform is relative to base
-        const combined_transform = base_transform.composeTransforms(gimbal_transform);
-        // var combined_transform = gimbal_transform;
-        // combined_transform.translation = base_transform.transformPoint(gimbal_transform.translation);
-
-        // This keep the gimbal point in the same world direction
-        // const translation = base_transform.transformPoint(gimbal_transform.translation);
-        // const rotation = gimbal_transform.rotation;
-        // const scale = gimbal_transform.scale;
-        // const combined_transform = Transform{
-        // .translation = translation,
-        // .rotation = rotation,
-        // .scale = scale,
-        // };
-
-        return combined_transform.toViewMatrix();
-    }
-
-    pub fn getHorizontalFollowView(self: *Self) Mat4 {
-        const base_transform = self.base_movement.getTransform().*;
-        const base_target = self.base_movement.getTarget();
-
-        // Calculate horizontal direction from base to target (world x-z plane)
-        const base_to_target = base_target.sub(base_transform.translation);
-        const horizontal_direction = Vec3.init(base_to_target.x, 0.0, base_to_target.z).toNormalized();
-
-        // Create world-level right vector (perpendicular to horizontal direction in x-z plane)
-        const world_up = Vec3.init(0.0, 1.0, 0.0);
-        // const horizontal_right = horizontal_direction.cross(&world_up).toNormalized();
-
-        // Create base orientation that follows horizontal movement but stays world-level
-        var world_level_base_transform = Transform.identity();
-        world_level_base_transform.translation = base_transform.translation;
-
-        // Set orientation to face horizontal direction with world up
-        world_level_base_transform.lookTo(horizontal_direction, world_up);
-
-        // Now apply gimbal rotation on top of this world-level base
-        const gimbal_transform = self.gimbal_movement.getTransform().*;
-        const combined_transform = world_level_base_transform.composeTransforms(gimbal_transform);
-
-        return combined_transform.toViewMatrix();
-    }
-
-    /// Alternative: Set the gimbal to automatically track horizontal movement direction
-    /// Call this each frame to make gimbal follow base's horizontal movement
-    pub fn updateGimbalToFollowHorizontal(self: *Self) void {
-        const base_transform = self.base_movement.getTransform().*;
-        const base_target = self.base_movement.getTarget();
-
-        // Calculate horizontal direction from base position to target
-        const base_to_target = base_target.sub(base_transform.translation);
-        const horizontal_direction = Vec3.init(base_to_target.x, 0.0, base_to_target.z).toNormalized();
-
-        // Calculate what the gimbal target should be to look in horizontal direction
-        // Convert world horizontal direction to gimbal's local space
-
-        // Create a temporary world-level transform for the base
-        var world_level_transform = Transform.identity();
-        world_level_transform.translation = base_transform.translation;
-        world_level_transform.lookTo(horizontal_direction, Vec3.World_Up);
-
-        // The gimbal should look forward relative to this world-level base orientation
-        const gimbal_target = self.gimbal_movement.getPosition().add(Vec3.World_Forward);
-        self.gimbal_movement.setTarget(gimbal_target);
-
-        // Reset gimbal to look forward (horizontal direction is handled by the base orientation)
-        self.gimbal_movement.reset(Vec3.Zero, Vec3.World_Forward);
+    /// `base` with its pitch and tilt removed: same position, heading along the base's
+    /// forward flattened onto the horizontal plane, world up as up. Looking straight down
+    /// (or up) the forward has no horizontal part; the base's up then gives the heading,
+    /// since it points where the top of the view does.
+    fn levelMount(base: Transform) Transform {
+        const forward = base.forward();
+        var heading = Vec3.init(forward.x, 0.0, forward.z);
+        if (heading.lengthSquared() < 1e-6) {
+            const up = base.up();
+            heading = Vec3.init(up.x, 0.0, up.z);
+        }
+        var level = Transform.identity();
+        level.translation = base.translation;
+        level.lookTo(heading, Vec3.World_Up);
+        return level;
     }
 
     pub fn getProjectionView(self: *Self) Mat4 {
@@ -424,11 +376,9 @@ pub const Camera = struct {
         return self.gimbal_movement.getPosition();
     }
 
-    /// Get the effective camera position (base + gimbal offset)
+    /// The view's eye in the current view mode (see `getCameraTransform`).
     pub fn getCameraPosition(self: *const Self) Vec3 {
-        const base_transform = self.base_movement.getTransform().*;
-        const gimbal_offset = self.gimbal_movement.getPosition();
-        return base_transform.transformPoint(gimbal_offset);
+        return self.getCameraTransform().translation;
     }
 
     pub fn getBaseForward(self: *const Self) Vec3 {
@@ -439,16 +389,9 @@ pub const Camera = struct {
         return self.gimbal_movement.getTransform().forward();
     }
 
-    /// Get the effective camera forward direction
+    /// The view's forward direction in the current view mode (see `getCameraTransform`).
     pub fn getCameraForward(self: *const Self) Vec3 {
-        return switch (self.view_mode) {
-            .base => self.getBaseForward(),
-            .gimbal => {
-                const base_transform = self.base_movement.getTransform().*;
-                const gimbal_forward = self.gimbal_movement.getTransform().forward();
-                return base_transform.rotation.rotateVec(gimbal_forward);
-            },
-        };
+        return self.getCameraTransform().forward();
     }
 
     // Reset
@@ -571,4 +514,75 @@ test "dual camera orbit with independent aim" {
     // These should be different due to gimbal rotation
     const dot_product = base_forward.dot(camera_forward);
     try std.testing.expect(dot_product < 0.99); // Significantly different
+}
+
+test "dual camera: position and forward are the view's in every mode" {
+    const allocator = std.testing.allocator;
+
+    // The base above its target, looking down at it and tilted; the gimbal mounted off
+    // center and turned
+    const camera = try Camera.init(allocator, .{
+        .base_position = Vec3.init(0.0, 6.0, 8.0),
+        .base_target = Vec3.init(0.0, 0.0, 0.0),
+        .gimbal_position = Vec3.init(0.5, 0.2, 0.0),
+        .scr_width = 800,
+        .scr_height = 600,
+    });
+    defer camera.deinit();
+    camera.base_movement.applyMovement(.roll_right, 0.0, std.math.degreesToRadians(20.0), 0.0);
+    camera.processGimbalMovement(.rotate_right, 0.2);
+    camera.processGimbalMovement(.rotate_up, 0.1);
+
+    for ([_]ViewMode{ .base, .gimbal, .gimbal_level }) |mode| {
+        camera.setViewMode(mode);
+        const view_camera = viewCamera(camera.getView());
+        try expectVec3ApproxEq(view_camera.eye, camera.getCameraPosition(), 1e-4);
+        try expectVec3ApproxEq(view_camera.forward, camera.getCameraForward(), 1e-4);
+    }
+}
+
+test "dual camera: the gimbal tilts with the base, or stays level with gimbal_level" {
+    const allocator = std.testing.allocator;
+
+    // A satellite-like base, pitched down at its target and banked 30 degrees
+    const camera = try Camera.init(allocator, .{
+        .base_position = Vec3.init(0.0, 4.0, 10.0),
+        .base_target = Vec3.init(0.0, 0.0, 0.0),
+        .view_mode = .gimbal,
+        .scr_width = 800,
+        .scr_height = 600,
+    });
+    defer camera.deinit();
+    camera.base_movement.applyMovement(.roll_right, 0.0, std.math.degreesToRadians(30.0), 0.0);
+
+    // .gimbal, centered: the view's up is the base's tilted up
+    const tilted = viewCamera(camera.getView());
+    try expectVec3ApproxEq(camera.base_movement.getTransform().up(), tilted.up, 1e-4);
+    try std.testing.expect(tilted.up.y < 0.9);
+
+    // .gimbal_level, centered: world up, level forward, the base's heading
+    camera.setViewMode(.gimbal_level);
+    const level = viewCamera(camera.getView());
+    try expectVec3ApproxEq(Vec3.init(0.0, 1.0, 0.0), level.up, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), level.forward.y, 1e-4);
+    const base_forward = camera.getBaseForward();
+    const heading = Vec3.init(base_forward.x, 0.0, base_forward.z).toNormalized();
+    try expectVec3ApproxEq(heading, level.forward, 1e-4);
+}
+
+/// Eye, forward, and up of the camera a view matrix belongs to: the view's inverse is
+/// the camera's world transform, whose columns are right, up, back, and position.
+fn viewCamera(view: Mat4) struct { eye: Vec3, forward: Vec3, up: Vec3 } {
+    const world = view.getInverse();
+    return .{
+        .eye = Vec3.init(world.data[3][0], world.data[3][1], world.data[3][2]),
+        .forward = Vec3.init(-world.data[2][0], -world.data[2][1], -world.data[2][2]),
+        .up = Vec3.init(world.data[1][0], world.data[1][1], world.data[1][2]),
+    };
+}
+
+fn expectVec3ApproxEq(expected: Vec3, actual: Vec3, tolerance: f32) !void {
+    try std.testing.expectApproxEqAbs(expected.x, actual.x, tolerance);
+    try std.testing.expectApproxEqAbs(expected.y, actual.y, tolerance);
+    try std.testing.expectApproxEqAbs(expected.z, actual.z, tolerance);
 }
