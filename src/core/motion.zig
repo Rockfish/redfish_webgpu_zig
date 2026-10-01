@@ -8,6 +8,9 @@
 //! | `SmoothFollow`| position, aim | damped camera position and look-at point      |
 //! | `PathFollow`  | distance      | position moving along waypoints at a speed    |
 //! | `Shake`       | trauma, time  | offset added to the frame's view, after it    |
+//! | `YawPitchAim` | yaw, pitch    | aim on two axes with speeds and limits        |
+//! | `moveTowardAngle` | none      | angle stepped toward a goal, the short way    |
+//! | `dampAngle`   | none          | angle moved part way toward a goal            |
 //! | `dampLookAt`  | none          | rotation turned part way toward a focus       |
 //! | `moveToward`  | none          | position stepped toward a goal, no overshoot  |
 //! | `dampVec3`    | none          | vector moved part way toward a goal           |
@@ -357,6 +360,120 @@ fn hermiteDerivative(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: f32) Vec3 {
         .add(m1.mulScalar(3.0 * t2 - 2.0 * t));
 }
 
+/// Aim on two separate axes, as a turret: yaw turns the body about +Y, pitch tilts the
+/// barrel; each axis has its own speed, pitch has limits, and yaw may be limited to a
+/// sector. For a single body that turns freely (a sensor head, a camera), `dampLookAt` is
+/// simpler.
+///
+/// Angles in radians, in the turret's own space: yaw 0 and pitch 0 look down -Z, positive
+/// yaw turns left (counterclockwise seen from above), positive pitch raises the aim. The
+/// aim moves toward `target_yaw` / `target_pitch` in one of two styles: `rate_limited`, at
+/// a constant angular speed that arrives exactly (a motor-driven mount), or `damped`, a
+/// quick snap that settles.
+pub const YawPitchAim = struct {
+    yaw: f32 = 0.0,
+    pitch: f32 = 0.0,
+    target_yaw: f32 = 0.0,
+    target_pitch: f32 = 0.0,
+    slew: Slew,
+    min_pitch: f32 = -std.math.pi / 2.0,
+    max_pitch: f32 = std.math.pi / 2.0,
+    /// A sector turret's yaw range, min and max. Null: yaw turns all the way around and
+    /// takes the short way to its target.
+    yaw_limits: ?[2]f32 = null,
+
+    const Self = @This();
+
+    pub const Slew = union(enum) {
+        /// Radians per second on each axis.
+        rate_limited: struct { yaw_speed: f32, pitch_speed: f32 },
+        /// Approach rate per second on each axis (`dampAlpha`); higher is snappier.
+        damped: struct { yaw_rate: f32, pitch_rate: f32 },
+    };
+
+    /// Aim toward `toward`, a direction in the turret's own space (it needn't be
+    /// normalized). Pitch is clamped to the limits, yaw to the sector if there is one.
+    pub fn aimAt(self: *Self, toward: Vec3) void {
+        const horizontal = @sqrt(toward.x * toward.x + toward.z * toward.z);
+        self.setTarget(std.math.atan2(-toward.x, -toward.z), std.math.atan2(toward.y, horizontal));
+    }
+
+    /// Aim toward these angles, clamped to the limits.
+    pub fn setTarget(self: *Self, yaw: f32, pitch: f32) void {
+        self.target_yaw = if (self.yaw_limits) |limits| std.math.clamp(yaw, limits[0], limits[1]) else wrapAngle(yaw);
+        self.target_pitch = std.math.clamp(pitch, self.min_pitch, self.max_pitch);
+    }
+
+    /// Moves both axes toward their targets.
+    pub fn update(self: *Self, dt: f32) void {
+        switch (self.slew) {
+            .rate_limited => |speeds| {
+                self.yaw = self.stepYaw(speeds.yaw_speed * dt);
+                self.pitch = moveTowardScalar(self.pitch, self.target_pitch, speeds.pitch_speed * dt);
+            },
+            .damped => |rates| {
+                const yaw_alpha = dampAlpha(rates.yaw_rate, dt);
+                self.yaw = if (self.yaw_limits != null)
+                    self.yaw + (self.target_yaw - self.yaw) * yaw_alpha
+                else
+                    dampAngle(self.yaw, self.target_yaw, rates.yaw_rate, dt);
+                self.pitch += (self.target_pitch - self.pitch) * dampAlpha(rates.pitch_rate, dt);
+            },
+        }
+    }
+
+    /// A yaw step of at most `max_step`. With a sector, yaw is a plain angle inside the
+    /// limits: the short way around could cross the part the turret can't turn through.
+    fn stepYaw(self: *const Self, max_step: f32) f32 {
+        if (self.yaw_limits != null) {
+            return moveTowardScalar(self.yaw, self.target_yaw, max_step);
+        }
+        return wrapAngle(self.yaw + std.math.clamp(wrapAngle(self.target_yaw - self.yaw), -max_step, max_step));
+    }
+
+    /// Where the aim points now, a unit vector in the turret's own space.
+    pub fn direction(self: *const Self) Vec3 {
+        return yawPitchDirection(self.yaw, self.pitch);
+    }
+
+    /// True when the aim is within `tolerance` radians of the target direction.
+    pub fn isAligned(self: *const Self, tolerance: f32) bool {
+        const target = yawPitchDirection(self.target_yaw, self.target_pitch);
+        return self.direction().dot(target) >= @cos(tolerance);
+    }
+};
+
+fn yawPitchDirection(yaw: f32, pitch: f32) Vec3 {
+    const horizontal = @cos(pitch);
+    return Vec3.init(-@sin(yaw) * horizontal, @sin(pitch), -@cos(yaw) * horizontal);
+}
+
+/// `current` stepped toward `target` by at most `max_step`, no overshoot.
+fn moveTowardScalar(current: f32, target: f32, max_step: f32) f32 {
+    return current + std.math.clamp(target - current, -max_step, max_step);
+}
+
+/// `current` angle stepped toward `target` by at most `max_speed * dt` radians, the short
+/// way around. Arrives exactly and doesn't overshoot. The result is in -π..π.
+pub fn moveTowardAngle(current: f32, target: f32, max_speed: f32, dt: f32) f32 {
+    const step = max_speed * dt;
+    return wrapAngle(current + std.math.clamp(wrapAngle(target - current), -step, step));
+}
+
+/// `current` angle moved part way toward `target`, the short way around: frame-rate
+/// independent, as `dampVec3`. The result is in -π..π.
+pub fn dampAngle(current: f32, target: f32, rate: f32, dt: f32) f32 {
+    return wrapAngle(current + wrapAngle(target - current) * dampAlpha(rate, dt));
+}
+
+/// `angle` as the same direction in -π..π: the short way from 170° to -170° is +20°, not
+/// -340°.
+pub fn wrapAngle(angle: f32) f32 {
+    const tau = 2.0 * std.math.pi;
+    const wrapped = angle - tau * @floor((angle + std.math.pi) / tau);
+    return if (wrapped == -std.math.pi) std.math.pi else wrapped;
+}
+
 /// `rotation` turned part way toward looking from `position` at `focus`, as a turret or
 /// head that settles on its target instead of snapping. With `up` as the up direction; the
 /// result looks down its −Z axis, as `Transform.lookAt`.
@@ -634,6 +751,102 @@ test "Shake.Offset.apply: moves the view with the camera and leaves the rest" {
     try std.testing.expectApproxEqAbs(before.y, after.y, 1e-5);
     try std.testing.expectApproxEqAbs(before.z, after.z, 1e-5);
     try expectVec3ApproxEq(Vec3.init(0.2, 1.9, 5.3), shaken.view_position, 1e-6);
+}
+
+fn deg(degrees: f32) f32 {
+    return std.math.degreesToRadians(degrees);
+}
+
+test "wrapAngle: the same direction in -π..π" {
+    try std.testing.expectApproxEqAbs(deg(20.0), wrapAngle(deg(380.0)), 1e-5);
+    try std.testing.expectApproxEqAbs(deg(-170.0), wrapAngle(deg(190.0)), 1e-5);
+    try std.testing.expectApproxEqAbs(deg(10.0), wrapAngle(deg(10.0)), 1e-6);
+    try std.testing.expectApproxEqAbs(std.math.pi, wrapAngle(-std.math.pi), 1e-6);
+}
+
+test "moveTowardAngle: the short way across ±180°, arrives exactly, no overshoot" {
+    // 170° to -170° is 20° the short way: up through 180°, not down through 0
+    const speed = deg(10.0); // per second
+    const one_second = moveTowardAngle(deg(170.0), deg(-170.0), speed, 1.0);
+    try std.testing.expectApproxEqAbs(deg(180.0), @abs(one_second), 1e-5);
+
+    var angle = deg(170.0);
+    for (0..30) |_| {
+        angle = moveTowardAngle(angle, deg(-170.0), speed, 0.1);
+        try std.testing.expect(@abs(wrapAngle(angle - deg(170.0))) <= deg(20.0) + 1e-5);
+    }
+    try std.testing.expectApproxEqAbs(deg(-170.0), angle, 1e-5);
+}
+
+test "dampAngle: the short way, and the same at 10, 60, and 144 fps" {
+    var at: [3]f32 = undefined;
+    for ([_]u32{ 10, 60, 144 }, 0..) |steps, i| {
+        var angle = deg(170.0);
+        for (0..steps) |_| {
+            angle = dampAngle(angle, deg(-170.0), 2.0, 1.0 / @as(f32, @floatFromInt(steps)));
+        }
+        at[i] = angle;
+    }
+    try std.testing.expectApproxEqAbs(at[1], at[0], 1e-4);
+    try std.testing.expectApproxEqAbs(at[1], at[2], 1e-4);
+    // Went up through 180° (now on the negative side), not back through 0
+    try std.testing.expect(at[1] < deg(-170.0) + deg(20.0) and at[1] < 0.0);
+}
+
+test "YawPitchAim rate-limited: per-axis speeds, arrives on time, faces the direction" {
+    var aim: YawPitchAim = .{ .slew = .{ .rate_limited = .{ .yaw_speed = deg(90.0), .pitch_speed = deg(30.0) } } };
+    // Left and up: yaw 90° (toward -X), pitch 30°
+    aim.aimAt(Vec3.init(-1.0, @tan(deg(30.0)), 0.0));
+    try std.testing.expectApproxEqAbs(deg(90.0), aim.target_yaw, 1e-5);
+    try std.testing.expectApproxEqAbs(deg(30.0), aim.target_pitch, 1e-5);
+
+    // Half a second: half the yaw, half the pitch (each at its own speed)
+    aim.update(0.5);
+    try std.testing.expectApproxEqAbs(deg(45.0), aim.yaw, 1e-5);
+    try std.testing.expectApproxEqAbs(deg(15.0), aim.pitch, 1e-5);
+    try std.testing.expect(!aim.isAligned(deg(2.0)));
+
+    aim.update(0.6);
+    try std.testing.expect(aim.isAligned(deg(0.01)));
+    const expected = Vec3.init(-1.0, @tan(deg(30.0)), 0.0).toNormalized();
+    try expectVec3ApproxEq(expected, aim.direction(), 1e-5);
+}
+
+test "YawPitchAim: pitch stays within its limits" {
+    var aim: YawPitchAim = .{
+        .slew = .{ .damped = .{ .yaw_rate = 5.0, .pitch_rate = 5.0 } },
+        .min_pitch = deg(-10.0),
+        .max_pitch = deg(60.0),
+    };
+    aim.aimAt(Vec3.init(0.0, -5.0, -1.0)); // steeply down
+    try std.testing.expectApproxEqAbs(deg(-10.0), aim.target_pitch, 1e-5);
+    for (0..120) |_| {
+        aim.update(1.0 / 60.0);
+        try std.testing.expect(aim.pitch >= deg(-10.0) - 1e-5);
+    }
+}
+
+test "YawPitchAim with a sector: never turns through the part it can't" {
+    // A sector of -170°..170°: the 20° around the back (180°) is out of reach
+    var aim: YawPitchAim = .{
+        .slew = .{ .rate_limited = .{ .yaw_speed = deg(90.0), .pitch_speed = deg(90.0) } },
+        .yaw = deg(-160.0),
+        .yaw_limits = .{ deg(-170.0), deg(170.0) },
+    };
+    aim.setTarget(deg(160.0), 0.0);
+
+    // The short way (20°, through 180°) is blocked: it goes the long way, through 0
+    aim.update(0.1);
+    try std.testing.expect(aim.yaw > deg(-160.0));
+    for (0..60) |_| {
+        aim.update(1.0 / 15.0);
+        try std.testing.expect(aim.yaw >= deg(-170.0) and aim.yaw <= deg(170.0));
+    }
+    try std.testing.expectApproxEqAbs(deg(160.0), aim.yaw, 1e-4);
+
+    // A target outside the sector is clamped to its edge
+    aim.setTarget(deg(179.0), 0.0);
+    try std.testing.expectApproxEqAbs(deg(170.0), aim.target_yaw, 1e-5);
 }
 
 fn dampSteps(start: Vec3, goal: Vec3, rate: f32, steps_per_second: u32) Vec3 {

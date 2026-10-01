@@ -31,7 +31,8 @@ the regression check. Since then:
 - Plan 017 shadows: `examples/shadows`, `DepthBias`, `ShadowMap` filter, `ShadowMapArray`
 - Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
 
-No active plan. See `docs/plans/active-plans.md`.
+Active plan: 008 turrets (phase 1 done: `YawPitchAim` and angle helpers in `core.motion`;
+next: `examples/turrets`). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

@@ -4,8 +4,11 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- None. Next: a parked plan (012 animation FSM, 005 scene management, ...) or one from
-  `backlog.md`.
+- **[008-turret-controller-system.md](008-turret-controller-system.md)**: turrets as aim /
+  pattern / fire control; sweep and mortar patterns, jitter, finned rockets.
+  - Phase 1 done 2026-10-01: `wrapAngle`, `moveTowardAngle`, `dampAngle`, `YawPitchAim` in
+    `core.motion`; `Cannon` eases frame-rate independently. Next: phase 2,
+    `examples/turrets` with fire control and `track`.
 
 ## ⏸️ Parked
 
@@ -19,10 +22,6 @@ How these files work, including parking and resuming plans: [README.md](README.m
   006 and 012; review the remaining tasks before resuming.
 - **[009-gravity-bullet-system.md](009-gravity-bullet-system.md)**: phase 1 in bullets;
   phase 2 planned.
-- **[008-turret-controller-system.md](008-turret-controller-system.md)**: rewritten
-  2026-09-30 for WebGPU and the new requirements (fire while turning or when aligned;
-  sweep and mortar patterns). Next: phase 1, per-axis aim (`moveTowardAngle`,
-  `dampAngle`, `TurretAim`).
 - **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: design
   discussion.
 
@@ -82,3 +81,5 @@ Plan 018 (anti-aliasing) drafted and finished: MSAA, angrybot's render targets, 
 Plan 016 resumed: phase 3 (`PathFollow`) done.
 
 **2026-09-30**: Plan 016 finished: `Shake`, `CameraGimbal` revived, `examples/camera_rig`.
+
+**2026-10-01**: Plan 008 active; phase 1 (two-axis aim) done.

@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Two-axis aim, plan 008 phase 1
+- **core.motion**: `wrapAngle`, `moveTowardAngle`, `dampAngle` (the short way around, frame-rate independent), and `YawPitchAim` (yaw and pitch with their own speeds, rate-limited or damped, pitch limits, optional yaw sector, `aimAt`, `isAligned`); tests
+- **bullets**: `Cannon` eases its aim and recoil frame-rate independently (`dampAngle`, `dampAlpha`)
+
 ### 2026-09-30 - Camera shake and gimbal rig, plan 016 phase 4 (plan finished)
 - **core.motion.Shake**: trauma-model camera shake (strength trauma², smooth noise, frame-rate independent), applied to the frame's `RenderContext` after the camera controller
 - **CameraGimbal**: two mount modes, `.gimbal` (the base's pitch and tilt, as a satellite) and `.gimbal_level` (the base's heading, level with the horizontal plane); `getCameraTransform()` makes the view, `getCameraPosition`, and `getCameraForward` agree in every mode (also fixes `.base` mode's position)

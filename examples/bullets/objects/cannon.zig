@@ -16,6 +16,7 @@ const vec3 = math.vec3;
 const Vec4 = math.Vec4;
 const vec4 = math.vec4;
 const Quat = math.Quat;
+const motion = core.motion;
 
 const X_AXIS = vec3(1.0, 0.0, 0.0);
 const Y_AXIS = vec3(0.0, 1.0, 0.0);
@@ -230,14 +231,12 @@ pub const Cannon = struct {
     }
 
     /// Ease the aim toward its targets, recover from recoil, rebuild world
-    /// transforms, and advance the bullets.
+    /// transforms, and advance the bullets. The easing is frame-rate independent
+    /// (`core.motion`); yaw takes the short way around.
     pub fn update(self: *Self, delta_time: f32) void {
-        const aim_step = @min(1.0, self.aim_rate * delta_time);
-        self.yaw += (self.target_yaw - self.yaw) * aim_step;
-        self.pitch += (self.target_pitch - self.pitch) * aim_step;
-
-        const recoil_step = @min(1.0, self.recoil_recovery * delta_time);
-        self.recoil -= self.recoil * recoil_step;
+        self.yaw = motion.dampAngle(self.yaw, self.target_yaw, self.aim_rate, delta_time);
+        self.pitch = motion.dampAngle(self.pitch, self.target_pitch, self.aim_rate, delta_time);
+        self.recoil -= self.recoil * motion.dampAlpha(self.recoil_recovery, delta_time);
 
         self.nodes[Part.turret_body.index()].local_transform.rotation = Quat.fromAxisAngle(Y_AXIS, self.yaw);
         self.nodes[Part.turret_head.index()].local_transform.rotation = Quat.fromAxisAngle(X_AXIS, self.pitch);

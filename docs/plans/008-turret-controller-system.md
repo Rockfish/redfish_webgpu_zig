@@ -4,7 +4,7 @@
 > the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
 > version is in git (`e5010da`).
 
-## Status: Planned (not started)
+## Status: Active (phase 1 done 2026-10-01)
 
 ## Overview
 
@@ -168,11 +168,12 @@ tower defense game (level_01, or a new one) uses the pieces once they're settled
 ## Phases
 
 ### Phase 1: Aim
-- [ ] `motion.moveTowardAngle` and `motion.dampAngle`, with invariant tests (the short way
+- [x] `motion.moveTowardAngle` and `motion.dampAngle`, with invariant tests (the short way
       across ±180°, no overshoot, arrives exactly, frame-rate independent)
-- [ ] `TurretAim`: yaw and pitch toward desired angles, `rate_limited` or `damped`, pitch
-      limits, optional yaw limits, `isAligned(tolerance)`, aim direction; tests
-- [ ] `Cannon` (bullets example) eases its aim with `dampAngle` instead of
+- [x] `TurretAim`: yaw and pitch toward desired angles, `rate_limited` or `damped`, pitch
+      limits, optional yaw limits, `isAligned(tolerance)`, aim direction; tests. Done as
+      `core.motion.YawPitchAim` (see the phase 1 note)
+- [x] `Cannon` (bullets example) eases its aim with `dampAngle` instead of
       `@min(1, rate * dt)`
 
 ### Phase 2: Turret test bed and fire control
@@ -249,3 +250,24 @@ behavior (within the blast radius, within the jitter range) instead of exact hit
 no new math: `BulletSystem.update` already rebuilds each projectile's rotation from its
 velocity every frame, so the nose follows the gravity arc, with the roll held by the
 launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spin.
+
+**2026-10-01**: Phase 1 done.
+- `core.motion`: `wrapAngle` (to -π..π), `moveTowardAngle` (at most `max_speed * dt`, the
+  short way, arrives exactly), `dampAngle` (frame-rate independent, the short way).
+  Radians throughout, like the math module and `Cannon`.
+- The plan's `TurretAim` became `core.motion.YawPitchAim`: `zig build test` only runs core,
+  math, and containers tests, so in the example its tests wouldn't run, and two-axis aim
+  is general (turrets, radar dishes, heads). The turret example will wrap it. Fields:
+  `yaw`, `pitch`, `target_yaw`, `target_pitch`, `slew` (`rate_limited` speeds or `damped`
+  rates, per axis), `min_pitch` / `max_pitch`, optional `yaw_limits`. `aimAt(toward)` takes
+  a direction in the turret's own space (`Cannon`'s conventions: -Z forward, positive yaw
+  turns left, positive pitch raises the aim); `setTarget(yaw, pitch)` clamps;
+  `direction()`; `isAligned(tolerance)` compares the current and target directions.
+- Sector turrets: with `yaw_limits`, yaw is a plain angle inside the limits instead of
+  wrapping, since the short way around could cross the part the turret can't turn
+  through (a test turns from -160° to 160° in a -170°..170° sector the long way, through
+  0).
+- `Cannon.update` eases aim with `dampAngle` and recoil with `dampAlpha` (both had the
+  frame-rate dependent `@min(1, rate * dt)`).
+- Tests: 85 pass (6 new). The bullets example runs without errors.
+- Next: phase 2, `examples/turrets` with fire control and `track`.
