@@ -103,6 +103,11 @@ Zig 0.16.0 (`~/zig/zig-aarch64-macos-0.16.0`). `zig build <app>` and `zig build 
 as in redfish_gl_zig (e.g. `zig build gpu_caps-run`). wgpu-native is listed for macOS arm64
 only; add a lazy package per platform in `build.zig.zon` and `wgpuNativeDependency`.
 
+- `-Dmsaa=false` turns off 4x MSAA for every app (default on; plan 018)
+- `zig build test` always prints a `failed command: ...test` line: one test writes to
+  stderr. It isn't a failure; check the exit code, or `zig build test --summary all`
+  ("N/N tests passed")
+
 ### macOS Toolchain Note (Xcode 27 / Zig 0.16)
 - The macOS 27 SDK `math.h` defers `INFINITY` to `<float.h>` via `__need_infinity_nan`
   (LLVM 22 behavior); Zig 0.16's LLVM 21 `float.h` ignores it, so libc++ sub-compilation
@@ -118,6 +123,9 @@ only; add a lazy package per platform in `build.zig.zon` and `wgpuNativeDependen
 - Run `zig fmt` on every edited `.zig` file, and only on `.zig` files; never on dependency code
 - Every print/log call takes an args tuple, even `.{}`
 - Delete dead code; don't comment it out
+- Time-based easing goes through `core.motion` (`dampAlpha`, `dampVec3`, `dampAngle`,
+  `moveToward`, ...), never `lerp(k * dt)` or `@min(1, rate * dt)`, which converge at
+  different speeds at different frame rates
 - Zig lazy analysis skips unreferenced functions: "it builds" proves nothing about uncalled code.
   `zig build test` runs `tests/analyze_all.zig`, which forces analysis of all public decls in
   math, containers, and core; run it after every change. A module root (or namespace root like
