@@ -33,7 +33,8 @@ the regression check. Since then:
 
 Active plan: 008 turrets (phase 1: `YawPitchAim` and angle helpers in `core.motion`;
 phase 2: `core.FireControl`, `ballistics.leadPoint`, `examples/turrets`; phase 3:
-`motion.Sweep`; next: the mortar). See `docs/plans/active-plans.md`.
+`motion.Sweep`; phase 4: mortar, `ballistics.launchVelocity` / `step`; next: sequences and
+turret types). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

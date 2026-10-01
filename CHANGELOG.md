@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Mortar, plan 008 phase 4
+- **core.ballistics**: `launchVelocity` (fixed flight time, one line), `positionAt`, and `step` (exact under constant gravity, so shells land where predicted at any frame rate); tests
+- **examples/turrets**: the `mortar` pattern and a fourth turret; finned rockets drawn instanced from parts, nose following the arc, optional spin; shells burst at the target on a fuse, on the floor, or on a direct hit; fireballs, fading burn marks, blast radius; predicted-arc lines; the lob's lead follows the target's curve (`p + v·T + ½·a·T²`); Space (or the panel) pauses everything but the camera and panel
+
 ### 2026-10-01 - Sweep pattern, plan 008 phase 3
 - **core.motion.Sweep**: an angle swinging back and forth across an arc at a steady speed; tests. `yawPitchOf` and `yawPitchDirection` made public
 - **examples/turrets**: the `sweep` pattern (center on the target's bearing or a fixed heading, the target's pitch or a fixed one); a third turret, "sweeper"; pattern choice per turret in the panel; arc lines

@@ -4,7 +4,7 @@
 > the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
 > version is in git (`e5010da`).
 
-## Status: Active (phases 1-3 done 2026-10-01)
+## Status: Active (phases 1-4 done 2026-10-01)
 
 ## Overview
 
@@ -192,13 +192,14 @@ tower defense game (level_01, or a new one) uses the pieces once they're settled
       `core.motion.Sweep` (see the phase 3 note)
 
 ### Phase 4: Mortar
-- [ ] `core.ballistics.launchVelocity(from, to, flight_time, gravity)`; tests (with
+- [x] `core.ballistics.launchVelocity(from, to, flight_time, gravity)`; tests (with
       per-frame gravity and no jitter, a shell lands within a small distance of the target
-      at 30 and 144 fps)
-- [ ] `mortar` pattern (flight time, lead by `T`); shells with gravity; predicted-arc lines
-- [ ] Finned rocket mesh, drawn instanced and oriented along the velocity (as
+      at 30 and 144 fps). With `ballistics.step`, an exact step, it lands within 0.01
+- [x] `mortar` pattern (flight time, lead by `T`); shells with gravity; predicted-arc lines.
+      The lead follows the target's curve (see the phase 4 note)
+- [x] Finned rocket mesh, drawn instanced and oriented along the velocity (as
       `BulletSystem` already does); optional spin about the nose
-- [ ] Explosion on landing: flash or sprite, burn mark, blast radius
+- [x] Explosion on landing: flash or sprite, burn mark, blast radius
 
 ### Phase 5: Programs and types
 - [ ] `sequence` pattern (steps with durations, repeat)
@@ -326,3 +327,41 @@ launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spi
   turns. If a softer swing looks better, a sine is an option to add next to it.
 - Tests: 95 pass (3 new).
 - Next: phase 4, the mortar.
+
+**2026-10-01**: Phase 4 done.
+- `core.ballistics`: `launchVelocity(from, to, flight_time, gravity)` (one line, as
+  designed); `positionAt(from, velocity, gravity, time)` for the predicted arc; `step`,
+  which moves a projectile on by `p += v·dt + ½·g·dt²; v += g·dt`. That step is exact for
+  constant gravity and as cheap as the per-frame form, so shells follow the predicted arc
+  at any frame rate (the plain form lands off by `g·T·dt / 2`, 0.4 units for a 2.5 s lob
+  at 30 fps). Tests: lands within 0.01 of the target at 10, 30, and 144 fps; the same
+  climb (hang time) for near and far targets.
+- Shells (`projectiles.zig`, a second pool per turret): gravity, a fuse equal to the flight
+  time, so a shell bursts at the target whether it flies or stands on the ground; it also
+  bursts on a direct hit or on the floor. The blast hits the target within the blast
+  radius. Spawned with their age along the arc (`positionAt`), like tracers.
+- Finned rocket: body (cylinder), nose (stretched sphere), two crossed fins, each drawn
+  instanced with the same instance data and its own part transform in `draw.model`
+  (projectiles.wgsl applies it before the instance rotation; `LIT` override for shading).
+  The nose follows the arc (rotation rebuilt from the velocity each frame, right kept
+  horizontal); optional spin about the nose.
+- `explosions.zig`: a fireball (unlit sphere: swells to the blast radius in 0.08 s, white
+  to orange to dark red, shrinks out by 0.6 s; `UNLIT` override on basic_shape.wgsl), and
+  for bursts near the floor a burn mark (a flat disk) fading into the floor over 10 s, in
+  a ring of 48.
+- Lead for a lob: the target's curve matters over a long flight. On the test route (5
+  units/s, waypoint radius about 12) a straight-line lead (`p + v·T`) missed by several
+  units at T = 2.5 s: 0 hits in 20 s, against 8 of 9 on a stationary target, so the
+  ballistics were right. Leading with the acceleration, `p + v·T + ½·a·T²`
+  (`positionAt` with the target's acceleration in place of gravity, the acceleration
+  estimated from the velocity change and smoothed): 4 hits in 30 s at 2.5 s; at 1.6 s, 19
+  hits (12 without the acceleration). Default flight time 1.6 s; the aim point is kept
+  at or above the floor.
+- `examples/turrets`: a fourth turret, "mortar" (rate-limited, when aligned 3°, 0.7 shots
+  per second, 1.5° jitter, blast radius 2, spin 180°/s); the panel's mortar settings are
+  lead, flight time, blast radius, and spin. Orange lines show the predicted arc; the
+  mortar's aim ray is short, since a lob points up its launch velocity.
+- Pause (John): Space or the panel's checkbox stops the target, turrets, shots, and
+  explosions; the camera and panel still work, to look around a frozen moment.
+- Tests: 98 pass (3 new).
+- Next: phase 5, `sequence`, turret types by configuration, a single-body turret.

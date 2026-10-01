@@ -1,5 +1,7 @@
-// Shapes with a per-draw color (or vertex color) and one fixed directional light.
-// `frame` and `draw` come from common.wgsl.
+// Shapes with a per-draw color (or vertex color) and one fixed directional light; with
+// UNLIT, the color as is (explosion fireballs). `frame` and `draw` come from common.wgsl.
+
+override UNLIT: bool = false;
 
 struct VertexInput {
     @location(LOCATION_POSITION) position: vec3f,
@@ -29,6 +31,9 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    if (UNLIT) {
+        return in.color;
+    }
     let light_direction = normalize(vec3f(0.4, 1.0, 0.6));
     let diffuse = max(dot(normalize(in.world_normal), light_direction), 0.0);
     let lighting = 0.25 + 0.75 * diffuse;

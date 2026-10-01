@@ -1,5 +1,5 @@
-//! Turret test bed (plan 008): three turrets aim at a target flying a loop over the floor
-//! and fire tracers at it. The panel sets each turret's pattern, slew style and speeds,
+//! Turret test bed (plan 008): four turrets aim at a target flying a loop over the floor
+//! and fire tracers or mortar shells at it. The panel sets each turret's pattern, slew style and speeds,
 //! fire policy, cadence, and jitter, to compare how they look:
 //!
 //! - "gatling": rate-limited slew (a motor-driven mount), fires while turning, a steady
@@ -8,13 +8,16 @@
 //!   jitter, with lead.
 //! - "sweeper": sweeps a 20° arc either side of the target's bearing, firing a fan of
 //!   shots while turning.
+//! - "mortar": lobs finned rockets that get to where the target will be in a fixed flight
+//!   time and burst there (in the air, or on the ground with a burn mark).
 //!
 //! Lines: the target's route (gold); each turret's aim from the muzzle, green on target,
 //! yellow turning; with lead, the target to the lead point (magenta); a sweep's arc as its
-//! two ends (cyan). The target flashes
+//! two ends (cyan); a mortar's predicted arc (orange). The target flashes
 //! white on each hit.
 //!
-//! Keys: arrows circle the camera, W / S move it in and out, Escape quits.
+//! Keys: arrows circle the camera, W / S move it in and out, Space pauses (the camera and
+//! panel still work), Escape quits.
 
 const std = @import("std");
 const core = @import("core");
@@ -22,12 +25,15 @@ const math = @import("math");
 const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
+const explosions_module = @import("explosions.zig");
 const projectiles = @import("projectiles.zig");
 const turret_module = @import("turret.zig");
 
 const Arenas = core.Arenas;
 const Camera = core.Camera;
 const DrawUniforms = core.DrawUniforms;
+const ExplosionShapes = explosions_module.ExplosionShapes;
+const Explosions = explosions_module.Explosions;
 const FireControl = core.FireControl;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
@@ -49,6 +55,7 @@ const vec3 = math.vec3;
 const vec4 = math.vec4;
 
 const CLEAR_COLOR = [4]f64{ 0.05, 0.06, 0.08, 1.0 };
+const FLOOR_COLOR = vec4(0.4, 0.42, 0.45, 1.0);
 
 /// The target's route: a closed loop around the turrets, rising and dipping.
 const target_waypoints = [_]Vec3{
@@ -63,9 +70,16 @@ const target_waypoints = [_]Vec3{
 const TARGET_RADIUS: f32 = 0.6;
 /// Line segments drawn along the target's route.
 const PATH_LINE_SEGMENTS = 200;
-const TURRET_COUNT = 3;
+const TURRET_COUNT = 4;
 /// Aim lines per turret: the aim ray, and the lead line or the sweep's two ends.
 const AIM_LINES_PER_TURRET = 3;
+/// A mortar's aim ray; its arc shows where the shell goes.
+const MORTAR_AIM_RAY_LENGTH: f32 = 3.0;
+/// Line segments along a mortar's predicted arc.
+const ARC_LINE_SEGMENTS = 24;
+/// How fast the target's acceleration estimate settles, per second: smooths the jumps
+/// where the route's curve changes at a waypoint.
+const ACCELERATION_SMOOTHING: f32 = 10.0;
 /// How fast the hit flash fades, per second.
 const FLASH_DECAY: f32 = 6.0;
 
@@ -73,7 +87,7 @@ const FLASH_DECAY: f32 = 6.0;
 const SlewStyle = enum(i32) { rate_limited, damped };
 const FirePolicy = enum(i32) { while_turning, when_aligned };
 const CadenceKind = enum(i32) { rate, bursts };
-const PatternKind = enum(i32) { track, sweep };
+const PatternKind = enum(i32) { track, sweep, mortar };
 /// A sweep's center or pitch: follow the target, or a fixed angle.
 const SweepAngle = enum(i32) { target, fixed };
 
@@ -83,7 +97,7 @@ const TurretSettings = struct {
     name: [:0]const u8,
     fire: bool = true,
     pattern: PatternKind = .track,
-    /// For `track`.
+    /// For `track` and `mortar`.
     lead: bool = false,
     /// For `sweep`: degrees either side of the center, and degrees per second.
     sweep_half_width: f32 = 20.0,
@@ -94,6 +108,11 @@ const TurretSettings = struct {
     sweep_pitch: SweepAngle = .target,
     /// Degrees, for a fixed pitch.
     sweep_pitch_angle: f32 = 10.0,
+    /// For `mortar`: seconds from launch to burst.
+    flight_time: f32 = 1.6,
+    blast_radius: f32 = 2.0,
+    /// Degrees per second about the nose.
+    shell_spin: f32 = 0.0,
     slew: SlewStyle,
     /// Degrees per second, for `rate_limited`.
     yaw_speed: f32 = 90.0,
@@ -138,6 +157,8 @@ const TurretSettings = struct {
         };
         turret.weapon.speed = self.speed;
         turret.weapon.jitter = .{ .aim = radians(self.aim_jitter), .speed = self.speed_jitter / 100.0 };
+        turret.weapon.blast_radius = self.blast_radius;
+        turret.weapon.shell_spin = radians(self.shell_spin);
         turret.pattern = switch (self.pattern) {
             .track => .{ .track = .{ .lead = self.lead } },
             .sweep => .{ .sweep = .{
@@ -145,6 +166,7 @@ const TurretSettings = struct {
                 .center_yaw = if (self.sweep_center == .fixed) radians(self.sweep_heading) else null,
                 .pitch = if (self.sweep_pitch == .fixed) radians(self.sweep_pitch_angle) else null,
             } },
+            .mortar => .{ .mortar = .{ .flight_time = self.flight_time, .lead = self.lead } },
         };
     }
 
@@ -153,7 +175,7 @@ const TurretSettings = struct {
     fn swing(self: TurretSettings, current: turret_module.Pattern) motion.Sweep {
         var result: motion.Sweep = switch (current) {
             .sweep => |sweep| sweep.swing,
-            .track => .{ .half_width = 0.0, .speed = 0.0 },
+            .track, .mortar => .{ .half_width = 0.0, .speed = 0.0 },
         };
         result.half_width = std.math.degreesToRadians(self.sweep_half_width);
         result.speed = std.math.degreesToRadians(self.sweep_speed);
@@ -167,6 +189,8 @@ const Settings = struct {
     target_speed: f32 = 5.0,
     show_path: bool = true,
     show_aim: bool = true,
+    /// Everything but the camera and the panel stands still.
+    paused: bool = false,
     turrets: [TURRET_COUNT]TurretSettings = .{
         .{
             .name = "gatling",
@@ -205,6 +229,23 @@ const Settings = struct {
             .aim_jitter = 1.0,
             .speed_jitter = 5.0,
         },
+        .{
+            .name = "mortar",
+            .pattern = .mortar,
+            .lead = true,
+            .slew = .rate_limited,
+            .yaw_speed = 60.0,
+            .pitch_speed = 45.0,
+            .policy = .when_aligned,
+            .tolerance = 3.0,
+            .cadence = .rate,
+            .rate = 0.7,
+            // Used only if switched to track or sweep
+            .speed = 30.0,
+            .aim_jitter = 1.5,
+            .speed_jitter = 4.0,
+            .shell_spin = 180.0,
+        },
     },
 };
 
@@ -239,6 +280,19 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     });
     defer projectile_shader.releaseGpuObjects();
 
+    // The same shaders with their override constants set: lit rockets, unlit fireballs
+    const rocket_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/projectiles.wgsl", .{
+        .vertex_buffers = &projectiles.InstanceLayouts.layouts,
+        .constants = &.{.{ .key = "LIT", .value = 1.0 }},
+    });
+    defer rocket_shader.releaseGpuObjects();
+
+    const flash_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/basic_shape.wgsl", .{
+        .vertex_buffers = &Shape.vertex_buffer_layouts,
+        .constants = &.{.{ .key = "UNLIT", .value = 1.0 }},
+    });
+    defer flash_shader.releaseGpuObjects();
+
     const lines_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/lines.wgsl", .{
         .vertex_buffers = &Lines.vertex_buffer_layouts,
         .topology = .line_list,
@@ -246,11 +300,14 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     defer lines_shader.releaseGpuObjects();
     var path_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, PATH_LINE_SEGMENTS);
     var aim_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, TURRET_COUNT * AIM_LINES_PER_TURRET);
+    var arc_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, TURRET_COUNT * ARC_LINE_SEGMENTS);
 
     var scene_shapes: SceneShapes = try .init(context, gpu);
     defer scene_shapes.releaseGpuObjects();
     var turret_shapes: TurretShapes = try .init(context, gpu);
     defer turret_shapes.releaseGpuObjects();
+    var explosion_shapes: ExplosionShapes = try .init(context, gpu);
+    defer explosion_shapes.releaseGpuObjects();
 
     const camera = try Camera.init(context.alloc, .{
         // Off to the left, so the scene sits right of the panel
@@ -265,11 +322,21 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         createTurret(vec3(-5.0, 0.0, 2.0), vec4(0.55, 0.42, 0.18, 1.0), vec4(1.0, 0.75, 0.3, 1.0), settings.turrets[0]),
         createTurret(vec3(5.0, 0.0, 2.0), vec4(0.2, 0.42, 0.5, 1.0), vec4(0.4, 0.9, 1.0, 1.0), settings.turrets[1]),
         createTurret(vec3(0.0, 0.0, -6.0), vec4(0.25, 0.45, 0.25, 1.0), vec4(0.6, 1.0, 0.5, 1.0), settings.turrets[2]),
+        createTurret(vec3(10.0, 0.0, -3.0), vec4(0.45, 0.3, 0.45, 1.0), vec4(1.0, 0.6, 0.9, 1.0), settings.turrets[3]),
     };
     var random = Random.init();
+    var explosions: Explosions = .{ .floor_color = FLOOR_COLOR };
 
     var target_path: motion.PathFollow = .{ .points = &target_waypoints, .speed = 0.0, .shape = .catmull_rom, .repeat = .loop };
     var flash: f32 = 0.0;
+    var target_motion: TargetMotion = .{};
+    var target: TargetState = .{
+        .position = target_path.position(),
+        .velocity = Vec3.Zero,
+        .acceleration = Vec3.Zero,
+        .radius = TARGET_RADIUS,
+    };
+    var space_was_down = false;
 
     gui.init(allocator, window, gpu);
     defer gui.deinit();
@@ -286,21 +353,34 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const delta_time = time - last_time;
         last_time = time;
 
+        // Pause on each Space press, not each frame it's held
+        const space_down = window.getKey(.space) == .press and !zgui.io.getWantCaptureKeyboard();
+        if (space_down and !space_was_down) {
+            settings.paused = !settings.paused;
+        }
+        space_was_down = space_down;
+
         processKeys(window, camera, delta_time);
 
-        target_path.speed = settings.target_speed;
-        const target: TargetState = .{
-            .position = target_path.update(delta_time),
-            .velocity = target_path.tangent().mulScalar(settings.target_speed),
-            .radius = TARGET_RADIUS,
-        };
+        if (!settings.paused) {
+            target_path.speed = settings.target_speed;
+            const position = target_path.update(delta_time);
+            const velocity = target_path.tangent().mulScalar(settings.target_speed);
+            target = .{
+                .position = position,
+                .velocity = velocity,
+                .acceleration = target_motion.update(velocity, delta_time),
+                .radius = TARGET_RADIUS,
+            };
 
-        const hits_before = totalHits(&turrets);
-        for (&turrets, settings.turrets) |*turret, turret_settings| {
-            turret_settings.apply(turret);
-            turret.update(delta_time, target, turret_settings.fire, &random);
+            const hits_before = totalHits(&turrets);
+            for (&turrets, settings.turrets) |*turret, turret_settings| {
+                turret_settings.apply(turret);
+                turret.update(delta_time, target, turret_settings.fire, &random, &explosions);
+            }
+            explosions.update(delta_time);
+            flash = if (totalHits(&turrets) > hits_before) 1.0 else flash * (1.0 - motion.dampAlpha(FLASH_DECAY, delta_time));
         }
-        flash = if (totalHits(&turrets) > hits_before) 1.0 else flash * (1.0 - motion.dampAlpha(FLASH_DECAY, delta_time));
 
         var frame = gpu.acquireFrame() orelse continue;
 
@@ -308,18 +388,20 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         gpu.writeFrameUniforms(camera.getRenderContext(time).frameUniforms());
 
         frame.beginSurfacePass(CLEAR_COLOR);
-        scene_shapes.floor.draw(&frame, shape_shader, DrawUniforms.init(Mat4.fromTranslation(vec3(0.0, -0.1, 0.0)), vec4(0.4, 0.42, 0.45, 1.0)));
+        scene_shapes.floor.draw(&frame, shape_shader, DrawUniforms.init(Mat4.fromTranslation(vec3(0.0, -0.1, 0.0)), FLOOR_COLOR));
         const target_color = vec4(1.0, 0.35, 0.1, 1.0).lerp(Vec4.One, flash);
         scene_shapes.target.draw(&frame, shape_shader, DrawUniforms.init(Mat4.fromTranslation(target.position), target_color));
         for (&turrets) |*turret| {
             turret.draw(&frame, shape_shader, &turret_shapes);
-            turret.drawProjectiles(&frame, projectile_shader, &turret_shapes);
+            turret.drawProjectiles(&frame, projectile_shader, rocket_shader, &turret_shapes);
         }
+        explosions.draw(&frame, flash_shader, shape_shader, &explosion_shapes);
         if (settings.show_path) {
             drawPath(&frame, &path_lines, target_path);
         }
         if (settings.show_aim) {
             drawAimLines(&frame, &aim_lines, &turrets, target);
+            drawArcs(&frame, &arc_lines, &turrets);
         }
 
         gui.newFrame();
@@ -329,6 +411,24 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         gpu.endFrame(frame);
     }
 }
+
+/// The target's acceleration, estimated from how its velocity changes each frame and
+/// smoothed (`dampVec3`).
+const TargetMotion = struct {
+    previous_velocity: ?Vec3 = null,
+    acceleration: Vec3 = Vec3.Zero,
+
+    fn update(self: *TargetMotion, velocity: Vec3, dt: f32) Vec3 {
+        if (self.previous_velocity) |previous| {
+            if (dt > 0.0) {
+                const measured = velocity.sub(previous).mulScalar(1.0 / dt);
+                self.acceleration = motion.dampVec3(self.acceleration, measured, ACCELERATION_SMOOTHING, dt);
+            }
+        }
+        self.previous_velocity = velocity;
+        return self.acceleration;
+    }
+};
 
 /// The floor and the target's sphere, created once.
 const SceneShapes = struct {
@@ -349,14 +449,14 @@ const SceneShapes = struct {
 };
 
 /// A turret at `position`, configured by its panel settings. Pitch is limited to just
-/// below level up to steep.
+/// below level up to nearly straight up, for high lobs.
 fn createTurret(position: Vec3, color: Vec4, tracer_color: Vec4, turret_settings: TurretSettings) Turret {
     var turret: Turret = .init(.{
         .position = position,
         .aim = .{
             .slew = .{ .damped = .{ .yaw_rate = 1.0, .pitch_rate = 1.0 } },
             .min_pitch = std.math.degreesToRadians(-10.0),
-            .max_pitch = std.math.degreesToRadians(70.0),
+            .max_pitch = std.math.degreesToRadians(85.0),
         },
         .fire_control = .{},
         .weapon = .{ .speed = 1.0, .jitter = .{}, .tracer_color = tracer_color },
@@ -370,7 +470,7 @@ fn createTurret(position: Vec3, color: Vec4, tracer_color: Vec4, turret_settings
 fn totalHits(turrets: []const Turret) u32 {
     var hits: u32 = 0;
     for (turrets) |turret| {
-        hits += turret.projectiles.hits;
+        hits += turret.hits();
     }
     return hits;
 }
@@ -417,7 +517,8 @@ fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, tar
     var count: usize = 0;
     for (turrets) |*turret| {
         const muzzle = turret.muzzle();
-        const reach = turret.aim_point.sub(muzzle).length();
+        // A lob's aim points up its launch velocity, not at the target: keep its ray short
+        const reach = if (turret.launch_velocity != null) MORTAR_AIM_RAY_LENGTH else turret.aim_point.sub(muzzle).length();
         segments[count] = .{
             .start = muzzle,
             .end = muzzle.add(turret.aim.direction().mulScalar(reach)),
@@ -428,6 +529,7 @@ fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, tar
         const is_leading = switch (turret.pattern) {
             .track => |track| track.lead,
             .sweep => false,
+            .mortar => |mortar| mortar.lead,
         };
         if (is_leading) {
             segments[count] = .{ .start = target.position, .end = turret.aim_point, .color = .magenta };
@@ -443,12 +545,37 @@ fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, tar
     lines.draw(frame, segments[0..count]);
 }
 
+/// Each mortar's predicted arc: where a shell fired now would fly, without jitter.
+fn drawArcs(frame: *const Frame, lines: *Lines, turrets: []const Turret) void {
+    var segments: [TURRET_COUNT * ARC_LINE_SEGMENTS]LineSegment = undefined;
+    var count: usize = 0;
+    for (turrets) |*turret| {
+        const launch_velocity = turret.launch_velocity orelse continue;
+        const flight_time = switch (turret.pattern) {
+            .mortar => |mortar| mortar.flight_time,
+            .track, .sweep => continue,
+        };
+        const muzzle = turret.muzzle();
+        var previous = muzzle;
+        for (1..ARC_LINE_SEGMENTS + 1) |i| {
+            const time = flight_time * @as(f32, @floatFromInt(i)) / ARC_LINE_SEGMENTS;
+            const point = core.ballistics.positionAt(muzzle, launch_velocity, turret_module.GRAVITY, time);
+            segments[count] = .{ .start = previous, .end = point, .color = .orange };
+            count += 1;
+            previous = point;
+        }
+    }
+    lines.draw(frame, segments[0..count]);
+}
+
 fn drawPanel(settings: *Settings, turrets: []const Turret) void {
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = 340, .h = 740, .cond = .first_use_ever });
     if (zgui.begin("turrets", .{})) {
         zgui.text("frame time: {d:.2} ms", .{1000.0 / zgui.io.getFramerate()});
         zgui.text("arrows: circle camera   W / S: in / out", .{});
+        zgui.text("Space: pause", .{});
+        _ = zgui.checkbox("paused", .{ .v = &settings.paused });
 
         zgui.separatorText("Target");
         _ = zgui.sliderFloat("speed", .{ .v = &settings.target_speed, .min = 0.0, .max = 15.0 });
@@ -467,7 +594,7 @@ fn drawPanel(settings: *Settings, turrets: []const Turret) void {
 }
 
 fn drawTurretSettings(turret_settings: *TurretSettings, turret: *const Turret) void {
-    zgui.text("hits: {d}   in flight: {d}", .{ turret.projectiles.hits, turret.projectiles.count });
+    zgui.text("hits: {d}   in flight: {d}", .{ turret.hits(), turret.inFlight() });
     _ = zgui.checkbox("fire", .{ .v = &turret_settings.fire });
 
     _ = zgui.comboFromEnum("pattern", &turret_settings.pattern);
@@ -486,6 +613,12 @@ fn drawTurretSettings(turret_settings: *TurretSettings, turret: *const Turret) v
             if (turret_settings.sweep_pitch == .fixed) {
                 _ = zgui.sliderFloat("pitch (deg)", .{ .v = &turret_settings.sweep_pitch_angle, .min = -10.0, .max = 70.0 });
             }
+        },
+        .mortar => {
+            _ = zgui.checkbox("lead", .{ .v = &turret_settings.lead });
+            _ = zgui.sliderFloat("flight time (s)", .{ .v = &turret_settings.flight_time, .min = 0.8, .max = 5.0 });
+            _ = zgui.sliderFloat("blast radius", .{ .v = &turret_settings.blast_radius, .min = 0.5, .max = 5.0 });
+            _ = zgui.sliderFloat("spin (deg/s)", .{ .v = &turret_settings.shell_spin, .min = 0.0, .max = 720.0 });
         },
     }
 
@@ -517,7 +650,10 @@ fn drawTurretSettings(turret_settings: *TurretSettings, turret: *const Turret) v
         },
     }
 
-    _ = zgui.sliderFloat("shot speed", .{ .v = &turret_settings.speed, .min = 5.0, .max = 80.0 });
+    // A mortar's shell speed comes from its flight time
+    if (turret_settings.pattern != .mortar) {
+        _ = zgui.sliderFloat("shot speed", .{ .v = &turret_settings.speed, .min = 5.0, .max = 80.0 });
+    }
     _ = zgui.sliderFloat("aim jitter (deg)", .{ .v = &turret_settings.aim_jitter, .min = 0.0, .max = 10.0 });
     _ = zgui.sliderFloat("speed jitter (%)", .{ .v = &turret_settings.speed_jitter, .min = 0.0, .max = 30.0 });
 }

@@ -5,17 +5,23 @@
 //! - Aim: `motion.YawPitchAim` turns the body and head toward a point, each axis at its own
 //!   speed.
 //! - Pattern: what to aim at. `track` aims at the target, optionally leading it; `sweep`
-//!   swings across an arc around the target's bearing or a fixed heading.
+//!   swings across an arc around the target's bearing or a fixed heading; `mortar` lobs a
+//!   shell that gets to the target in a fixed flight time.
 //! - Fire control: `core.FireControl` says when a shot goes out; the weapon's
 //!   `ShotJitter` spreads the shots.
+//!
+//! Track and sweep fire tracers; the mortar fires finned rockets that explode.
 
 const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const Projectiles = @import("projectiles.zig").Projectiles;
+const Explosions = @import("explosions.zig").Explosions;
+const projectiles = @import("projectiles.zig");
 
 const DrawUniforms = core.DrawUniforms;
+const Projectiles = projectiles.Projectiles;
+const ProjectilePart = projectiles.Part;
 const FireControl = core.FireControl;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
@@ -24,7 +30,9 @@ const Shader = core.Shader;
 const Shape = core.shapes.Shape;
 const ShotJitter = core.fire_control.ShotJitter;
 const Transform = core.Transform;
+const ballistics = core.ballistics;
 const motion = core.motion;
+const Mat4 = math.Mat4;
 const Quat = math.Quat;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -41,6 +49,16 @@ const BARREL_RADIUS: f32 = 0.1;
 const BARREL_LENGTH: f32 = 1.4;
 /// Tracer size: thin, stretched along its path.
 const TRACER_SIZE = vec3(0.08, 0.08, 0.7);
+/// Seconds a tracer flies before it's dropped.
+const TRACER_LIFETIME: f32 = 3.0;
+// Rocket sizes: a body along -Z, a stretched sphere for a nose, two crossed fins at the
+// tail.
+const ROCKET_RADIUS: f32 = 0.1;
+const ROCKET_LENGTH: f32 = 0.7;
+const ROCKET_NOSE_STRETCH: f32 = 2.2;
+const FIN_SIZE = vec3(0.5, 0.02, 0.2);
+/// Down, units per second squared.
+pub const GRAVITY = vec3(0.0, -9.8, 0.0);
 /// How fast the barrel slides back after recoil, per second.
 const RECOIL_RECOVERY: f32 = 8.0;
 
@@ -72,12 +90,18 @@ pub const Weapon = struct {
     /// How far the barrel kicks back per shot.
     recoil_distance: f32 = 0.25,
     tracer_color: Vec4,
+    /// A mortar shell's blast.
+    blast_radius: f32 = 2.0,
+    /// A mortar shell's spin about its nose, radians per second.
+    shell_spin: f32 = 0.0,
+    shell_color: Vec4 = vec4(0.35, 0.38, 0.3, 1.0),
 };
 
-/// What the turret aims at over time. Mortar comes in a later phase.
+/// What the turret aims at over time.
 pub const Pattern = union(enum) {
     track: Track,
     sweep: Sweep,
+    mortar: Mortar,
 
     pub const Track = struct {
         /// Aim where the target will be when the shot gets there.
@@ -93,6 +117,16 @@ pub const Pattern = union(enum) {
         /// A fixed pitch in radians, or the target's pitch when null.
         pitch: ?f32 = null,
     };
+
+    /// Lob a shell that gets to the target in `flight_time` seconds
+    /// (`ballistics.launchVelocity`): every lob hangs in the air the same time; longer is
+    /// a higher arc. The shell's fuse is the flight time, so it bursts at the target, in
+    /// the air or on the ground.
+    pub const Mortar = struct {
+        flight_time: f32,
+        /// Aim where the target will be after the flight time, following its curve.
+        lead: bool,
+    };
 };
 
 /// The target as the turrets see it.
@@ -100,6 +134,8 @@ pub const TargetState = struct {
     position: Vec3,
     /// Units per second.
     velocity: Vec3,
+    /// Units per second squared: how the velocity turns along a curved route.
+    acceleration: Vec3,
     radius: f32,
 };
 
@@ -107,6 +143,9 @@ pub const TargetState = struct {
 pub const TurretShapes = struct {
     parts: [Part.count]*Shape,
     tracer: *Shape,
+    rocket_body: *Shape,
+    rocket_nose: *Shape,
+    rocket_fin: *Shape,
 
     pub fn init(context: core.Context, gpu: *const GpuContext) !TurretShapes {
         const alloc = context.alloc;
@@ -118,6 +157,31 @@ pub const TurretShapes = struct {
         return .{
             .parts = parts,
             .tracer = try core.shapes.createCube(alloc, gpu, .{ .width = TRACER_SIZE.x, .height = TRACER_SIZE.y, .depth = TRACER_SIZE.z }),
+            .rocket_body = try core.shapes.createCylinder(alloc, gpu, ROCKET_RADIUS, ROCKET_LENGTH, 12),
+            .rocket_nose = try core.shapes.createSphere(alloc, gpu, ROCKET_RADIUS, 12, 12),
+            .rocket_fin = try core.shapes.createCube(alloc, gpu, .{ .width = FIN_SIZE.x, .height = FIN_SIZE.y, .depth = FIN_SIZE.z }),
+        };
+    }
+
+    /// A finned rocket in its own space, nose down -Z, centered on its middle.
+    fn rocketParts(self: *const TurretShapes, color: Vec4) [4]ProjectilePart {
+        const half_length = ROCKET_LENGTH * 0.5;
+        const fin_offset = Mat4.fromTranslation(vec3(0.0, 0.0, half_length - FIN_SIZE.z * 0.5));
+        const fin_color = color.lerp(vec4(0.6, 0.1, 0.08, 1.0), 0.6);
+        return .{
+            // The cylinder is built along +Y from its base: turned to -Z, from the tail
+            .{
+                .shape = self.rocket_body,
+                .model = Mat4.fromTranslation(vec3(0.0, 0.0, half_length)).mulMat4(&Mat4.fromRotationX(-std.math.pi / 2.0)),
+                .color = color,
+            },
+            .{
+                .shape = self.rocket_nose,
+                .model = Mat4.fromTranslation(vec3(0.0, 0.0, -half_length)).mulMat4(&Mat4.fromScale(vec3(1.0, 1.0, ROCKET_NOSE_STRETCH))),
+                .color = color,
+            },
+            .{ .shape = self.rocket_fin, .model = fin_offset, .color = fin_color },
+            .{ .shape = self.rocket_fin, .model = fin_offset.mulMat4(&Mat4.fromRotationZ(std.math.pi / 2.0)), .color = fin_color },
         };
     }
 
@@ -126,6 +190,9 @@ pub const TurretShapes = struct {
             part.releaseGpuObjects();
         }
         self.tracer.releaseGpuObjects();
+        self.rocket_body.releaseGpuObjects();
+        self.rocket_nose.releaseGpuObjects();
+        self.rocket_fin.releaseGpuObjects();
     }
 };
 
@@ -138,10 +205,14 @@ pub const Turret = struct {
     weapon: Weapon,
     pattern: Pattern,
     nodes: [Part.count]Node,
-    projectiles: Projectiles = .{},
+    tracers: Projectiles = .{},
+    shells: Projectiles = .{ .gravity = GRAVITY },
     recoil: f32 = 0.0,
     /// Where the pattern aimed this frame (for the debug lines).
     aim_point: Vec3 = Vec3.Zero,
+    /// A mortar's launch velocity this frame (for firing and the predicted arc); null for
+    /// other patterns.
+    launch_velocity: ?Vec3 = null,
     /// A sweep's arc this frame, its two ends as points as far out as the target (for the
     /// debug lines); null for other patterns.
     sweep_ends: ?[2]Vec3 = null,
@@ -171,11 +242,10 @@ pub const Turret = struct {
         return self;
     }
 
-    /// Aims, fires the shots that are due, and moves the shots in flight. `trigger`: the
-    /// turret may fire at all.
-    pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random) void {
-        self.aim_point = self.patternPoint(target, dt);
-        self.aim.aimAt(self.aim_point.sub(self.pivot()));
+    /// Aims, fires the shots that are due, and moves the shots in flight; shells that end
+    /// go into `explosions`. `trigger`: the turret may fire at all.
+    pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random, explosions: *Explosions) void {
+        self.aim.aimAt(self.patternAim(target, dt));
         self.aim.update(dt);
         self.fire_control.update(dt, trigger, self.aim.aimError());
 
@@ -183,8 +253,22 @@ pub const Turret = struct {
         self.pose();
 
         // Shots in flight move first: a new shot is placed by its own age
-        self.projectiles.update(dt, .{ .position = target.position, .radius = target.radius });
+        const hit_target: projectiles.Target = .{ .position = target.position, .radius = target.radius };
+        self.shells.blast_radius = self.weapon.blast_radius;
+        self.shells.spin = self.weapon.shell_spin;
+        self.tracers.update(dt, hit_target, explosions);
+        self.shells.update(dt, hit_target, explosions);
         self.fireDueShots(random);
+    }
+
+    /// Tracers and shells that reached the target.
+    pub fn hits(self: *const Self) u32 {
+        return self.tracers.hits + self.shells.hits;
+    }
+
+    /// Tracers and shells in flight.
+    pub fn inFlight(self: *const Self) usize {
+        return self.tracers.count + self.shells.count;
     }
 
     /// The head's center: the pitch pivot, and the point the aim is measured from.
@@ -213,22 +297,49 @@ pub const Turret = struct {
         }
     }
 
-    pub fn drawProjectiles(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: *const TurretShapes) void {
-        self.projectiles.draw(frame, shader, shapes.tracer, self.weapon.tracer_color);
+    /// Tracers unlit with `tracer_shader`, rockets shaded with `rocket_shader`.
+    pub fn drawProjectiles(
+        self: *const Self,
+        frame: *const Frame,
+        tracer_shader: *const Shader,
+        rocket_shader: *const Shader,
+        shapes: *const TurretShapes,
+    ) void {
+        const tracer_parts = [_]ProjectilePart{.{ .shape = shapes.tracer, .model = Mat4.Identity, .color = self.weapon.tracer_color }};
+        self.tracers.draw(frame, tracer_shader, &tracer_parts);
+        self.shells.draw(frame, rocket_shader, &shapes.rocketParts(self.weapon.shell_color));
     }
 
-    /// Where the pattern aims this frame.
-    fn patternPoint(self: *Self, target: TargetState, dt: f32) Vec3 {
+    /// The direction to aim this frame, from the pivot. Also records where the shots are
+    /// meant to go (`aim_point`) and the pattern's extras for the debug lines.
+    fn patternAim(self: *Self, target: TargetState, dt: f32) Vec3 {
         self.sweep_ends = null;
+        self.launch_velocity = null;
         switch (self.pattern) {
             .track => |track| {
-                if (!track.lead) {
-                    return target.position;
-                }
-                return core.ballistics.leadPoint(self.muzzle(), target.position, target.velocity, self.weapon.speed);
+                self.aim_point = if (track.lead)
+                    ballistics.leadPoint(self.muzzle(), target.position, target.velocity, self.weapon.speed)
+                else
+                    target.position;
             },
-            .sweep => |*sweep| return self.sweepPoint(sweep, target, dt),
+            .sweep => |*sweep| self.aim_point = self.sweepPoint(sweep, target, dt),
+            .mortar => |mortar| {
+                // A lob points along its launch velocity, not at the target. Over a lob's
+                // flight time a target on a curve turns a lot, so the lead follows the
+                // curve too: p + v·T + ½·a·T², gravity's formula with the target's
+                // acceleration.
+                self.aim_point = if (mortar.lead)
+                    ballistics.positionAt(target.position, target.velocity, target.acceleration, mortar.flight_time)
+                else
+                    target.position;
+                // A dip in the route can extrapolate below the floor, where no target goes
+                self.aim_point.y = @max(self.aim_point.y, 0.0);
+                const launch_velocity = ballistics.launchVelocity(self.muzzle(), self.aim_point, mortar.flight_time, GRAVITY);
+                self.launch_velocity = launch_velocity;
+                return launch_velocity;
+            },
         }
+        return self.aim_point.sub(self.pivot());
     }
 
     /// The sweep's point this frame: the swing's offset from the arc's center, as far out
@@ -268,11 +379,20 @@ pub const Turret = struct {
     }
 
     /// Each due shot leaves the muzzle along the aim, spread by the weapon's jitter, and
-    /// kicks the barrel back.
+    /// kicks the barrel back. A mortar shell goes at its launch speed, along the barrel.
     fn fireDueShots(self: *Self, random: *Random) void {
         while (self.fire_control.nextShot()) |age| {
-            const shot = self.weapon.jitter.apply(random, self.aim.direction(), self.weapon.speed);
-            self.projectiles.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), age);
+            switch (self.pattern) {
+                .track, .sweep => {
+                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), self.weapon.speed);
+                    self.tracers.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
+                },
+                .mortar => |mortar| {
+                    const speed = (self.launch_velocity orelse continue).length();
+                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), speed);
+                    self.shells.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), mortar.flight_time, age);
+                },
+            }
             self.recoil = self.weapon.recoil_distance;
         }
     }
