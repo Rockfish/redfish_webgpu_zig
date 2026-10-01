@@ -19,8 +19,10 @@ How these files work, including parking and resuming plans: [README.md](README.m
   006 and 012; review the remaining tasks before resuming.
 - **[009-gravity-bullet-system.md](009-gravity-bullet-system.md)**: phase 1 in bullets;
   phase 2 planned.
-- **[008-turret-controller-system.md](008-turret-controller-system.md)**: planning; nearest
-  code is bullets' `cannon.zig`.
+- **[008-turret-controller-system.md](008-turret-controller-system.md)**: rewritten
+  2026-09-30 for WebGPU and the new requirements (fire while turning or when aligned;
+  sweep and mortar patterns). Next: phase 1, per-axis aim (`moveTowardAngle`,
+  `dampAngle`, `TurretAim`).
 - **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: design
   discussion.
 

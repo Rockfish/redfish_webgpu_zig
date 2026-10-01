@@ -342,3 +342,8 @@ This is a quadratic in `tan(theta)` with a closed-form solution. Two solutions e
 | **Frame rate independence** | Sensitive to timestep variation | Identical result regardless of dt |
 
 **Decision**: Use analytical for gravity-only projectiles (turret bombs, artillery). If drag or homing projectiles are needed later, those specific types use Euler integration. Both can coexist in the same system.
+
+**2026-09-30** (redfish_webgpu_zig): noted plan 008's mortar as depending on phase 2.
+**Superseded 2026-10-01:** precision isn't a goal for the turrets (shots are jittered,
+shells explode with a blast radius), so the mortar uses the existing per-frame gravity and
+phase 2 is not a dependency.

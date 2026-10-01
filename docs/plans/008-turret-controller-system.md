@@ -1,862 +1,251 @@
 # Plan 008: Turret Controller System
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Planning. No controller yet; `examples/bullets/objects/cannon.zig` is the nearest code.
-> File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** rewritten for WebGPU and
+> the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
+> version is in git (`e5010da`).
 
-**Status**: 📝 Planning
-**Priority**: Medium
-**Estimated Effort**: Medium (2-3 days)
-**Created**: 2026-01-11
+## Status: Planned (not started)
 
 ## Overview
 
-Implement a modular turret controller system for tower defense games and similar use cases. Following the organizational pattern from `examples/bullets`, this system provides clean separation between scene objects, controllers, and rendering, enabling hierarchical control of multi-part objects (turrets, cranes, robotic arms) where different components rotate independently on specific axes.
-
-## Design Philosophy
-
-### Inspired by examples/bullets Organization
-
-The `examples/bullets` demonstrates excellent separation of concerns:
-
-```
-examples/bullets/
-├── scene/
-│   ├── cube.zig           # Each object owns shader, texture, shape
-│   ├── floor.zig          # Self-contained with draw() method
-│   ├── axis_lines.zig     # No shader crosstalk
-│   ├── scene.zig          # Composes all objects
-│   └── input_handler.zig  # Input management
-├── projectiles/
-│   ├── bullet.zig         # Bullet system
-│   └── simple_bullets.zig # Bullet variants
-├── shaders/               # Shader files
-├── run_app.zig           # Clean orchestration loop
-└── state.zig             # Global state
-```
-
-**Key Principles:**
-1. **Object Ownership**: Each scene object owns its shader, prevents crosstalk
-2. **File Organization**: One file per object type, grouped in directories
-3. **Scene Composition**: `scene.zig` composes objects, provides clean API
-4. **Minimal run_app**: Just loop and scene method calls
-5. **Easy Extension**: Add new objects by creating new files
-
-### Applied to Turret System
-
-```
-games/level_01/
-├── turrets/
-│   ├── turret.zig              # Turret scene object (owns shader)
-│   ├── turret_controller.zig  # Tracking/aiming logic
-│   ├── turret_builder.zig     # Factory for creating turrets
-│   └── turret_types.zig       # Different turret configurations
-├── scene/
-│   ├── scene.zig              # Scene composition
-│   ├── ground.zig             # Ground object
-│   ├── target.zig             # Moving target object
-│   └── lights.zig             # Lighting configuration
-├── shaders/
-│   ├── turret.vert            # Turret vertex shader
-│   ├── turret.frag            # Turret fragment shader
-│   └── basic.vert/frag        # Basic shaders
-├── run_app.zig               # Clean main loop
-├── nodes.zig                 # Node system (already exists)
-└── state.zig                 # Game state
-```
-
-## Architecture
-
-### Component Responsibilities
-
-**Turret (Scene Object)** - Self-contained rendering unit:
-```zig
-// turrets/turret.zig
-pub const Turret = struct {
-    // Ownership
-    base_node: *Node,
-    body_node: *Node,
-    barrel_node: *Node,
-    shader: *Shader,           // Owns its shader
-    textures: TurretTextures,  // Owns textures
-
-    // Configuration
-    controller: TurretController,
-
-    // Interface
-    pub fn init(allocator, position, config) !Turret
-    pub fn update(delta_time) void
-    pub fn draw(projection, view) void
-    pub fn setTarget(target: ?Vec3) void
-};
-```
-
-**TurretController** - Pure logic component:
-```zig
-// turrets/turret_controller.zig
-pub const TurretController = struct {
-    body_node: *Node,
-    barrel_node: *Node,
-
-    target: ?Vec3,
-    yaw_speed: f32,
-    pitch_speed: f32,
-    pitch_limits: [2]f32,
-
-    current_yaw: f32,
-    current_pitch: f32,
-
-    pub fn update(delta_time) void
-    pub fn setTarget(target: ?Vec3) void
-    pub fn isOnTarget(tolerance: f32) bool
-    pub fn getAimDirection() Vec3
-};
-```
-
-**Scene** - Composition and orchestration:
-```zig
-// scene/scene.zig
-pub const Scene = struct {
-    camera: *Camera,
-    ground: Ground,
-    turrets: std.ArrayList(Turret),
-    target: MovingTarget,
-    lights: Lights,
-
-    pub fn init(arena, scr_width, scr_height) !Scene
-    pub fn update(delta_time) void
-    pub fn drawTurrets(projection, view) void
-    pub fn drawGround(projection, view) void
-    pub fn drawTarget(projection, view) void
-};
-```
-
-## Implementation Plan
-
-### Phase 1: Directory Structure & Basic Files
-
-**Task**: Create organized directory structure following bullets pattern
-
-**Files to Create**:
-```
-games/level_01/
-├── turrets/
-│   └── .gitkeep
-├── scene/
-│   ├── lights.zig        # Lighting configuration
-│   └── scene.zig         # Scene composition (basic version)
-└── shaders/
-    ├── turret.vert       # Turret-specific shaders
-    └── turret.frag
-```
-
-**1. Create `turrets/` directory structure**:
-```bash
-mkdir -p games/level_01/turrets
-mkdir -p games/level_01/scene
-```
-
-**2. Create `scene/lights.zig`** - Shared lighting configuration:
-```zig
-const math = @import("math");
-const Vec3 = math.Vec3;
-const vec3 = math.vec3;
-
-pub const Lights = struct {
-    ambient_color: Vec3,
-    light_color: Vec3,
-    light_direction: Vec3,
-};
-
-pub const basic_lights = Lights{
-    .ambient_color = vec3(1.0, 0.6, 0.6),
-    .light_color = vec3(0.35, 0.4, 0.5),
-    .light_direction = vec3(3.0, 3.0, 3.0),
-};
-```
-
-**3. Create basic shader files** in `shaders/turret.vert` and `turret.frag`
-
-**Acceptance Criteria**:
-- [ ] Directory structure matches bullets pattern
-- [ ] `lights.zig` provides shared lighting config
-- [ ] Basic shader files created
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 2: Node Helper Methods
-
-**File**: `games/level_01/nodes.zig`
-
-**Task**: Add helper methods to Node for turret control
-
-**Methods to Add**:
-
-1. **`setLocalRotation()`** - Set absolute rotation:
-   ```zig
-   pub fn setLocalRotation(self: *Node, rotation: Quat) void {
-       self.transform.rotation = rotation;
-       self.updateTransforms(if (self.parent) |p| &p.global_transform else null);
-   }
-   ```
-
-2. **`getForward()`**, **`getRight()`**, **`getUp()`** - Direction helpers:
-   ```zig
-   pub fn getForward(self: *Node) Vec3 {
-       return self.global_transform.forward();
-   }
-
-   pub fn getRight(self: *Node) Vec3 {
-       return self.global_transform.right();
-   }
-
-   pub fn getUp(self: *Node) Vec3 {
-       return self.global_transform.up();
-   }
-   ```
-
-3. **`getWorldPosition()`** - Convenience method:
-   ```zig
-   pub fn getWorldPosition(self: *Node) Vec3 {
-       return self.global_transform.translation;
-   }
-   ```
-
-**Acceptance Criteria**:
-- [ ] Node has `setLocalRotation()` method
-- [ ] Node has direction helper methods
-- [ ] Methods update transforms correctly
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 3: TurretController Component
-
-**File**: `turrets/turret_controller.zig`
-
-**Task**: Create pure logic controller for turret aiming
-
-```zig
-const std = @import("std");
-const math = @import("math");
-const nodes = @import("../nodes.zig");
-
-const Vec3 = math.Vec3;
-const vec3 = math.vec3;
-const Quat = math.Quat;
-const Node = nodes.Node;
-
-pub const TurretController = struct {
-    body_node: *Node,
-    barrel_node: *Node,
-
-    // Targeting
-    target: ?Vec3 = null,
-
-    // Movement parameters
-    yaw_speed: f32 = 90.0,     // degrees per second
-    pitch_speed: f32 = 60.0,   // degrees per second
-    pitch_limits: [2]f32 = .{ -10.0, 80.0 },  // [min, max] degrees
-
-    // State
-    current_yaw: f32 = 0.0,
-    current_pitch: f32 = 0.0,
-    is_tracking: bool = false,
-
-    const Self = @This();
-
-    pub fn init(body: *Node, barrel: *Node) Self {
-        return .{
-            .body_node = body,
-            .barrel_node = barrel,
-        };
-    }
-
-    pub fn setTarget(self: *Self, target: ?Vec3) void {
-        self.target = target;
-        self.is_tracking = (target != null);
-    }
-
-    pub fn update(self: *Self, delta_time: f32) void {
-        if (self.target) |tgt| {
-            self.trackTarget(tgt, delta_time);
-        }
-    }
-
-    fn trackTarget(self: *Self, target: Vec3, delta_time: f32) void {
-        const body_pos = self.body_node.getWorldPosition();
-        const to_target = target.sub(&body_pos);
-
-        // Calculate desired yaw (horizontal rotation)
-        const desired_yaw = std.math.atan2(f32, to_target.x, to_target.z);
-        const yaw_delta = angleWrap(desired_yaw - self.current_yaw);
-        const max_yaw_delta = math.degreesToRadians(self.yaw_speed * delta_time);
-        const clamped_yaw = std.math.clamp(yaw_delta, -max_yaw_delta, max_yaw_delta);
-
-        self.current_yaw += clamped_yaw;
-        const yaw_quat = Quat.fromAxisAngle(&vec3(0.0, 1.0, 0.0), self.current_yaw);
-        self.body_node.setLocalRotation(yaw_quat);
-
-        // Calculate desired pitch (vertical rotation)
-        const horizontal_dist = std.math.sqrt(to_target.x * to_target.x + to_target.z * to_target.z);
-        const desired_pitch = std.math.atan2(f32, to_target.y, horizontal_dist);
-        const pitch_delta = angleWrap(desired_pitch - self.current_pitch);
-        const max_pitch_delta = math.degreesToRadians(self.pitch_speed * delta_time);
-        const clamped_pitch_delta = std.math.clamp(pitch_delta, -max_pitch_delta, max_pitch_delta);
-
-        const new_pitch = self.current_pitch + clamped_pitch_delta;
-        const pitch_min = math.degreesToRadians(self.pitch_limits[0]);
-        const pitch_max = math.degreesToRadians(self.pitch_limits[1]);
-        self.current_pitch = std.math.clamp(new_pitch, pitch_min, pitch_max);
-
-        const pitch_quat = Quat.fromAxisAngle(&vec3(1.0, 0.0, 0.0), self.current_pitch);
-        self.barrel_node.setLocalRotation(pitch_quat);
-    }
-
-    pub fn isOnTarget(self: *Self, tolerance_degrees: f32) bool {
-        if (self.target == null) return false;
-
-        const aim_dir = self.getAimDirection();
-        const body_pos = self.body_node.getWorldPosition();
-        const to_target = self.target.?.sub(&body_pos).toNormalized();
-
-        const angle_to_target = std.math.acos(aim_dir.dot(&to_target).clamp(-1.0, 1.0));
-        return angle_to_target < math.degreesToRadians(tolerance_degrees);
-    }
-
-    pub fn getAimDirection(self: *Self) Vec3 {
-        return self.barrel_node.getForward();
-    }
-
-    pub fn getBarrelTip(self: *Self, barrel_length: f32) Vec3 {
-        const forward = self.barrel_node.getForward();
-        const barrel_pos = self.barrel_node.getWorldPosition();
-        return barrel_pos.add(&forward.mulScalar(barrel_length));
-    }
-
-    fn angleWrap(angle: f32) f32 {
-        var result = angle;
-        while (result > std.math.pi) result -= 2.0 * std.math.pi;
-        while (result < -std.math.pi) result += 2.0 * std.math.pi;
-        return result;
-    }
-};
-```
-
-**Acceptance Criteria**:
-- [ ] TurretController with yaw/pitch tracking
-- [ ] Smooth rotation with speed limits
-- [ ] Pitch angle constraints working
-- [ ] Helper methods: `isOnTarget()`, `getAimDirection()`, `getBarrelTip()`
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 4: Turret Scene Object
-
-**File**: `turrets/turret.zig`
-
-**Task**: Create self-contained turret object that owns shader and manages rendering
-
-```zig
-const std = @import("std");
-const core = @import("core");
-const math = @import("math");
-const nodes = @import("../nodes.zig");
-const turret_controller = @import("turret_controller.zig");
-const Lights = @import("../scene/lights.zig").Lights;
-
-const Allocator = std.mem.Allocator;
-const Vec3 = math.Vec3;
-const vec3 = math.vec3;
-const Mat4 = math.Mat4;
-const Shader = core.Shader;
-const Texture = core.texture.Texture;
-const Shape = core.shapes.Shape;
-const Node = nodes.Node;
-const TurretController = turret_controller.TurretController;
-
-// Helper for shapes with textures (following bullets pattern)
-const ShapeWithTexture = struct {
-    shape: *Shape,
-    texture: *Texture,
-
-    pub fn draw(self: *ShapeWithTexture, shader: *Shader) void {
-        shader.bindTextureAuto("texture_diffuse", self.texture.gl_texture_id);
-        self.shape.draw(shader);
-    }
-
-    pub fn getBoundingBox(self: *ShapeWithTexture) core.AABB {
-        return self.shape.aabb;
-    }
-};
-
-pub const TurretConfig = struct {
-    position: Vec3,
-    yaw_speed: f32 = 90.0,
-    pitch_speed: f32 = 60.0,
-    pitch_limits: [2]f32 = .{ -10.0, 80.0 },
-    barrel_length: f32 = 2.0,
-};
-
-pub const Turret = struct {
-    // Node hierarchy
-    base_node: *Node,
-    body_node: *Node,
-    barrel_node: *Node,
-
-    // Rendering (OWNS shader - no crosstalk!)
-    shader: *Shader,
-    base_shape_obj: ShapeWithTexture,
-    body_shape_obj: ShapeWithTexture,
-    barrel_shape_obj: ShapeWithTexture,
-
-    // Logic
-    controller: TurretController,
-    config: TurretConfig,
-
-    const Self = @This();
-
-    pub fn init(
-        allocator: Allocator,
-        node_manager: *nodes.NodeManager,
-        config: TurretConfig,
-        base_shape: *Shape,
-        body_shape: *Shape,
-        barrel_shape: *Shape,
-        texture: *Texture,
-    ) !Self {
-        // Create shader for this turret (owns it!)
-        const turret_shader = try Shader.init(
-            allocator,
-            "games/level_01/shaders/basic_model.vert",
-            "games/level_01/shaders/basic_model.frag",
-        );
-
-        turret_shader.setBool("hasTexture", true);
-
-        // Create node hierarchy
-        var empty = EmptyObject{};
-        const base_node = try node_manager.create("turret_base", &empty);
-        base_node.setTranslation(config.position);
-
-        var body_obj = ShapeWithTexture{ .shape = body_shape, .texture = texture };
-        const body_node = try Node.init(allocator, "turret_body", &body_obj);
-        try base_node.addChild(body_node);
-        body_node.setTranslation(vec3(0.0, 0.5, 0.0));
-
-        var barrel_obj = ShapeWithTexture{ .shape = barrel_shape, .texture = texture };
-        const barrel_node = try Node.init(allocator, "gun_barrel", &barrel_obj);
-        try body_node.addChild(barrel_node);
-        barrel_node.setTranslation(vec3(0.0, 0.3, 0.0));
-
-        // Create controller
-        var controller = TurretController.init(body_node, barrel_node);
-        controller.yaw_speed = config.yaw_speed;
-        controller.pitch_speed = config.pitch_speed;
-        controller.pitch_limits = config.pitch_limits;
-
-        return .{
-            .base_node = base_node,
-            .body_node = body_node,
-            .barrel_node = barrel_node,
-            .shader = turret_shader,
-            .base_shape_obj = .{ .shape = base_shape, .texture = texture },
-            .body_shape_obj = body_obj,
-            .barrel_shape_obj = barrel_obj,
-            .controller = controller,
-            .config = config,
-        };
-    }
-
-    pub fn update(self: *Self, delta_time: f32) void {
-        self.controller.update(delta_time);
-    }
-
-    pub fn updateLights(self: *Self, lights: Lights) void {
-        self.shader.setVec3("ambientColor", &lights.ambient_color);
-        self.shader.setVec3("lightColor", &lights.light_color);
-        self.shader.setVec3("lightDirection", &lights.light_direction);
-    }
-
-    pub fn draw(self: *Self, projection: *const Mat4, view: *const Mat4) void {
-        self.shader.setMat4("matProjection", projection);
-        self.shader.setMat4("matView", view);
-
-        // Draw base
-        const base_mat = self.base_node.global_transform.toMatrix();
-        self.shader.setMat4("matModel", &base_mat);
-        self.base_shape_obj.draw(self.shader);
-
-        // Draw body
-        const body_mat = self.body_node.global_transform.toMatrix();
-        self.shader.setMat4("matModel", &body_mat);
-        self.body_shape_obj.draw(self.shader);
-
-        // Draw barrel
-        const barrel_mat = self.barrel_node.global_transform.toMatrix();
-        self.shader.setMat4("matModel", &barrel_mat);
-        self.barrel_shape_obj.draw(self.shader);
-    }
-
-    pub fn setTarget(self: *Self, target: ?Vec3) void {
-        self.controller.setTarget(target);
-    }
-
-    pub fn isOnTarget(self: *Self, tolerance: f32) bool {
-        return self.controller.isOnTarget(tolerance);
-    }
-
-    pub fn getAimDirection(self: *Self) Vec3 {
-        return self.controller.getAimDirection();
-    }
-
-    pub fn getBarrelTip(self: *Self) Vec3 {
-        return self.controller.getBarrelTip(self.config.barrel_length);
-    }
-};
-
-const EmptyObject = struct {
-    pub fn draw(self: *EmptyObject, shader: *Shader) void {
-        _ = self;
-        _ = shader;
-    }
-};
-```
-
-**Acceptance Criteria**:
-- [ ] Turret object owns its shader
-- [ ] Turret manages node hierarchy internally
-- [ ] Clean `draw(projection, view)` interface
-- [ ] Controller integrated
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 5: Scene Composition
-
-**File**: `scene/scene.zig`
-
-**Task**: Create scene that composes turrets and other objects
-
-```zig
-const std = @import("std");
-const core = @import("core");
-const math = @import("math");
-
-const Turret = @import("../turrets/turret.zig").Turret;
-const TurretConfig = @import("../turrets/turret.zig").TurretConfig;
-const Lights = @import("lights.zig").Lights;
-const basic_lights = @import("lights.zig").basic_lights;
-
-const Vec3 = math.Vec3;
-const vec3 = math.vec3;
-const Mat4 = math.Mat4;
-const Camera = core.Camera;
-const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
-
-pub const Scene = struct {
-    camera: *Camera,
-    turrets: std.ArrayList(Turret),
-    target_position: Vec3,
-
-    const Self = @This();
-
-    pub fn init(
-        arena: *ArenaAllocator,
-        node_manager: anytype,
-        scr_width: f32,
-        scr_height: f32,
-    ) !Self {
-        const allocator = arena.allocator();
-
-        const camera = try Camera.init(allocator, .{
-            .position = vec3(0.0, 10.0, 20.0),
-            .target = vec3(0.0, 2.0, 0.0),
-            .scr_width = scr_width,
-            .scr_height = scr_height,
-        });
-
-        var turrets = std.ArrayList(Turret).init(allocator);
-
-        // Create turrets will be added here
-
-        return .{
-            .camera = camera,
-            .turrets = turrets,
-            .target_position = vec3(5.0, 2.0, 5.0),
-        };
-    }
-
-    pub fn addTurret(self: *Self, turret: Turret) !void {
-        try self.turrets.append(turret);
-    }
-
-    pub fn update(self: *Self, delta_time: f32) void {
-        for (self.turrets.items) |*turret| {
-            turret.update(delta_time);
-        }
-    }
-
-    pub fn drawTurrets(self: *Self, projection: *const Mat4, view: *const Mat4) void {
-        for (self.turrets.items) |*turret| {
-            turret.draw(projection, view);
-        }
-    }
-
-    pub fn setTargetForAllTurrets(self: *Self, target: Vec3) void {
-        self.target_position = target;
-        for (self.turrets.items) |*turret| {
-            turret.setTarget(target);
-        }
-    }
-};
-```
-
-**Acceptance Criteria**:
-- [ ] Scene composes turrets and camera
-- [ ] Clean API following bullets pattern
-- [ ] Easy to add/remove turrets
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 6: Clean run_app Integration
-
-**File**: `games/level_01/run_app.zig`
-
-**Task**: Update run_app to use scene composition (following bullets pattern)
-
-**Key Changes**:
-1. Create scene at startup
-2. Update scene in game loop
-3. Draw scene components
-4. Minimal logic in run_app - delegate to scene
-
-```zig
-// In run() function, after creating node_manager:
-
-const Scene = @import("scene/scene.zig").Scene;
-
-var scene = try Scene.init(&arena, node_manager, scaled_width, scaled_height);
-
-// Create shapes for turrets
-var cylinder = try shapes.createCylinder(allocator, 1.0, 2.0, 20.0);
-var cuboid = try shapes.createCube(.{ .width = 1.5, .height = 1.0, .depth = 1.0 });
-var barrel = try shapes.createCylinder(allocator, 0.3, 2.0, 12.0);
-
-// Create turrets
-const turret1 = try Turret.init(
-    allocator,
-    node_manager,
-    .{ .position = vec3(-5.0, 0.0, -5.0) },
-    &cylinder,
-    &cuboid,
-    &barrel,
-    cube_texture,
-);
-try scene.addTurret(turret1);
-
-const turret2 = try Turret.init(
-    allocator,
-    node_manager,
-    .{ .position = vec3(5.0, 0.0, -5.0) },
-    &cylinder,
-    &cuboid,
-    &barrel,
-    cube_texture,
-);
-try scene.addTurret(turret2);
-
-// Set target for all turrets
-scene.setTargetForAllTurrets(vec3(0.0, 2.0, 5.0));
-
-// In game loop:
-scene.update(state.delta_time);
-
-const projection = camera.getProjection();
-const view = camera.getView();
-
-scene.drawTurrets(&projection, &view);
-```
-
-**Acceptance Criteria**:
-- [ ] run_app.zig is clean and minimal
-- [ ] Scene manages all complexity
-- [ ] Easy to add more turrets
-- [ ] Follows bullets pattern exactly
-- [ ] Code formatted with `zig fmt`
-
----
-
-### Phase 7: Advanced Features (Optional)
-
-**File**: `turrets/turret_types.zig`
-
-**Task**: Create different turret configurations
-
-```zig
-pub const TurretType = enum {
-    basic,
-    fast,
-    heavy,
-    sniper,
-};
-
-pub fn getConfig(turret_type: TurretType) TurretConfig {
-    return switch (turret_type) {
-        .basic => .{
-            .position = vec3(0, 0, 0),
-            .yaw_speed = 90.0,
-            .pitch_speed = 60.0,
-            .pitch_limits = .{ -10.0, 80.0 },
-        },
-        .fast => .{
-            .position = vec3(0, 0, 0),
-            .yaw_speed = 180.0,
-            .pitch_speed = 120.0,
-            .pitch_limits = .{ 0.0, 85.0 },
-        },
-        .heavy => .{
-            .position = vec3(0, 0, 0),
-            .yaw_speed = 45.0,
-            .pitch_speed = 30.0,
-            .pitch_limits = .{ -5.0, 60.0 },
-        },
-        .sniper => .{
-            .position = vec3(0, 0, 0),
-            .yaw_speed = 60.0,
-            .pitch_speed = 45.0,
-            .pitch_limits = .{ 10.0, 85.0 },
-        },
-    };
-}
-```
-
-**Acceptance Criteria**:
-- [ ] Multiple turret types defined
-- [ ] Easy to add new types
-- [ ] Configs clearly show differences
-- [ ] Code formatted with `zig fmt`
-
----
-
-## File Organization Summary
-
-### Final Structure
-```
-games/level_01/
-├── turrets/
-│   ├── turret.zig              # Scene object (owns shader)
-│   ├── turret_controller.zig  # Pure logic component
-│   ├── turret_types.zig       # Configurations
-│   └── README.md              # Documentation
-├── scene/
-│   ├── scene.zig              # Composition
-│   ├── lights.zig             # Shared lighting
-│   ├── ground.zig             # Ground object (future)
-│   └── target.zig             # Target object (future)
-├── shaders/
-│   ├── turret.vert
-│   ├── turret.frag
-│   ├── basic_model.vert
-│   └── basic_model.frag
-├── run_app.zig               # Clean orchestration
-├── nodes.zig                 # Node system
-└── state.zig                 # Game state
-```
-
-### Key Patterns from bullets
-
-1. **One File Per Object**: `cube.zig`, `floor.zig` → `turret.zig`, `ground.zig`
-2. **Object Owns Shader**: Prevents crosstalk, self-contained rendering
-3. **Scene Composition**: `scene.zig` composes all objects
-4. **Clean draw() API**: `object.draw(projection, view)` handles everything
-5. **Minimal run_app**: Just loop and scene method calls
-6. **Directory Organization**: Related files grouped (`scene/`, `turrets/`, `shaders/`)
-
-## Benefits of This Approach
-
-### 1. No Shader Crosstalk
-Each turret owns its shader instance, preventing state bleeding between objects.
-
-### 2. Easy to Extend
-Adding a new turret type:
-1. Define config in `turret_types.zig`
-2. Instantiate in scene
-Done!
-
-### 3. Clean Separation
-- **turrets/**: All turret-related code
-- **scene/**: Scene composition
-- **run_app.zig**: Just orchestration
-
-### 4. Testable
-Each component can be tested independently:
-- TurretController: Pure logic, easy to test
-- Turret: Scene object with mocked nodes
-- Scene: Composition testing
-
-### 5. Reusable Pattern
-Same pattern applies to:
-- Enemies
-- Projectiles
-- Power-ups
-- Environmental objects
-
-## Testing Strategy
-
-### Unit Tests
-- TurretController tracking accuracy
-- Angle wrapping and clamping
-- Speed limit enforcement
-
-### Integration Tests
-- Turret with node hierarchy
-- Multiple turrets tracking same target
-- Scene composition and updates
-
-### Visual Tests
-- Turrets smoothly track target
-- Pitch limits visually correct
-- Multiple turrets independent
-- No gimbal lock or jitter
-
-## Success Criteria
-
-1. **Organization**: Follows bullets pattern exactly
-2. **No Crosstalk**: Each turret has independent shader state
-3. **Clean API**: run_app is minimal and readable
-4. **Extensible**: Easy to add new turret types
-5. **Documented**: README explains pattern and usage
-
-## Future Enhancements
-
-1. **More Scene Objects**: Ground, targets, projectiles
-2. **Turret States**: Idle, tracking, firing, reloading
-3. **Visual Effects**: Muzzle flash, tracer rounds
-4. **Audio**: Turret rotation sounds, firing sounds
-5. **Turret Manager**: Centralized turret coordination
-
-## References
-
-- **Pattern Source**: `examples/bullets/` - excellent organization
-- **Scene Object Example**: `examples/bullets/scene/cube.zig`
-- **Scene Composition**: `examples/bullets/scene/scene.zig`
-- **Clean run_app**: `examples/bullets/run_app.zig`
-- **Current Node System**: `games/level_01/nodes.zig`
-
-## Notes
-
-- This plan prioritizes clean organization over quick implementation
-- Following established patterns makes code easier to understand
-- Each turret owning its shader eliminates entire class of bugs
-- Directory structure mirrors bullets for consistency
-- Pattern is proven and extensible
-
-**2026-09-30** (redfish_webgpu_zig): `core.motion.dampLookAt(rotation, position, focus, up,
-rate, dt)` exists for this plan's aim: it turns a rotation part way toward looking at a
-focus each frame, frame-rate independent (plan 016). Turret aim is its intended first user
-(confirmed by John). A two-axis turret would damp yaw on the base and pitch on the barrel,
-or damp the combined look-at and split it.
+Turrets that swing toward a target and fire, for tower defense games and similar. A
+turret's behavior has three parts, kept separate so each can be tested and swapped:
+
+- **Aim**: where the barrel points and how fast it gets there (per-axis slew, limits).
+- **Pattern**: what the turret aims at over time: track a target, sweep an arc, lob a
+  mortar shell, or a sequence of those.
+- **Fire control**: when a shot goes out: while turning, or only once aligned; the
+  cadence (rate, bursts).
+
+Requirements (John, 2026-09-30):
+
+1. Swing toward a target, either **firing while turning** or **waiting until aligned**.
+2. Programmable **patterns**, such as a **sweeping** fire pattern and **mortar-style**
+   launches.
+3. Turret types by configuration (speeds, limits, weapon), as in the imported plan.
+
+**Priorities (John, 2026-10-01): looks good, performs well, straightforward calculations.
+Precision is not a goal.** Shots get deliberate **jitter** on their aim and speed, and
+mortar shells explode on landing, so the blast area absorbs where exactly they come down.
+Choose the simplest math that looks right; no iterative solvers, no exact-hit guarantees.
+
+## Review 2026-09-30: what changed for WebGPU
+
+The imported plan was written for redfish_gl_zig. Against this repo:
+
+- **"Each turret owns its shader to prevent crosstalk" no longer applies.** GL uniforms set
+  on a shared program leaked between objects; here every draw's values go through the
+  uniform ring (`DrawUniforms`, `shape.draw(frame, shader, draw_uniforms)`), so shaders are
+  shared, created once through `ResourceManager`. Lights come from `SceneLights` in the
+  frame uniforms, not per-shader setters.
+- **Shaders** are single `.wgsl` files, not `.vert` / `.frag` pairs; there is no
+  `setMat4` / `setVec3` / `bindTextureAuto`. Materials bind with `material.bind(frame)`.
+- **Math** is by value: `Quat.fromAxisAngle(axis, angle)`, `a.sub(b)`, `a.dot(b)`.
+- **The node system**: the plan built on level_01's `nodes.zig` (allocated `Node`s with
+  parent pointers). `examples/bullets/objects/cannon.zig` already has the pattern this
+  repo uses for a jointed object: a flat, parent-first node array (glTF-style), one pass
+  for world transforms, yaw on the body, pitch on the head, recoil on the barrel, and
+  `muzzleTransform()` for spawning projectiles. Turrets start from that. Plan 005's core
+  transform hierarchy would later replace both.
+- **Aim smoothing**: `Cannon.update` eases with `@min(1, aim_rate * dt)`, which converges
+  at different speeds at different frame rates. `core.motion` (plan 016) has the
+  frame-rate independent forms (`dampAlpha`, `moveToward`); the turret's aim uses them.
+- **Projectiles**: `examples/bullets/projectiles/bullet_system.zig` fires spread groups with
+  optional gravity, integrated per frame (v += g·dt, p += v·dt). Good enough for straight
+  fire and mortar shells alike (see Mortar).
+
+## Design
+
+### Aim: per-axis slew
+
+A two-axis turret turns its body about the vertical (yaw) and tilts its barrel (pitch).
+The axes have their own speeds, and pitch has limits (it can't aim into the ground or
+through its own base); yaw wraps around (the shortest way from 170° to -170° is 20°, not
+340°), and may have limits for a turret that covers only a sector.
+
+Two slew styles, per turret type:
+
+| Style | Motion | Feels like | Arrives |
+|---|---|---|---|
+| `rate_limited` | constant angular speed, degrees per second | a motor-driven mount | exactly, in a known time |
+| `damped` | exponential approach (`dampAlpha`) | a quick snap that settles | asymptotically (aligned within a tolerance) |
+
+New in `core.motion`, since they're general (a head, a radar dish, a door):
+
+- `moveTowardAngle(current, target, max_speed, dt)`: `moveToward` for an angle, the short
+  way around, no overshoot, arrives exactly.
+- `dampAngle(current, target, rate, dt)`: `dampVec3` for an angle, the short way around.
+
+`TurretAim` (in the turret example) holds yaw, pitch, the desired yaw and pitch, the speeds
+and limits, and answers `isAligned(tolerance)` and the aim direction.
+
+**Where `dampLookAt` fits.** `dampLookAt` turns one rotation toward a look-at: right for a
+single-body aim, such as a ball turret, a sensor head, or a camera. A two-axis turret needs
+the axes separate (the body only yaws, the barrel only pitches, each with its own speed and
+limits), so it uses the angle helpers above. The turret example includes a single-body
+variant (a sensor or ball turret) as `dampLookAt`'s first user.
+
+### Patterns: what to aim at
+
+A pattern produces, each frame, the desired yaw and pitch and whether it wants to fire.
+`TurretAim` moves toward that; fire control decides whether a shot goes out.
+
+- **`track`**: aim at the target. Optional **lead**: aim where the target will be when the
+  projectile arrives, with the time of flight estimated once from distance / speed (no
+  iteration: jitter and blast radius make a closer estimate pointless).
+- **`sweep`**: swing yaw back and forth across an arc while firing: center (the target's
+  bearing, or a fixed heading), half-width in degrees, sweep speed, and pitch (the
+  target's, or fixed). The swing is the same ping-pong as `PathFollow.Repeat.ping_pong`,
+  on an angle.
+- **`mortar`**: a high-arc lob. Pitch comes from the ballistic solution (below), not from
+  pointing at the target; usually fires only when aligned.
+- **`sequence`** (later phase): a program of steps, such as sweep for 3 s, then two mortar
+  rounds, then wait 1 s, repeat. Steps are the patterns above plus `wait`.
+
+### Fire control: when to shoot
+
+- **Policy**: `while_turning` (fire at the cadence regardless of aim: suppression, sweeps),
+  or `when_aligned` with a tolerance in degrees (hold fire until on target: snipers,
+  mortars).
+- **Cadence**: a rate (shots per second), or bursts (count, interval between shots, pause
+  between bursts). Frame-rate independent: a shot timer that carries over its remainder,
+  so 10 shots per second is 10 shots in a second at 30 or 144 fps.
+- **Jitter**, per weapon: each shot's direction is turned by a random angle within a
+  cone (`aim_jitter`, degrees) and its speed scaled by a random factor
+  (`speed_jitter`, e.g. ±5%), from `core.random`. Makes streams of fire and salvos look
+  natural instead of laser-straight, and costs a couple of random numbers per shot.
+- Shots spawn at `muzzleTransform()` into the turret's projectile system.
+
+### Mortar: pick the flight time
+
+The classic way fixes the launch speed and solves for the angle
+(`tan θ = (v² ± √(v⁴ − g·(g·d² + 2·h·v²))) / (g·d)`), which needs a square root, has an
+out-of-range case, and gives very different hang times for near and far targets. The
+straightforward way fixes the **flight time** `T` instead (e.g. 2.5 s) and computes the
+launch velocity directly:
+
+    v0 = (target − muzzle) / T − ½ · g · T        (g = gravity vector, pointing down)
+
+One line, no square root, always a solution, and every lob hangs in the air the same
+time, which reads well on screen. Leading a moving target is just aiming at where it will
+be in `T` seconds. The barrel points along `v0`; the shell's speed is `|v0|` (a longer
+throw is a faster shell). A longer `T` gives a higher arc.
+
+Shells use the projectile system's per-frame gravity. Its small frame-rate dependent drift,
+the shot jitter, and a moving target all end up inside the blast radius, so nothing needs
+an exact parabola (plan 009 phase 2 is not a dependency). On landing (height at or below
+the ground, or the shell's time is up): an explosion: flash or sprite, a burn mark, and
+damage to anything within the blast radius.
+
+The formula is general (thrown objects, AI lobs), so it goes in core as a small function,
+`core.ballistics.launchVelocity(from, to, flight_time, gravity)`, with tests.
+
+### Projectiles: bullets and finned rockets
+
+Two looks, both from the projectile system (instanced: per-shot rotation and position
+through the vertex ring, one draw per kind):
+
+- **Bullets / tracers**: the existing quads.
+- **Toy rockets, bombs with fins**: a small mesh (body, nose, fins). They arc correctly
+  with what `BulletSystem.update` already does: each frame gravity is added to the
+  velocity and the rotation is rebuilt from the velocity's direction
+  (`Quat.fromDirectionWithRight(forward, right)`), so the nose follows the arc like a
+  finned bomb turning into its path (pitched up on launch, level at the top, nose down
+  coming in). The `right` vector stored at launch holds the roll steady; without wind the
+  arc stays in the launch's vertical plane, so the velocity never lines up with `right`.
+  Optional: a slow spin about the nose, added on top, as finned rockets often have.
+
+Mortar shells can use either look.
+
+### Where it lives
+
+A new `examples/turrets` (a turret test bed, as the shadows and camera_rig examples are
+for theirs): a floor, targets moving on `PathFollow` loops, a few turrets of different
+types, a panel to pick each turret's pattern, policy, and slew style, and debug lines for
+the aim ray and the predicted mortar arc. Turret parts follow `Cannon`'s node array. A
+tower defense game (level_01, or a new one) uses the pieces once they're settled.
+
+## Phases
+
+### Phase 1: Aim
+- [ ] `motion.moveTowardAngle` and `motion.dampAngle`, with invariant tests (the short way
+      across ±180°, no overshoot, arrives exactly, frame-rate independent)
+- [ ] `TurretAim`: yaw and pitch toward desired angles, `rate_limited` or `damped`, pitch
+      limits, optional yaw limits, `isAligned(tolerance)`, aim direction; tests
+- [ ] `Cannon` (bullets example) eases its aim with `dampAngle` instead of
+      `@min(1, rate * dt)`
+
+### Phase 2: Turret test bed and fire control
+- [ ] `examples/turrets`: floor, a target on a `PathFollow` loop, two turrets built like
+      `Cannon`, straight-fire projectiles, aim-ray lines, panel
+- [ ] Fire control: `while_turning` / `when_aligned(tolerance)`, rate and bursts with a
+      carry-over shot timer, aim and speed jitter; tests (no shot before aligned under
+      `when_aligned`; the same number of shots per second at 30 and 144 fps; jittered
+      shots stay within the cone and speed range)
+- [ ] `track` pattern, with and without lead
+
+### Phase 3: Sweep
+- [ ] `sweep` pattern (center on the target's bearing or a fixed heading, half-width,
+      speed, pitch); tests (stays within the arc, reverses at the ends)
+
+### Phase 4: Mortar
+- [ ] `core.ballistics.launchVelocity(from, to, flight_time, gravity)`; tests (with
+      per-frame gravity and no jitter, a shell lands within a small distance of the target
+      at 30 and 144 fps)
+- [ ] `mortar` pattern (flight time, lead by `T`); shells with gravity; predicted-arc lines
+- [ ] Finned rocket mesh, drawn instanced and oriented along the velocity (as
+      `BulletSystem` already does); optional spin about the nose
+- [ ] Explosion on landing: flash or sprite, burn mark, blast radius
+
+### Phase 5: Programs and types
+- [ ] `sequence` pattern (steps with durations, repeat)
+- [ ] Turret types by configuration (slew style and speeds, limits, weapon, default
+      pattern)
+- [ ] A single-body turret (sensor or ball turret) aimed with `dampLookAt`
+
+Each phase ends with a `CHANGELOG.md` entry and a commit, `zig build test` passing.
+
+## Testing strategy
+
+Invariant tests in the style of `motion.zig`, checking behavior rather than precision:
+angles take the short way and never overshoot; the same result at 10, 60, and 144 fps;
+`when_aligned` fires nothing before alignment; a sweep stays within its arc; jitter stays
+within its range; a mortar shell lands well within its blast radius. The test bed shows
+what matters most (how slew styles, patterns, jitter, and explosions look), with
+screenshots before hand-off.
+
+## Open questions
+
+- Turret models: basic shapes as `Cannon` (enough for the test bed), or glTF models later?
+- Sweep center: follow the target's bearing (a sweep around the target), a fixed sector,
+  or both as options? (Leaning both.)
+- Game integration: level_01, or a new tower defense game, after plan 005's transform
+  hierarchy?
+
+## Notes & Decisions
+
+**2026-09-30**: `core.motion.dampLookAt(rotation, position, focus, up, rate, dt)` exists
+for aiming: it turns a rotation part way toward looking at a focus each frame, frame-rate
+independent (plan 016). Turret aim is its intended first user (confirmed by John).
+
+**2026-09-30**: Plan rewritten for WebGPU and John's requirements (fire while turning or
+when aligned; sweep and mortar patterns). Structure: aim / pattern / fire control. Starts
+from `Cannon`'s node array in the bullets example instead of level_01's `nodes.zig`. A
+two-axis turret aims per axis (`moveTowardAngle` / `dampAngle`), since the body only yaws
+and the barrel only pitches, with separate speeds and pitch limits; `dampLookAt` goes to a
+single-body turret variant. The mortar needs exact parabolas: depends on plan 009 phase 2
+(superseded 2026-10-01, below).
+
+**2026-10-01**: Priorities from John: looks good, performs well, straightforward
+calculations; precision is not a goal. Shots get aim and speed jitter, and mortar shells
+explode, so the blast area absorbs landing variation. Changes: the mortar fixes the
+flight time and computes the launch velocity in one line (no square root, no out of range,
+the same hang time for every lob) instead of solving for the angle at a fixed speed; lead
+is a single estimate; shells use the existing per-frame gravity, so plan 009 phase 2 is no
+longer a dependency; jitter (aim cone, speed factor) is part of each weapon; tests check
+behavior (within the blast radius, within the jitter range) instead of exact hits.
+
+**2026-10-01**: Some projectiles look like toy rockets, bombs with fins (John). They need
+no new math: `BulletSystem.update` already rebuilds each projectile's rotation from its
+velocity every frame, so the nose follows the gravity arc, with the roll held by the
+launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spin.
