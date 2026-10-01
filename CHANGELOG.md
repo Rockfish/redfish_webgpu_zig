@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Programs, turret types, ball turret, plan 008 phase 5 (plan finished)
+- **examples/turrets**: programs (steps of a pattern, optional fire settings, until seconds or shots; repeat) and the `wait` pattern; turret types as configuration (`turret_types.zig`, `Turret.init(type, position)`), the panel starting from the type; "battery" (sweep, two mortar rounds, pause); a ball turret aimed with `motion.dampLookAt`
+- **Plans**: 008 turrets completed
+
 ### 2026-10-01 - Mortar, plan 008 phase 4
 - **core.ballistics**: `launchVelocity` (fixed flight time, one line), `positionAt`, and `step` (exact under constant gravity, so shells land where predicted at any frame rate); tests
 - **examples/turrets**: the `mortar` pattern and a fourth turret; finned rockets drawn instanced from parts, nose following the arc, optional spin; shells burst at the target on a fuse, on the floor, or on a direct hit; fireballs, fading burn marks, blast radius; predicted-arc lines; the lob's lead follows the target's curve (`p + v·T + ½·a·T²`); Space (or the panel) pauses everything but the camera and panel

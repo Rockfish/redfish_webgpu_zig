@@ -10,7 +10,9 @@
 //! - Fire control: `core.FireControl` says when a shot goes out; the weapon's
 //!   `ShotJitter` spreads the shots.
 //!
-//! Track and sweep fire tracers; the mortar fires finned rockets that explode.
+//! Track and sweep fire tracers; the mortar fires finned rockets that explode. A `Program`
+//! runs patterns one after another (sweep for 3 s, two mortar rounds, wait 1 s, repeat),
+//! each step with its own fire settings if it needs them.
 
 const std = @import("std");
 const core = @import("core");
@@ -41,12 +43,15 @@ const vec4 = math.vec4;
 
 // Part sizes. Cubes are centered on their origin, cylinders start at their origin and
 // extend along +Y, spheres are centered.
-const BASE_SIZE = vec3(1.6, 0.4, 1.6);
+pub const BASE_SIZE = vec3(1.6, 0.4, 1.6);
 const BODY_RADIUS: f32 = 0.6;
 const BODY_HEIGHT: f32 = 0.5;
 const HEAD_RADIUS: f32 = 0.45;
 const BARREL_RADIUS: f32 = 0.1;
-const BARREL_LENGTH: f32 = 1.4;
+pub const BARREL_LENGTH: f32 = 1.4;
+/// The ball turret's pedestal, on a base like the others.
+pub const PEDESTAL_RADIUS: f32 = 0.25;
+pub const PEDESTAL_HEIGHT: f32 = 1.2;
 /// Tracer size: thin, stretched along its path.
 const TRACER_SIZE = vec3(0.08, 0.08, 0.7);
 /// Seconds a tracer flies before it's dropped.
@@ -102,6 +107,8 @@ pub const Pattern = union(enum) {
     track: Track,
     sweep: Sweep,
     mortar: Mortar,
+    /// Hold the aim and fire nothing.
+    wait,
 
     pub const Track = struct {
         /// Aim where the target will be when the shot gets there.
@@ -129,6 +136,61 @@ pub const Pattern = union(enum) {
     };
 };
 
+/// A kind of turret, as configuration (see turret_types.zig).
+pub const TurretType = struct {
+    name: [:0]const u8,
+    /// The body and head's color.
+    color: Vec4,
+    /// Slew style and speeds, pitch and yaw limits.
+    aim: motion.YawPitchAim,
+    fire: FireSettings,
+    weapon: Weapon,
+    pattern: Pattern,
+    /// Runs instead of `pattern` from the start, when set.
+    program: ?[]const Step = null,
+};
+
+/// When a fire control's policy and cadence change together: per turret type, or per
+/// program step.
+pub const FireSettings = struct {
+    policy: FireControl.Policy,
+    cadence: FireControl.Cadence,
+};
+
+/// One step of a `Program`: a pattern, until a time is up or a number of shots is fired.
+pub const Step = struct {
+    pattern: Pattern,
+    /// The step's fire settings; null keeps the turret's.
+    fire: ?FireSettings = null,
+    until: Until,
+
+    pub const Until = union(enum) {
+        seconds: f32,
+        shots: u32,
+    };
+};
+
+/// Patterns one after another, repeating. The steps belong to the caller (usually a
+/// constant in a turret type); each starts from its own pattern as written, so a sweep
+/// starts at its center every time.
+pub const Program = struct {
+    steps: []const Step,
+    /// The step running now.
+    index: usize = 0,
+    /// Seconds into this step.
+    elapsed: f32 = 0.0,
+    /// Shots fired in this step.
+    shots: u32 = 0,
+
+    /// True when the step running now is done.
+    fn isStepDone(self: *const Program) bool {
+        return switch (self.steps[self.index].until) {
+            .seconds => |seconds| self.elapsed >= seconds,
+            .shots => |shots| self.shots >= shots,
+        };
+    }
+};
+
 /// The target as the turrets see it.
 pub const TargetState = struct {
     position: Vec3,
@@ -146,6 +208,7 @@ pub const TurretShapes = struct {
     rocket_body: *Shape,
     rocket_nose: *Shape,
     rocket_fin: *Shape,
+    pedestal: *Shape,
 
     pub fn init(context: core.Context, gpu: *const GpuContext) !TurretShapes {
         const alloc = context.alloc;
@@ -160,6 +223,7 @@ pub const TurretShapes = struct {
             .rocket_body = try core.shapes.createCylinder(alloc, gpu, ROCKET_RADIUS, ROCKET_LENGTH, 12),
             .rocket_nose = try core.shapes.createSphere(alloc, gpu, ROCKET_RADIUS, 12, 12),
             .rocket_fin = try core.shapes.createCube(alloc, gpu, .{ .width = FIN_SIZE.x, .height = FIN_SIZE.y, .depth = FIN_SIZE.z }),
+            .pedestal = try core.shapes.createCylinder(alloc, gpu, PEDESTAL_RADIUS, PEDESTAL_HEIGHT, 16),
         };
     }
 
@@ -193,6 +257,7 @@ pub const TurretShapes = struct {
         self.rocket_body.releaseGpuObjects();
         self.rocket_nose.releaseGpuObjects();
         self.rocket_fin.releaseGpuObjects();
+        self.pedestal.releaseGpuObjects();
     }
 };
 
@@ -213,41 +278,39 @@ pub const Turret = struct {
     /// A mortar's launch velocity this frame (for firing and the predicted arc); null for
     /// other patterns.
     launch_velocity: ?Vec3 = null,
+    /// When set, the program picks the pattern (and fire settings) step by step.
+    program: ?Program = null,
     /// A sweep's arc this frame, its two ends as points as far out as the target (for the
     /// debug lines); null for other patterns.
     sweep_ends: ?[2]Vec3 = null,
 
     const Self = @This();
 
-    pub const Config = struct {
-        position: Vec3,
-        aim: motion.YawPitchAim,
-        fire_control: FireControl,
-        weapon: Weapon,
-        pattern: Pattern,
-        /// The body and head's color.
-        color: Vec4,
-    };
-
-    pub fn init(config: Config) Self {
+    /// A turret of `turret_type` standing at `position`; it starts its program if the type
+    /// has one.
+    pub fn init(turret_type: TurretType, position: Vec3) Self {
         var self: Self = .{
-            .position = config.position,
-            .aim = config.aim,
-            .fire_control = config.fire_control,
-            .weapon = config.weapon,
-            .pattern = config.pattern,
-            .nodes = buildNodes(config.color),
+            .position = position,
+            .aim = turret_type.aim,
+            .fire_control = .{ .policy = turret_type.fire.policy, .cadence = turret_type.fire.cadence },
+            .weapon = turret_type.weapon,
+            .pattern = turret_type.pattern,
+            .nodes = buildNodes(turret_type.color),
         };
         self.updateWorldTransforms();
+        if (turret_type.program) |steps| {
+            self.runProgram(.{ .steps = steps });
+        }
         return self;
     }
 
     /// Aims, fires the shots that are due, and moves the shots in flight; shells that end
     /// go into `explosions`. `trigger`: the turret may fire at all.
     pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random, explosions: *Explosions) void {
+        self.advanceProgram(dt);
         self.aim.aimAt(self.patternAim(target, dt));
         self.aim.update(dt);
-        self.fire_control.update(dt, trigger, self.aim.aimError());
+        self.fire_control.update(dt, trigger and self.pattern != .wait, self.aim.aimError());
 
         self.recoil -= self.recoil * motion.dampAlpha(RECOIL_RECOVERY, dt);
         self.pose();
@@ -259,6 +322,14 @@ pub const Turret = struct {
         self.tracers.update(dt, hit_target, explosions);
         self.shells.update(dt, hit_target, explosions);
         self.fireDueShots(random);
+    }
+
+    /// Runs `program` from its first step (null stops it; the pattern stays as it is).
+    pub fn runProgram(self: *Self, program: ?Program) void {
+        self.program = program;
+        if (program != null) {
+            self.startStep();
+        }
     }
 
     /// Tracers and shells that reached the target.
@@ -310,6 +381,32 @@ pub const Turret = struct {
         self.shells.draw(frame, rocket_shader, &shapes.rocketParts(self.weapon.shell_color));
     }
 
+    /// Moves the program on to its next step when this one is done (the first again after
+    /// the last).
+    fn advanceProgram(self: *Self, dt: f32) void {
+        if (self.program) |*program| {
+            program.elapsed += dt;
+            if (program.isStepDone()) {
+                program.index = (program.index + 1) % program.steps.len;
+                self.startStep();
+            }
+        }
+    }
+
+    /// Takes the program's current step's pattern and fire settings.
+    fn startStep(self: *Self) void {
+        const program = if (self.program) |*program| program else return;
+        program.elapsed = 0.0;
+        program.shots = 0;
+        const step = program.steps[program.index];
+        self.pattern = step.pattern;
+        if (step.fire) |fire| {
+            self.fire_control.policy = fire.policy;
+            self.fire_control.cadence = fire.cadence;
+            self.fire_control.burst_shot = 0;
+        }
+    }
+
     /// The direction to aim this frame, from the pivot. Also records where the shots are
     /// meant to go (`aim_point`) and the pattern's extras for the debug lines.
     fn patternAim(self: *Self, target: TargetState, dt: f32) Vec3 {
@@ -338,6 +435,7 @@ pub const Turret = struct {
                 self.launch_velocity = launch_velocity;
                 return launch_velocity;
             },
+            .wait => return self.aim.direction(),
         }
         return self.aim_point.sub(self.pivot());
     }
@@ -383,6 +481,7 @@ pub const Turret = struct {
     fn fireDueShots(self: *Self, random: *Random) void {
         while (self.fire_control.nextShot()) |age| {
             switch (self.pattern) {
+                .wait => continue,
                 .track, .sweep => {
                     const shot = self.weapon.jitter.apply(random, self.aim.direction(), self.weapon.speed);
                     self.tracers.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
@@ -394,6 +493,9 @@ pub const Turret = struct {
                 },
             }
             self.recoil = self.weapon.recoil_distance;
+            if (self.program) |*program| {
+                program.shots += 1;
+            }
         }
     }
 };

@@ -4,17 +4,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[008-turret-controller-system.md](008-turret-controller-system.md)**: turrets as aim /
-  pattern / fire control; sweep and mortar patterns, jitter, finned rockets.
-  - Phase 1 done 2026-10-01: `wrapAngle`, `moveTowardAngle`, `dampAngle`, `YawPitchAim` in
-    `core.motion`; `Cannon` eases frame-rate independently.
-  - Phase 2 done 2026-10-01: `core.FireControl`, `ShotJitter`, `ballistics.leadPoint`;
-    `examples/turrets` with two turrets, the `track` pattern, and a panel.
-  - Phase 3 done 2026-10-01: `core.motion.Sweep`; the `sweep` pattern (around the target's
-    bearing or a fixed heading), a third turret.
-  - Phase 4 done 2026-10-01: `ballistics.launchVelocity`, `positionAt`, `step`; mortar
-    with finned rockets, fireballs, burn marks, and a curve-following lead. Next: phase 5,
-    `sequence` and turret types.
+None. Plan 008 finished 2026-10-01; pick the next from the parked plans or
+[backlog.md](backlog.md).
 
 ## ⏸️ Parked
 
@@ -33,6 +24,11 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## ✅ Completed
 
+- **[008-turret-controller-system.md](008-turret-controller-system.md)**: 2026-10-01.
+  `core.motion` (`YawPitchAim`, angle helpers, `Sweep`), `core.FireControl` and
+  `ShotJitter`, `core.ballistics` (`leadPoint`, `launchVelocity`, `positionAt`, `step`);
+  `examples/turrets`: track, sweep, mortar (finned rockets, explosions), programs, turret
+  types, a ball turret. Open: game integration.
 - **[016-motion-patterns.md](016-motion-patterns.md)**: 2026-09-30. `core.motion`
   (`dampAlpha`, `moveToward`, `SmoothFollow`, `dampLookAt`, `PathFollow`, `Shake`);
   `CameraGimbal` revived (tilted or level mount) with `examples/camera_rig`.
@@ -89,4 +85,5 @@ Plan 016 resumed: phase 3 (`PathFollow`) done.
 **2026-09-30**: Plan 016 finished: `Shake`, `CameraGimbal` revived, `examples/camera_rig`.
 
 **2026-10-01**: Plan 008 active; phases 1 (two-axis aim), 2 (turret test bed, fire
-control, `track`), 3 (`sweep`), and 4 (mortar) done.
+control, `track`), 3 (`sweep`), 4 (mortar), and 5 (programs, types, ball turret) done;
+plan finished.

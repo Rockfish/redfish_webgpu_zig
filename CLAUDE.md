@@ -30,11 +30,10 @@ the regression check. Since then:
   `moveToward`, `PathFollow`, `Shake`); `CameraGimbal` revived in `examples/camera_rig`
 - Plan 017 shadows: `examples/shadows`, `DepthBias`, `ShadowMap` filter, `ShadowMapArray`
 - Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
+- Plan 008 turrets: `core.motion` (`YawPitchAim`, `Sweep`), `core.FireControl`,
+  `core.ballistics`; `examples/turrets` (track, sweep, mortar, programs, turret types)
 
-Active plan: 008 turrets (phase 1: `YawPitchAim` and angle helpers in `core.motion`;
-phase 2: `core.FireControl`, `ballistics.leadPoint`, `examples/turrets`; phase 3:
-`motion.Sweep`; phase 4: mortar, `ballistics.launchVelocity` / `step`; next: sequences and
-turret types). See `docs/plans/active-plans.md`.
+No active plan; see `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

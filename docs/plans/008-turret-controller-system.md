@@ -4,7 +4,7 @@
 > the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
 > version is in git (`e5010da`).
 
-## Status: Active (phases 1-4 done 2026-10-01)
+## Status: Completed 2026-10-01 (phases 1-5)
 
 ## Overview
 
@@ -202,10 +202,11 @@ tower defense game (level_01, or a new one) uses the pieces once they're settled
 - [x] Explosion on landing: flash or sprite, burn mark, blast radius
 
 ### Phase 5: Programs and types
-- [ ] `sequence` pattern (steps with durations, repeat)
-- [ ] Turret types by configuration (slew style and speeds, limits, weapon, default
+- [x] `sequence` pattern (steps with durations, repeat). Done as a `Program` of steps
+      (see the phase 5 note)
+- [x] Turret types by configuration (slew style and speeds, limits, weapon, default
       pattern)
-- [ ] A single-body turret (sensor or ball turret) aimed with `dampLookAt`
+- [x] A single-body turret (sensor or ball turret) aimed with `dampLookAt`
 
 Each phase ends with a `CHANGELOG.md` entry and a commit, `zig build test` passing.
 
@@ -224,7 +225,7 @@ screenshots before hand-off.
 - ~~Sweep center: follow the target's bearing, a fixed sector, or both?~~ Both, and the
   same for pitch (phase 3).
 - Game integration: level_01, or a new tower defense game, after plan 005's transform
-  hierarchy?
+  hierarchy? (Open after the plan: the pieces are ready in `core` and `examples/turrets`.)
 
 ## Notes & Decisions
 
@@ -365,3 +366,28 @@ launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spi
   explosions; the camera and panel still work, to look around a frozen moment.
 - Tests: 98 pass (3 new).
 - Next: phase 5, `sequence`, turret types by configuration, a single-body turret.
+
+**2026-10-01**: Phase 5 done; plan finished.
+- Programs: a `Program` is a list of `Step`s (a pattern, optional fire settings, and
+  `until` a number of seconds or shots), run in order and repeated. It sits next to the
+  pattern rather than inside it: when a step starts, the turret takes the step's pattern
+  (fresh, so a sweep starts at its center) and fire settings. The new `wait` pattern holds
+  the aim and fires nothing. Steps that need a different weapon feel set it per step:
+  the "battery" sweeps for 3 s (while turning, 12 shots/s), fires two mortar rounds (when
+  aligned, 1.5 shots/s), and waits 1 s. A `shots` step whose shots never come (a target
+  out of reach) waits for them; add a time limit if a game needs one.
+- Turret types: `TurretType` (name, color, aim with slew and limits, fire settings,
+  weapon, pattern, optional program) in turret.zig; the five types in
+  `examples/turrets/turret_types.zig` as constants; `Turret.init(type, position)`. The
+  test bed places turrets by type, and the panel's settings start from the type
+  (`TurretSettings.fromType`) instead of their own defaults.
+- Ball turret (`ball_turret.zig`): a ball on a pedestal turning freely with
+  `motion.dampLookAt`, `when_aligned` 4°, lead; the first user of `dampLookAt` as planned.
+  It has the damped aim's trailing lag too; with lead and turn rate 6 it scored 95 hits in
+  30 s.
+- 30 s with all six: gatling 0 (no lead, by design), cannon 34, sweeper 43, mortar 18,
+  battery 37, ball 95.
+- The program and the types stay in the example: `zig build test` runs no tests there,
+  and nothing here needed one (the program is a step index and a timer). If a game takes
+  them over, a program stepper with tests can move to core.
+- Tests: 98 pass.
