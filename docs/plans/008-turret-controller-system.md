@@ -4,7 +4,7 @@
 > the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
 > version is in git (`e5010da`).
 
-## Status: Active (phase 1 done 2026-10-01)
+## Status: Active (phases 1-2 done 2026-10-01)
 
 ## Overview
 
@@ -177,13 +177,14 @@ tower defense game (level_01, or a new one) uses the pieces once they're settled
       `@min(1, rate * dt)`
 
 ### Phase 2: Turret test bed and fire control
-- [ ] `examples/turrets`: floor, a target on a `PathFollow` loop, two turrets built like
+- [x] `examples/turrets`: floor, a target on a `PathFollow` loop, two turrets built like
       `Cannon`, straight-fire projectiles, aim-ray lines, panel
-- [ ] Fire control: `while_turning` / `when_aligned(tolerance)`, rate and bursts with a
+- [x] Fire control: `while_turning` / `when_aligned(tolerance)`, rate and bursts with a
       carry-over shot timer, aim and speed jitter; tests (no shot before aligned under
       `when_aligned`; the same number of shots per second at 30 and 144 fps; jittered
-      shots stay within the cone and speed range)
-- [ ] `track` pattern, with and without lead
+      shots stay within the cone and speed range). Done as `core.FireControl` and
+      `core.fire_control.ShotJitter` (see the phase 2 note)
+- [x] `track` pattern, with and without lead (`core.ballistics.leadPoint`)
 
 ### Phase 3: Sweep
 - [ ] `sweep` pattern (center on the target's bearing or a fixed heading, half-width,
@@ -271,3 +272,35 @@ launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spi
   frame-rate dependent `@min(1, rate * dt)`).
 - Tests: 85 pass (6 new). The bullets example runs without errors.
 - Next: phase 2, `examples/turrets` with fire control and `track`.
+
+**2026-10-01**: Phase 2 done.
+- `core.FireControl` (`src/core/fire_control.zig`), in core for the same reason as
+  `YawPitchAim`: its tests run there, and any weapon can use it. `update(dt, trigger,
+  aim_error)` advances the shot timer; `while (nextShot()) |age|` hands out the shots due
+  this frame, each with its age (seconds since it should have gone out), so a stream is
+  evenly spaced at any frame rate (the shot is moved on by `velocity * age`). While fire
+  is held the timer stops at zero, so held shots don't pile up into a volley. Policy
+  `while_turning` or `when_aligned` (radians); cadence `rate` or `bursts` (count,
+  interval, pause; a burst cut short goes on where it left off).
+- `core.fire_control.ShotJitter`: direction turned by up to `aim` radians (filling the
+  cone's disk evenly), speed scaled by up to ±`speed`, from `core.Random`.
+- `core.ballistics.leadPoint(from, target, target_velocity, speed)`: the target's position
+  after a flight time estimated once from the distance. `core.ballistics` is where phase
+  4's `launchVelocity` goes.
+- `YawPitchAim.aimError()`: the angle between the aim and its target, for fire control.
+- `examples/turrets` (`zig build turrets-run`): `turret.zig` (parts in a parent-first node
+  array as `Cannon`; aim, pattern, fire control), `projectiles.zig` (a fixed pool of
+  tracers per turret, drawn instanced; hits tested against the frame's whole step, so fast
+  shots can't skip the target). Two turrets: "gatling" (rate-limited, fires while
+  turning, steady rate, wide jitter, no lead) and "cannon" (damped, when aligned, bursts,
+  tight jitter, lead). The panel changes all of it per turret; the target flashes on
+  hits.
+- Found: a damped aim trails a moving target by about (angular speed / rate) radians, so
+  a damped `when_aligned` turret with a tight tolerance rarely fires (rate 4, 2°: 2 hits
+  in 7 s). The cannon's defaults are rate 8 and 4°. A rate-limited aim catches up
+  exactly while the target turns slower than its speed. If a damped turret needs to sit
+  on a moving target, feed the target's angular velocity forward; not needed yet.
+- Without lead the gatling's stream passes behind the target (0 hits); with lead, about
+  110 of 120 shots hit in 12 s.
+- Tests: 92 pass (7 new).
+- Next: phase 3, the `sweep` pattern.

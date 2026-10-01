@@ -441,6 +441,12 @@ pub const YawPitchAim = struct {
         const target = yawPitchDirection(self.target_yaw, self.target_pitch);
         return self.direction().dot(target) >= @cos(tolerance);
     }
+
+    /// The angle in radians between where the aim points and its target direction.
+    pub fn aimError(self: *const Self) f32 {
+        const target = yawPitchDirection(self.target_yaw, self.target_pitch);
+        return std.math.acos(std.math.clamp(self.direction().dot(target), -1.0, 1.0));
+    }
 };
 
 fn yawPitchDirection(yaw: f32, pitch: f32) Vec3 {
@@ -805,9 +811,11 @@ test "YawPitchAim rate-limited: per-axis speeds, arrives on time, faces the dire
     try std.testing.expectApproxEqAbs(deg(45.0), aim.yaw, 1e-5);
     try std.testing.expectApproxEqAbs(deg(15.0), aim.pitch, 1e-5);
     try std.testing.expect(!aim.isAligned(deg(2.0)));
+    try std.testing.expect(aim.aimError() > deg(2.0));
 
     aim.update(0.6);
     try std.testing.expect(aim.isAligned(deg(0.01)));
+    try std.testing.expect(aim.aimError() < deg(0.1));
     const expected = Vec3.init(-1.0, @tan(deg(30.0)), 0.0).toNormalized();
     try expectVec3ApproxEq(expected, aim.direction(), 1e-5);
 }

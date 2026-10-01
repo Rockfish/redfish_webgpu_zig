@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Turret test bed and fire control, plan 008 phase 2
+- **core.FireControl**: when shots go out: `while_turning` or `when_aligned`, a steady rate or bursts; a shot timer that carries over its remainder (the same shots per second at any frame rate) and gives each shot its age, so streams stay evenly spaced; tests
+- **core.fire_control.ShotJitter**: per-shot aim cone and speed spread; **core.ballistics.leadPoint**: aim where a moving target will be; **YawPitchAim.aimError**
+- **examples/turrets**: two turrets (rate-limited and damped slew) track a target on a loop and fire tracers, with or without lead; panel for slew, policy, cadence, jitter, and lead; aim lines, hit counts
+
 ### 2026-10-01 - Two-axis aim, plan 008 phase 1
 - **core.motion**: `wrapAngle`, `moveTowardAngle`, `dampAngle` (the short way around, frame-rate independent), and `YawPitchAim` (yaw and pitch with their own speeds, rate-limited or damped, pitch limits, optional yaw sector, `aimAt`, `isAligned`); tests
 - **bullets**: `Cannon` eases its aim and recoil frame-rate independently (`dampAngle`, `dampAlpha`)

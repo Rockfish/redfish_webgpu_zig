@@ -88,6 +88,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "skybox", .exe_name = "skybox", .source = "examples/skybox/main.zig" },
         .{ .name = "shadows", .exe_name = "shadows", .source = "examples/shadows/main.zig" },
         .{ .name = "camera_rig", .exe_name = "camera_rig", .source = "examples/camera_rig/main.zig" },
+        .{ .name = "turrets", .exe_name = "turrets", .source = "examples/turrets/main.zig" },
         .{ .name = "level_01", .exe_name = "level_01", .source = "games/level_01/main.zig" },
         .{ .name = "angrybot", .exe_name = "angrybot", .source = "games/angrybot/main.zig" },
     }) |app| {

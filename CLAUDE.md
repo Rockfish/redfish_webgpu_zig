@@ -31,8 +31,9 @@ the regression check. Since then:
 - Plan 017 shadows: `examples/shadows`, `DepthBias`, `ShadowMap` filter, `ShadowMapArray`
 - Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
 
-Active plan: 008 turrets (phase 1 done: `YawPitchAim` and angle helpers in `core.motion`;
-next: `examples/turrets`). See `docs/plans/active-plans.md`.
+Active plan: 008 turrets (phase 1: `YawPitchAim` and angle helpers in `core.motion`;
+phase 2: `core.FireControl`, `ballistics.leadPoint`, `examples/turrets`; next: the sweep
+pattern). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -42,7 +43,7 @@ src/
 │   └── wgpu/     # webgpu.h translated by the build, string-view helpers, Metal layer
 ├── math/         # Vec/Mat/Quat, column-major
 └── containers/
-examples/         # gpu_caps, draw_test, scene_tree, demo_app, animation_example, bullets, skybox, shadows, camera_rig
+examples/         # gpu_caps, draw_test, scene_tree, demo_app, animation_example, bullets, skybox, shadows, camera_rig, turrets
 games/            # level_01, angrybot (regression reference)
 assets/           # symlink to ../redfish_gl_zig/assets
 assets_nas/       # symlink to /Volumes/Dev/Assets (glTF sample models), as in redfish

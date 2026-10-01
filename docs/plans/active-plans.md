@@ -7,8 +7,10 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[008-turret-controller-system.md](008-turret-controller-system.md)**: turrets as aim /
   pattern / fire control; sweep and mortar patterns, jitter, finned rockets.
   - Phase 1 done 2026-10-01: `wrapAngle`, `moveTowardAngle`, `dampAngle`, `YawPitchAim` in
-    `core.motion`; `Cannon` eases frame-rate independently. Next: phase 2,
-    `examples/turrets` with fire control and `track`.
+    `core.motion`; `Cannon` eases frame-rate independently.
+  - Phase 2 done 2026-10-01: `core.FireControl`, `ShotJitter`, `ballistics.leadPoint`;
+    `examples/turrets` with two turrets, the `track` pattern, and a panel. Next: phase 3,
+    the `sweep` pattern.
 
 ## ⏸️ Parked
 
@@ -82,4 +84,5 @@ Plan 016 resumed: phase 3 (`PathFollow`) done.
 
 **2026-09-30**: Plan 016 finished: `Shake`, `CameraGimbal` revived, `examples/camera_rig`.
 
-**2026-10-01**: Plan 008 active; phase 1 (two-axis aim) done.
+**2026-10-01**: Plan 008 active; phase 1 (two-axis aim) and phase 2 (turret test bed, fire
+control, `track`) done.
