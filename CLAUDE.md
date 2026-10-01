@@ -32,8 +32,8 @@ the regression check. Since then:
 - Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
 
 Active plan: 008 turrets (phase 1: `YawPitchAim` and angle helpers in `core.motion`;
-phase 2: `core.FireControl`, `ballistics.leadPoint`, `examples/turrets`; next: the sweep
-pattern). See `docs/plans/active-plans.md`.
+phase 2: `core.FireControl`, `ballistics.leadPoint`, `examples/turrets`; phase 3:
+`motion.Sweep`; next: the mortar). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

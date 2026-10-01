@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Sweep pattern, plan 008 phase 3
+- **core.motion.Sweep**: an angle swinging back and forth across an arc at a steady speed; tests. `yawPitchOf` and `yawPitchDirection` made public
+- **examples/turrets**: the `sweep` pattern (center on the target's bearing or a fixed heading, the target's pitch or a fixed one); a third turret, "sweeper"; pattern choice per turret in the panel; arc lines
+
 ### 2026-10-01 - Turret test bed and fire control, plan 008 phase 2
 - **core.FireControl**: when shots go out: `while_turning` or `when_aligned`, a steady rate or bursts; a shot timer that carries over its remainder (the same shots per second at any frame rate) and gives each shot its age, so streams stay evenly spaced; tests
 - **core.fire_control.ShotJitter**: per-shot aim cone and speed spread; **core.ballistics.leadPoint**: aim where a moving target will be; **YawPitchAim.aimError**

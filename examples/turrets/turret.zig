@@ -4,7 +4,8 @@
 //!
 //! - Aim: `motion.YawPitchAim` turns the body and head toward a point, each axis at its own
 //!   speed.
-//! - Pattern: what to aim at. `track` aims at the target, optionally leading it.
+//! - Pattern: what to aim at. `track` aims at the target, optionally leading it; `sweep`
+//!   swings across an arc around the target's bearing or a fixed heading.
 //! - Fire control: `core.FireControl` says when a shot goes out; the weapon's
 //!   `ShotJitter` spreads the shots.
 
@@ -73,13 +74,24 @@ pub const Weapon = struct {
     tracer_color: Vec4,
 };
 
-/// What the turret aims at over time. Sweep and mortar come in later phases.
+/// What the turret aims at over time. Mortar comes in a later phase.
 pub const Pattern = union(enum) {
     track: Track,
+    sweep: Sweep,
 
     pub const Track = struct {
         /// Aim where the target will be when the shot gets there.
         lead: bool,
+    };
+
+    /// Swing back and forth across an arc, firing a fan of shots.
+    pub const Sweep = struct {
+        /// The swing: half-width and speed, and where it is now.
+        swing: motion.Sweep,
+        /// The arc's center: a fixed yaw in radians, or the target's bearing when null.
+        center_yaw: ?f32 = null,
+        /// A fixed pitch in radians, or the target's pitch when null.
+        pitch: ?f32 = null,
     };
 };
 
@@ -130,6 +142,9 @@ pub const Turret = struct {
     recoil: f32 = 0.0,
     /// Where the pattern aimed this frame (for the debug lines).
     aim_point: Vec3 = Vec3.Zero,
+    /// A sweep's arc this frame, its two ends as points as far out as the target (for the
+    /// debug lines); null for other patterns.
+    sweep_ends: ?[2]Vec3 = null,
 
     const Self = @This();
 
@@ -159,7 +174,7 @@ pub const Turret = struct {
     /// Aims, fires the shots that are due, and moves the shots in flight. `trigger`: the
     /// turret may fire at all.
     pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random) void {
-        self.aim_point = self.patternPoint(target);
+        self.aim_point = self.patternPoint(target, dt);
         self.aim.aimAt(self.aim_point.sub(self.pivot()));
         self.aim.update(dt);
         self.fire_control.update(dt, trigger, self.aim.aimError());
@@ -203,7 +218,8 @@ pub const Turret = struct {
     }
 
     /// Where the pattern aims this frame.
-    fn patternPoint(self: *const Self, target: TargetState) Vec3 {
+    fn patternPoint(self: *Self, target: TargetState, dt: f32) Vec3 {
+        self.sweep_ends = null;
         switch (self.pattern) {
             .track => |track| {
                 if (!track.lead) {
@@ -211,7 +227,27 @@ pub const Turret = struct {
                 }
                 return core.ballistics.leadPoint(self.muzzle(), target.position, target.velocity, self.weapon.speed);
             },
+            .sweep => |*sweep| return self.sweepPoint(sweep, target, dt),
         }
+    }
+
+    /// The sweep's point this frame: the swing's offset from the arc's center, as far out
+    /// as the target. Also records the arc's ends.
+    fn sweepPoint(self: *Self, sweep: *Pattern.Sweep, target: TargetState, dt: f32) Vec3 {
+        const pivot_point = self.pivot();
+        const to_target = target.position.sub(pivot_point);
+        const bearing = motion.yawPitchOf(to_target);
+        const center = sweep.center_yaw orelse bearing.yaw;
+        const pitch = sweep.pitch orelse bearing.pitch;
+        const reach = to_target.length();
+
+        const offset = sweep.swing.update(dt);
+        const half_width = sweep.swing.half_width;
+        self.sweep_ends = .{
+            pivot_point.add(motion.yawPitchDirection(center - half_width, pitch).mulScalar(reach)),
+            pivot_point.add(motion.yawPitchDirection(center + half_width, pitch).mulScalar(reach)),
+        };
+        return pivot_point.add(motion.yawPitchDirection(center + offset, pitch).mulScalar(reach));
     }
 
     /// Yaw on the body, pitch on the head, recoil on the barrel; then world transforms.

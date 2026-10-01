@@ -9,8 +9,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
   - Phase 1 done 2026-10-01: `wrapAngle`, `moveTowardAngle`, `dampAngle`, `YawPitchAim` in
     `core.motion`; `Cannon` eases frame-rate independently.
   - Phase 2 done 2026-10-01: `core.FireControl`, `ShotJitter`, `ballistics.leadPoint`;
-    `examples/turrets` with two turrets, the `track` pattern, and a panel. Next: phase 3,
-    the `sweep` pattern.
+    `examples/turrets` with two turrets, the `track` pattern, and a panel.
+  - Phase 3 done 2026-10-01: `core.motion.Sweep`; the `sweep` pattern (around the target's
+    bearing or a fixed heading), a third turret. Next: phase 4, the mortar.
 
 ## ⏸️ Parked
 
@@ -85,4 +86,4 @@ Plan 016 resumed: phase 3 (`PathFollow`) done.
 **2026-09-30**: Plan 016 finished: `Shake`, `CameraGimbal` revived, `examples/camera_rig`.
 
 **2026-10-01**: Plan 008 active; phase 1 (two-axis aim) and phase 2 (turret test bed, fire
-control, `track`) done.
+control, `track`) and phase 3 (`sweep`) done.

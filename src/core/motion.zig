@@ -9,6 +9,7 @@
 //! | `PathFollow`  | distance      | position moving along waypoints at a speed    |
 //! | `Shake`       | trauma, time  | offset added to the frame's view, after it    |
 //! | `YawPitchAim` | yaw, pitch    | aim on two axes with speeds and limits        |
+//! | `Sweep`       | offset        | angle swinging back and forth across an arc   |
 //! | `moveTowardAngle` | none      | angle stepped toward a goal, the short way    |
 //! | `dampAngle`   | none          | angle moved part way toward a goal            |
 //! | `dampLookAt`  | none          | rotation turned part way toward a focus       |
@@ -394,8 +395,8 @@ pub const YawPitchAim = struct {
     /// Aim toward `toward`, a direction in the turret's own space (it needn't be
     /// normalized). Pitch is clamped to the limits, yaw to the sector if there is one.
     pub fn aimAt(self: *Self, toward: Vec3) void {
-        const horizontal = @sqrt(toward.x * toward.x + toward.z * toward.z);
-        self.setTarget(std.math.atan2(-toward.x, -toward.z), std.math.atan2(toward.y, horizontal));
+        const angles = yawPitchOf(toward);
+        self.setTarget(angles.yaw, angles.pitch);
     }
 
     /// Aim toward these angles, clamped to the limits.
@@ -449,7 +450,56 @@ pub const YawPitchAim = struct {
     }
 };
 
-fn yawPitchDirection(yaw: f32, pitch: f32) Vec3 {
+/// A yaw back and forth across an arc at a steady angular speed, as a sweeping gun, a
+/// searchlight, or a radar dish: `update` returns the offset from the arc's center, turning
+/// back at each end (the same ping-pong as `PathFollow`, on an angle). The caller adds the
+/// offset to whatever center it likes, fixed or following a target.
+pub const Sweep = struct {
+    /// Radians either side of the center.
+    half_width: f32,
+    /// Radians per second.
+    speed: f32,
+    /// Radians from the center, -`half_width` to `half_width`.
+    offset: f32 = 0.0,
+    /// 1 sweeping toward +`half_width`, -1 toward -`half_width`.
+    heading: f32 = 1.0,
+
+    const Self = @This();
+
+    /// Moves `speed * dt` along the arc and returns the new offset.
+    pub fn update(self: *Self, dt: f32) f32 {
+        if (self.half_width <= 0.0) {
+            self.offset = 0.0;
+            return 0.0;
+        }
+
+        self.offset += self.heading * self.speed * dt;
+        // Fold back into the arc, turning around at each end passed. Also brings the
+        // offset back inside when the arc has been narrowed.
+        while (@abs(self.offset) > self.half_width) {
+            if (self.offset > self.half_width) {
+                self.offset = 2.0 * self.half_width - self.offset;
+                self.heading = -1.0;
+            } else {
+                self.offset = -2.0 * self.half_width - self.offset;
+                self.heading = 1.0;
+            }
+        }
+        return self.offset;
+    }
+};
+
+pub const YawPitch = struct { yaw: f32, pitch: f32 };
+
+/// The yaw and pitch that look along `toward` (it needn't be normalized), with
+/// `YawPitchAim`'s conventions.
+pub fn yawPitchOf(toward: Vec3) YawPitch {
+    const horizontal = @sqrt(toward.x * toward.x + toward.z * toward.z);
+    return .{ .yaw = std.math.atan2(-toward.x, -toward.z), .pitch = std.math.atan2(toward.y, horizontal) };
+}
+
+/// The unit direction a yaw and pitch look along, with `YawPitchAim`'s conventions.
+pub fn yawPitchDirection(yaw: f32, pitch: f32) Vec3 {
     const horizontal = @cos(pitch);
     return Vec3.init(-@sin(yaw) * horizontal, @sin(pitch), -@cos(yaw) * horizontal);
 }
@@ -855,6 +905,49 @@ test "YawPitchAim with a sector: never turns through the part it can't" {
     // A target outside the sector is clamped to its edge
     aim.setTarget(deg(179.0), 0.0);
     try std.testing.expectApproxEqAbs(deg(170.0), aim.target_yaw, 1e-5);
+}
+
+test "yawPitchOf and yawPitchDirection: one undoes the other" {
+    const directions = [_]Vec3{ Vec3.init(0.0, 0.0, -1.0), Vec3.init(-1.0, 0.5, 0.0), Vec3.init(0.3, -0.2, 0.9) };
+    for (directions) |direction| {
+        const angles = yawPitchOf(direction);
+        try expectVec3ApproxEq(direction.toNormalized(), yawPitchDirection(angles.yaw, angles.pitch), 1e-5);
+    }
+}
+
+test "Sweep: stays within the arc and turns back at each end" {
+    var sweep: Sweep = .{ .half_width = deg(30.0), .speed = deg(60.0) };
+
+    // Half a second: up to +30° and still heading out; then back through 0 to -30°
+    try std.testing.expectApproxEqAbs(deg(30.0), sweep.update(0.5), 1e-5);
+    try std.testing.expectApproxEqAbs(deg(0.0), sweep.update(0.5), 1e-5);
+    try std.testing.expectEqual(@as(f32, -1.0), sweep.heading);
+    try std.testing.expectApproxEqAbs(deg(-30.0), sweep.update(0.5), 1e-5);
+    try std.testing.expectApproxEqAbs(deg(-15.0), sweep.update(0.25), 1e-5);
+    try std.testing.expectEqual(@as(f32, 1.0), sweep.heading);
+
+    // Long and uneven steps never leave the arc
+    for (0..500) |i| {
+        const offset = sweep.update(0.003 * @as(f32, @floatFromInt(i % 37)));
+        try std.testing.expect(@abs(offset) <= deg(30.0) + 1e-5);
+    }
+
+    // Narrowing the arc brings the offset inside at once
+    sweep.half_width = deg(5.0);
+    try std.testing.expect(@abs(sweep.update(0.0)) <= deg(5.0) + 1e-5);
+}
+
+test "Sweep: the same offset after 1.5 s at 10, 60, and 144 fps" {
+    var at: [3]f32 = undefined;
+    for ([_]u32{ 10, 60, 144 }, &at) |fps, *offset| {
+        var sweep: Sweep = .{ .half_width = deg(25.0), .speed = deg(70.0) };
+        const steps: u32 = @intFromFloat(@round(1.5 * @as(f32, @floatFromInt(fps))));
+        for (0..steps) |_| {
+            offset.* = sweep.update(1.0 / @as(f32, @floatFromInt(fps)));
+        }
+    }
+    try std.testing.expectApproxEqAbs(at[1], at[0], 1e-4);
+    try std.testing.expectApproxEqAbs(at[1], at[2], 1e-4);
 }
 
 fn dampSteps(start: Vec3, goal: Vec3, rate: f32, steps_per_second: u32) Vec3 {

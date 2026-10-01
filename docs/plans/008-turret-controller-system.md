@@ -4,7 +4,7 @@
 > the new requirements on 2026-09-30 (see "Review 2026-09-30"). The imported GL-era
 > version is in git (`e5010da`).
 
-## Status: Active (phases 1-2 done 2026-10-01)
+## Status: Active (phases 1-3 done 2026-10-01)
 
 ## Overview
 
@@ -187,8 +187,9 @@ tower defense game (level_01, or a new one) uses the pieces once they're settled
 - [x] `track` pattern, with and without lead (`core.ballistics.leadPoint`)
 
 ### Phase 3: Sweep
-- [ ] `sweep` pattern (center on the target's bearing or a fixed heading, half-width,
-      speed, pitch); tests (stays within the arc, reverses at the ends)
+- [x] `sweep` pattern (center on the target's bearing or a fixed heading, half-width,
+      speed, pitch); tests (stays within the arc, reverses at the ends). The swing is
+      `core.motion.Sweep` (see the phase 3 note)
 
 ### Phase 4: Mortar
 - [ ] `core.ballistics.launchVelocity(from, to, flight_time, gravity)`; tests (with
@@ -219,8 +220,8 @@ screenshots before hand-off.
 ## Open questions
 
 - Turret models: basic shapes as `Cannon` (enough for the test bed), or glTF models later?
-- Sweep center: follow the target's bearing (a sweep around the target), a fixed sector,
-  or both as options? (Leaning both.)
+- ~~Sweep center: follow the target's bearing, a fixed sector, or both?~~ Both, and the
+  same for pitch (phase 3).
 - Game integration: level_01, or a new tower defense game, after plan 005's transform
   hierarchy?
 
@@ -304,3 +305,24 @@ launch `right` vector. Added: a finned rocket mesh drawn instanced, optional spi
   110 of 120 shots hit in 12 s.
 - Tests: 92 pass (7 new).
 - Next: phase 3, the `sweep` pattern.
+
+**2026-10-01**: Phase 3 done.
+- `core.motion.Sweep`: an offset swinging across -`half_width`..`half_width` at a steady
+  `speed`, turning back at each end (`PathFollow`'s ping-pong fold, on an angle). In core
+  for its tests, and general (searchlights, radar dishes). Narrowing the arc brings the
+  offset back inside at once; a zero width holds it at 0. Tests: stays within the arc,
+  turns back at the ends, the same offset at 10, 60, and 144 fps.
+- `core.motion.yawPitchOf(toward)` and `yawPitchDirection(yaw, pitch)` are public now
+  (`YawPitchAim.aimAt` uses the first), so a pattern can work in angles.
+- The turret's `Pattern.sweep`: a `motion.Sweep`, plus the center (a fixed yaw, or the
+  target's bearing when null) and the pitch (fixed, or the target's when null). The swept
+  point is as far out as the target and goes through `aimAt` like a tracked one, so the
+  slew style, limits, and fire control all apply unchanged. The panel keeps the swing's
+  position while its width and speed change.
+- `examples/turrets`: a third turret, "sweeper" (rate-limited at 180°/s, fires while
+  turning, 15 shots/s, a 20° half-width at 40°/s around the target's bearing); any turret
+  can switch pattern in the panel. Cyan lines show the arc's ends.
+- The sweep is a triangle wave (constant speed, sharp turns); the aim's slew rounds the
+  turns. If a softer swing looks better, a sine is an option to add next to it.
+- Tests: 95 pass (3 new).
+- Next: phase 4, the mortar.

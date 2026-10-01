@@ -1,14 +1,17 @@
-//! Turret test bed (plan 008): two turrets track a target flying a loop over the floor and
-//! fire tracers at it. The panel sets each turret's slew style and speeds, fire policy,
-//! cadence, jitter, and lead, to compare how they look:
+//! Turret test bed (plan 008): three turrets aim at a target flying a loop over the floor
+//! and fire tracers at it. The panel sets each turret's pattern, slew style and speeds,
+//! fire policy, cadence, and jitter, to compare how they look:
 //!
 //! - "gatling": rate-limited slew (a motor-driven mount), fires while turning, a steady
 //!   stream with wide jitter, no lead.
 //! - "cannon": damped slew (snaps and settles), fires only once aligned, in bursts, tight
 //!   jitter, with lead.
+//! - "sweeper": sweeps a 20° arc either side of the target's bearing, firing a fan of
+//!   shots while turning.
 //!
 //! Lines: the target's route (gold); each turret's aim from the muzzle, green on target,
-//! yellow turning; with lead, the target to the lead point (magenta). The target flashes
+//! yellow turning; with lead, the target to the lead point (magenta); a sweep's arc as its
+//! two ends (cyan). The target flashes
 //! white on each hit.
 //!
 //! Keys: arrows circle the camera, W / S move it in and out, Escape quits.
@@ -60,8 +63,9 @@ const target_waypoints = [_]Vec3{
 const TARGET_RADIUS: f32 = 0.6;
 /// Line segments drawn along the target's route.
 const PATH_LINE_SEGMENTS = 200;
-/// Aim lines per turret: the aim ray and the lead line.
-const AIM_LINES_PER_TURRET = 2;
+const TURRET_COUNT = 3;
+/// Aim lines per turret: the aim ray, and the lead line or the sweep's two ends.
+const AIM_LINES_PER_TURRET = 3;
 /// How fast the hit flash fades, per second.
 const FLASH_DECAY: f32 = 6.0;
 
@@ -69,13 +73,27 @@ const FLASH_DECAY: f32 = 6.0;
 const SlewStyle = enum(i32) { rate_limited, damped };
 const FirePolicy = enum(i32) { while_turning, when_aligned };
 const CadenceKind = enum(i32) { rate, bursts };
+const PatternKind = enum(i32) { track, sweep };
+/// A sweep's center or pitch: follow the target, or a fixed angle.
+const SweepAngle = enum(i32) { target, fixed };
 
 /// One turret's panel settings, in panel units (degrees, percent), applied to the turret
 /// each frame.
 const TurretSettings = struct {
     name: [:0]const u8,
     fire: bool = true,
-    lead: bool,
+    pattern: PatternKind = .track,
+    /// For `track`.
+    lead: bool = false,
+    /// For `sweep`: degrees either side of the center, and degrees per second.
+    sweep_half_width: f32 = 20.0,
+    sweep_speed: f32 = 40.0,
+    sweep_center: SweepAngle = .target,
+    /// Degrees, for a fixed center.
+    sweep_heading: f32 = 0.0,
+    sweep_pitch: SweepAngle = .target,
+    /// Degrees, for a fixed pitch.
+    sweep_pitch_angle: f32 = 10.0,
     slew: SlewStyle,
     /// Degrees per second, for `rate_limited`.
     yaw_speed: f32 = 90.0,
@@ -120,7 +138,26 @@ const TurretSettings = struct {
         };
         turret.weapon.speed = self.speed;
         turret.weapon.jitter = .{ .aim = radians(self.aim_jitter), .speed = self.speed_jitter / 100.0 };
-        turret.pattern = .{ .track = .{ .lead = self.lead } };
+        turret.pattern = switch (self.pattern) {
+            .track => .{ .track = .{ .lead = self.lead } },
+            .sweep => .{ .sweep = .{
+                .swing = self.swing(turret.pattern),
+                .center_yaw = if (self.sweep_center == .fixed) radians(self.sweep_heading) else null,
+                .pitch = if (self.sweep_pitch == .fixed) radians(self.sweep_pitch_angle) else null,
+            } },
+        };
+    }
+
+    /// The swing with this frame's width and speed, going on from where it is if the turret
+    /// is already sweeping.
+    fn swing(self: TurretSettings, current: turret_module.Pattern) motion.Sweep {
+        var result: motion.Sweep = switch (current) {
+            .sweep => |sweep| sweep.swing,
+            .track => .{ .half_width = 0.0, .speed = 0.0 },
+        };
+        result.half_width = std.math.degreesToRadians(self.sweep_half_width);
+        result.speed = std.math.degreesToRadians(self.sweep_speed);
+        return result;
     }
 };
 
@@ -130,10 +167,9 @@ const Settings = struct {
     target_speed: f32 = 5.0,
     show_path: bool = true,
     show_aim: bool = true,
-    turrets: [2]TurretSettings = .{
+    turrets: [TURRET_COUNT]TurretSettings = .{
         .{
             .name = "gatling",
-            .lead = false,
             .slew = .rate_limited,
             .policy = .while_turning,
             .cadence = .rate,
@@ -155,6 +191,19 @@ const Settings = struct {
             .speed = 40.0,
             .aim_jitter = 0.5,
             .speed_jitter = 3.0,
+        },
+        .{
+            .name = "sweeper",
+            .pattern = .sweep,
+            .slew = .rate_limited,
+            .yaw_speed = 180.0,
+            .pitch_speed = 90.0,
+            .policy = .while_turning,
+            .cadence = .rate,
+            .rate = 15.0,
+            .speed = 35.0,
+            .aim_jitter = 1.0,
+            .speed_jitter = 5.0,
         },
     },
 };
@@ -196,7 +245,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     });
     defer lines_shader.releaseGpuObjects();
     var path_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, PATH_LINE_SEGMENTS);
-    var aim_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, 2 * AIM_LINES_PER_TURRET);
+    var aim_lines = try Lines.init(context.alloc, lines_shader, 1.0, 1.0, TURRET_COUNT * AIM_LINES_PER_TURRET);
 
     var scene_shapes: SceneShapes = try .init(context, gpu);
     defer scene_shapes.releaseGpuObjects();
@@ -212,9 +261,10 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     });
 
     var settings: Settings = .{};
-    var turrets = [2]Turret{
+    var turrets = [TURRET_COUNT]Turret{
         createTurret(vec3(-5.0, 0.0, 2.0), vec4(0.55, 0.42, 0.18, 1.0), vec4(1.0, 0.75, 0.3, 1.0), settings.turrets[0]),
         createTurret(vec3(5.0, 0.0, 2.0), vec4(0.2, 0.42, 0.5, 1.0), vec4(0.4, 0.9, 1.0, 1.0), settings.turrets[1]),
+        createTurret(vec3(0.0, 0.0, -6.0), vec4(0.25, 0.45, 0.25, 1.0), vec4(0.6, 1.0, 0.5, 1.0), settings.turrets[2]),
     };
     var random = Random.init();
 
@@ -361,9 +411,9 @@ fn drawPath(frame: *const Frame, lines: *Lines, path: motion.PathFollow) void {
 }
 
 /// Each turret's aim ray from the muzzle, as long as the distance to its aim point; with
-/// lead, a line from the target to the point aimed at.
+/// lead, a line from the target to the point aimed at; for a sweep, lines to its arc's ends.
 fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, target: TargetState) void {
-    var segments: [2 * AIM_LINES_PER_TURRET]LineSegment = undefined;
+    var segments: [TURRET_COUNT * AIM_LINES_PER_TURRET]LineSegment = undefined;
     var count: usize = 0;
     for (turrets) |*turret| {
         const muzzle = turret.muzzle();
@@ -377,10 +427,17 @@ fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, tar
 
         const is_leading = switch (turret.pattern) {
             .track => |track| track.lead,
+            .sweep => false,
         };
         if (is_leading) {
             segments[count] = .{ .start = target.position, .end = turret.aim_point, .color = .magenta };
             count += 1;
+        }
+        if (turret.sweep_ends) |ends| {
+            for (ends) |end| {
+                segments[count] = .{ .start = turret.pivot(), .end = end, .color = .cyan };
+                count += 1;
+            }
         }
     }
     lines.draw(frame, segments[0..count]);
@@ -388,7 +445,7 @@ fn drawAimLines(frame: *const Frame, lines: *Lines, turrets: []const Turret, tar
 
 fn drawPanel(settings: *Settings, turrets: []const Turret) void {
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
-    zgui.setNextWindowSize(.{ .w = 340, .h = 0, .cond = .first_use_ever });
+    zgui.setNextWindowSize(.{ .w = 340, .h = 740, .cond = .first_use_ever });
     if (zgui.begin("turrets", .{})) {
         zgui.text("frame time: {d:.2} ms", .{1000.0 / zgui.io.getFramerate()});
         zgui.text("arrows: circle camera   W / S: in / out", .{});
@@ -412,7 +469,25 @@ fn drawPanel(settings: *Settings, turrets: []const Turret) void {
 fn drawTurretSettings(turret_settings: *TurretSettings, turret: *const Turret) void {
     zgui.text("hits: {d}   in flight: {d}", .{ turret.projectiles.hits, turret.projectiles.count });
     _ = zgui.checkbox("fire", .{ .v = &turret_settings.fire });
-    _ = zgui.checkbox("lead", .{ .v = &turret_settings.lead });
+
+    _ = zgui.comboFromEnum("pattern", &turret_settings.pattern);
+    switch (turret_settings.pattern) {
+        .track => {
+            _ = zgui.checkbox("lead", .{ .v = &turret_settings.lead });
+        },
+        .sweep => {
+            _ = zgui.sliderFloat("half width (deg)", .{ .v = &turret_settings.sweep_half_width, .min = 0.0, .max = 90.0 });
+            _ = zgui.sliderFloat("sweep speed (deg/s)", .{ .v = &turret_settings.sweep_speed, .min = 5.0, .max = 180.0 });
+            _ = zgui.comboFromEnum("center", &turret_settings.sweep_center);
+            if (turret_settings.sweep_center == .fixed) {
+                _ = zgui.sliderFloat("heading (deg)", .{ .v = &turret_settings.sweep_heading, .min = -180.0, .max = 180.0 });
+            }
+            _ = zgui.comboFromEnum("sweep pitch", &turret_settings.sweep_pitch);
+            if (turret_settings.sweep_pitch == .fixed) {
+                _ = zgui.sliderFloat("pitch (deg)", .{ .v = &turret_settings.sweep_pitch_angle, .min = -10.0, .max = 70.0 });
+            }
+        },
+    }
 
     _ = zgui.comboFromEnum("slew", &turret_settings.slew);
     switch (turret_settings.slew) {
