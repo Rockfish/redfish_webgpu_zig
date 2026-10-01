@@ -17,13 +17,14 @@ None. Plan 008 finished 2026-10-01; pick the next from the parked plans or
   dispatch helper; a full scene system waits for a second game.
 - **[004-animation-state-machine.md](004-animation-state-machine.md)**: partly superseded by
   006 and 012; review the remaining tasks before resuming.
-- **[009-gravity-bullet-system.md](009-gravity-bullet-system.md)**: phase 1 in bullets;
-  phase 2 planned.
 - **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: design
   discussion.
 
 ## ✅ Completed
 
+- **[009-gravity-bullet-system.md](009-gravity-bullet-system.md)**: 2026-10-01. Phase 2
+  through `core.ballistics` (`step`, `positionAt`); bullets example: G gravity, P
+  predicted paths.
 - **[008-turret-controller-system.md](008-turret-controller-system.md)**: 2026-10-01.
   `core.motion` (`YawPitchAim`, angle helpers, `Sweep`), `core.FireControl` and
   `ShotJitter`, `core.ballistics` (`leadPoint`, `launchVelocity`, `positionAt`, `step`);
@@ -86,4 +87,4 @@ Plan 016 resumed: phase 3 (`PathFollow`) done.
 
 **2026-10-01**: Plan 008 active; phases 1 (two-axis aim), 2 (turret test bed, fire
 control, `track`), 3 (`sweep`), 4 (mortar), and 5 (programs, types, ball turret) done;
-plan finished.
+plan finished. Plan 009 finished with `core.ballistics` in the bullets example.

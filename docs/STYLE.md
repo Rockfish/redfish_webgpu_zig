@@ -197,6 +197,14 @@ Correctness rules. They exist because WebGPU works differently from GL.
   once in Zig. The shader loader generates a small WGSL header from them
   (`const MAX_JOINTS: u32 = 100u;`) and prepends it, along with `common.wgsl`, to every
   shader. WGSL files never hard-code these values.
+- **Coordinates are right-handed, +Y up, -Z forward** (decided 2026-10-01). Cameras,
+  `lookAt`, aim (`YawPitchAim`, `dampLookAt`), and projectiles look down their local -Z,
+  with +X right; `Vec3.World_Forward` and `Quat.forward()` are -Z. glTF agrees: its cameras
+  look down -Z, and its models face +Z, toward a camera looking at them, so turning a glTF
+  model to face a direction means pointing its +Z there. +Z forward was considered and
+  rejected: in a right-handed system it makes right -X, and a left-handed one would need
+  mirrored glTF import, projections, and winding. WebGPU itself has no forward axis; the
+  `*Rh*` matrices in `math` set it.
 - **Depth is 0..1** (WebGPU clip space). Use the `*Zo` projection functions in `math`.
 - **Texture origin is top-left.** No default V-flip for GL's sake.
 - **Color space:** color textures (base color, emissive) are `*-srgb` formats; data

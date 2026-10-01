@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Gravity bullets, plan 009 phase 2 (plan finished)
+- **bullets**: `BulletSystem.update` steps with `core.ballistics.step` (exact under gravity, the same arc at any frame rate); `drawLines` draws each bullet's predicted path (`ballistics.positionAt`) instead of straight rays; debug scene: G toggles gravity, P the predicted paths
+- **Plans**: 009 completed; its stale `fromDirectionWithRight` sample (+Z forward) replaced with the -Z forward basis the code uses
+
 ### 2026-10-01 - Programs, turret types, ball turret, plan 008 phase 5 (plan finished)
 - **examples/turrets**: programs (steps of a pattern, optional fire settings, until seconds or shots; repeat) and the `wait` pattern; turret types as configuration (`turret_types.zig`, `Turret.init(type, position)`), the panel starting from the type; "battery" (sweep, two mortar rounds, pause); a ball turret aimed with `motion.dampLookAt`
 - **Plans**: 008 turrets completed

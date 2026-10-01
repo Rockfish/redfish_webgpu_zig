@@ -18,7 +18,7 @@ const SkyBoxDirections = @import("../objects/skyboxes.zig").SkyBoxDirections;
 const Spacesuit = @import("../objects/spacesuit.zig").Spacesuit;
 const ToonSoldier = @import("../objects/toon_soldier.zig").ToonSoldier;
 
-const BulletSystem = @import("../projectiles/bullet_system.zig").BulletSystem;
+const bullet_system = @import("../projectiles/bullet_system.zig");
 const Turret = @import("../projectiles/turret.zig").Turret;
 
 const Vec3 = math.Vec3;
@@ -233,6 +233,12 @@ pub const SceneDebug = struct {
                 .f => {
                     self.floor.plane.shape.is_visible = !self.floor.plane.shape.is_visible;
                 },
+                .g => {
+                    const gravity: f32 = if (self.turret.bullets.gravity == 0.0) bullet_system.GRAVITY else 0.0;
+                    self.turret.bullets.gravity = gravity;
+                    self.cannon.bullets.gravity = gravity;
+                    std.debug.print("Bullet gravity: {d}\n", .{gravity});
+                },
                 .l => {
                     // Explicit re-level after orbit/circle basis drift (see Movement.levelTowardTarget)
                     const cam = self.getSceneCamera().getCamera();
@@ -246,6 +252,12 @@ pub const SceneDebug = struct {
                 },
                 .m => {
                     self.motion_object = .spacesuit;
+                },
+                .p => {
+                    const is_visible = !self.turret.bullets.is_lines_visible;
+                    self.turret.bullets.is_lines_visible = is_visible;
+                    self.cannon.bullets.is_lines_visible = is_visible;
+                    std.debug.print("Predicted bullet paths: {}\n", .{is_visible});
                 },
                 .r => try self.turret.fire(),
                 .t => {

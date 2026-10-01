@@ -33,6 +33,12 @@ pub const Bullet_Speed: f32 = 2.0;
 
 pub const Bullets_Per_Side: i32 = 3;
 pub const Spread_Degrees: f32 = 10.0;
+/// Gravity when it's switched on (G in the debug scene): gentle, so the arcs are long at
+/// `Bullet_Speed`.
+pub const GRAVITY: f32 = 1.0;
+/// Seconds of flight the predicted paths show, and the segments per path.
+const PREDICTION_TIME: f32 = 3.0;
+const PREDICTION_SEGMENTS = 16;
 
 pub const BulletShaderData = struct {
     rotation: Quat,
@@ -117,7 +123,7 @@ pub const BulletSystem = struct {
             .topology = .line_list,
         });
 
-        const lines = try Lines.init(allocator, lines_shader, 10.0, 1.0, 144);
+        const lines = try Lines.init(allocator, lines_shader, 10.0, 1.0, Bullets_Per_Side * Bullets_Per_Side * PREDICTION_SEGMENTS);
 
         return .{
             .allocator = allocator,
@@ -206,18 +212,15 @@ pub const BulletSystem = struct {
         }
     }
 
+    /// Moves each bullet along its arc (`ballistics.step`, exact under constant gravity, so
+    /// bullets follow the predicted paths at any frame rate) and turns its nose along its
+    /// velocity, keeping the right vector it was fired with.
     pub fn update(self: *Self, delta_time: f32) void {
         const gravity_vec = vec3(0.0, -self.gravity, 0.0);
-        const gravity_delta = gravity_vec.mulScalar(delta_time);
 
         for (0..self.bullet_positions.items().len) |i| {
-            var velocity = self.bullet_velocities.items()[i];
-            const position = self.bullet_positions.items()[i];
-
-            velocity = velocity.add(gravity_delta);
-
-            self.bullet_velocities.items()[i] = velocity;
-            self.bullet_positions.items()[i] = position.add(velocity.mulScalar(delta_time));
+            const velocity = &self.bullet_velocities.items()[i];
+            core.ballistics.step(&self.bullet_positions.items()[i], velocity, gravity_vec, delta_time);
 
             const forward = velocity.toNormalized();
 
@@ -228,22 +231,26 @@ pub const BulletSystem = struct {
         }
     }
 
+    /// Each bullet's path from the last launch, `PREDICTION_TIME` seconds ahead
+    /// (`ballistics.positionAt`): the arc the bullets fly, since `update` steps exactly.
     pub fn drawLines(self: *Self, frame: *const Frame) void {
-        var transformed: [Bullets_Per_Side * Bullets_Per_Side]LineSegment = undefined;
-        const start: usize = 0;
-        const end: usize = self.bullet_rotations_initial.items().len;
+        const gravity_vec = vec3(0.0, -self.gravity, 0.0);
+        var segments: [Bullets_Per_Side * Bullets_Per_Side * PREDICTION_SEGMENTS]LineSegment = undefined;
+        var count: usize = 0;
 
-        for (start..end) |i| {
-            const rotation = self.bullet_rotations_initial.items()[i];
-            const line_dir = rotation.rotateVec(Vec3.World_Forward);
-            transformed[i] = .{
-                .start = self.aim_origin,
-                .end = self.aim_origin.add(line_dir.mulScalar(10.0)),
-                .color = Color.yellow,
-            };
+        for (self.bullet_rotations_initial.items()) |rotation| {
+            const launch_velocity = rotation.rotateVec(Vec3.World_Forward).mulScalar(Bullet_Speed);
+            var previous = self.aim_origin;
+            for (1..PREDICTION_SEGMENTS + 1) |step| {
+                const time = PREDICTION_TIME * @as(f32, @floatFromInt(step)) / PREDICTION_SEGMENTS;
+                const point = core.ballistics.positionAt(self.aim_origin, launch_velocity, gravity_vec, time);
+                segments[count] = .{ .start = previous, .end = point, .color = Color.yellow };
+                count += 1;
+                previous = point;
+            }
         }
 
-        self.lines.draw(frame, transformed[start..end]);
+        self.lines.draw(frame, segments[0..count]);
     }
 
     /// One instanced draw; rotations and positions go to the frame's vertex ring as

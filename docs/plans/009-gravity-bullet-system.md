@@ -1,9 +1,9 @@
 # Plan 009: Gravity Bullet System
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Phase 1 (gravity) carried over in `examples/bullets/projectiles/bullet_system.zig`; phase 2 planned.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Phase 1 (gravity) carried over in `examples/bullets/projectiles/bullet_system.zig`; phase 2 done 2026-10-01 through `core.ballistics` (plan 008), see "Phase 2 as done".
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Phase 1 Complete, Phase 2 Planned
+**Status**: Completed 2026-10-01
 **Created**: 2026-01-11
 **Updated**: 2026-02-11
 
@@ -115,48 +115,11 @@ pub fn update(self: *Self, delta_time: f32) void {
 
 ### New Function in `src/math/quat.zig`
 
-Add a new method that builds orientation from forward direction and a preserved right vector:
-
-```zig
-/// Creates a quaternion that orients an object so its local +Z axis points
-/// along the given direction, using a specified right vector to constrain the roll.
-/// Produces a right-handed coordinate system.
-///
-/// This is useful for projectiles following parabolic trajectories where the
-/// trajectory plane (and thus the right vector) remains constant.
-///
-/// The basis is computed as:
-/// - up = forward × right
-///
-/// Parameters:
-/// - forward_dir: The direction the object should face (e.g., velocity direction)
-/// - right_dir: The right vector to preserve (should be perpendicular to trajectory plane)
-pub fn fromDirectionWithRight(forward_dir: Vec3, right_dir: Vec3) Quat {
-    const forward_vec = blk: {
-        const normalized = forward_dir.toNormalized();
-        if (normalized.lengthSquared() == 0.0) {
-            return Quat.Identity;
-        }
-        break :blk normalized;
-    };
-
-    const right_vec = right_dir.toNormalized();
-
-    // Compute up to ensure orthogonality
-    const up_vec = forward_vec.cross(right_vec).toNormalized();
-
-    // Build rotation matrix: columns are [right, up, forward]
-    // This maps local +X to right, local +Y to up, local +Z to forward
-    const rotation_matrix = Mat4{ .data = .{
-        .{ right_vec.x, right_vec.y, right_vec.z, 0.0 },
-        .{ up_vec.x, up_vec.y, up_vec.z, 0.0 },
-        .{ forward_vec.x, forward_vec.y, forward_vec.z, 0.0 },
-        .{ 0.0, 0.0, 0.0, 1.0 },
-    } };
-
-    return rotation_matrix.toQuat();
-}
-```
+`Quat.fromDirectionWithRight(forward_dir, right_dir)` builds the rotation from the
+basis `[right, up, back]` with `back = -forward` and `up = back × right`, so the object's
+local -Z points along `forward_dir` (the engine's -Z forward). The redfish-era sample that
+stood here built `[right, up, forward]` (+Z forward) and no longer matched the code; see
+`src/math/quat.zig`.
 
 ## Files to Modify
 
@@ -347,3 +310,26 @@ This is a quadratic in `tan(theta)` with a closed-form solution. Two solutions e
 **Superseded 2026-10-01:** precision isn't a goal for the turrets (shots are jittered,
 shells explode with a blast radius), so the mortar uses the existing per-frame gravity and
 phase 2 is not a dependency.
+
+## Phase 2 as done (2026-10-01)
+
+Plan 008 needed the same things for its mortar and put them in `core.ballistics`, with
+tests; phase 2 is done by using them in the bullets example, not by storing spawn times:
+
+- **Exact, frame-rate independent arcs**: `ballistics.step(&position, &velocity, gravity,
+  dt)` moves by `v·dt + ½·g·dt²`, then `v += g·dt`. Exact under constant gravity, like the
+  closed form, but it keeps a per-frame velocity, so drag or homing can be added later
+  (the closed form couldn't take them). `BulletSystem.update` uses it.
+- **Trajectory prediction**: `ballistics.positionAt(from, velocity, gravity, t)` is the
+  plan's `sampleTrajectory`. `BulletSystem.drawLines` draws each bullet's path from the
+  last launch, 3 s ahead, instead of straight 10-unit rays; since `update` steps exactly,
+  the bullets fly along those lines.
+- **Aiming**: instead of the launch-angle quadratic (a square root, an out-of-range case,
+  very different hang times), `ballistics.launchVelocity(from, to, flight_time, gravity)`
+  fixes the flight time and computes the velocity in one line; the turrets example's
+  mortar uses it.
+- **In the app**: gravity was never switched on in this repo (`gravity` defaults to 0 and
+  nothing set it). In the bullets debug scene, G toggles gravity (`GRAVITY`, 1.0, gentle
+  for the slow bullets) for the turret's and the cannon's bullets, and P toggles the
+  predicted paths.
+
