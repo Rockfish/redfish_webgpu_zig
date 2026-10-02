@@ -43,6 +43,9 @@ pub fn run_app(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, m
     while (!window.shouldClose()) {
         glfw.pollEvents();
         input.update();
+        if (input.isDown(.escape)) {
+            window.setShouldClose(true);
+        }
 
         count += 1;
         frame_counter.update();
@@ -59,12 +62,10 @@ pub fn run_app(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, m
         }
 
         // Scene switching
-        if (input.key_presses.contains(.page_down) and !input.key_processed.contains(.page_down)) {
-            input.key_processed.insert(.page_down);
+        if (input.pressedOnce(.page_down)) {
             try world.nextScene();
         }
-        if (input.key_presses.contains(.page_up) and !input.key_processed.contains(.page_up)) {
-            input.key_processed.insert(.page_up);
+        if (input.pressedOnce(.page_up)) {
             try world.prevScene();
         }
 

@@ -1,9 +1,9 @@
 # Plan 010: Input Handling Architecture
 
-> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Discussion. Paths below refer to redfish; bullets was reorganized in the port.
+> Imported from redfish_gl_zig on 2026-09-28. **In this repo:** made active 2026-10-01 after the review at the end; phases there. Paths below refer to redfish; bullets was reorganized in the port.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Discussion / Design Exploration
+**Status**: Active (phase 1 done 2026-10-01)
 **Created**: 2026-02-11
 
 ## Context
@@ -332,3 +332,130 @@ This approach works well for the initial scenario (player + 1-2 turrets + camera
 - **Large numbers of input-receiving objects**: The interface approach (4) with priority ordering starts to make sense.
 
 For now, keep it simple. Three focused functions beat one generic system.
+
+## Review 2026-10-01: plan vs. bullets and `core.Input`
+
+### What bullets does now
+
+Three layers, each a pass over `input.key_presses`, with `input.key_processed` marking a
+one-shot key as used until it's released:
+
+1. **App** (`run_app.zig`): Page Up / Page Down switch scenes.
+2. **Mode** (`SceneDebug.processInput`): a switch on `motion_object` (camera, cannon,
+   turret, spacesuit, soldier) calls that object's own `processInput`. The object owns its
+   keys (arrows aim the cannon, W/A/S/D walk the soldier, ...).
+3. **Global** (the same function, after the mode): one-shot keys that work in every mode:
+   C / N / T / M / Z pick the mode, B skybox, F floor, L level the camera, R fire the
+   turret, -/= projection, Space pause the animation.
+
+That is the plan's recommendation (approach 1, a mode switch, with objects owning their
+input as in approach 2) in all but name. The "immediate cleanup" is moot: the
+`motion_type` × key switch from redfish is gone, left behind only as commented-out code.
+
+### Problems found
+
+- **Dead code** in `debug_scene.zig`: the commented-out `motion_type` block (~35 lines),
+  the commented bodies of keys 3-7 and 0, the `MotionType` enum and `motion_type` field
+  (only printed), and the `base`, `gimbal`, `enemy` members of `MotionObject`.
+  `FreeCamera.processInput` ends with a one-shot check that does nothing.
+- **Mode and global keys collide, resolved only by call order.** A mode handler that
+  doesn't mark its key processed lets the global pass act on it too:
+  - Soldier mode: Space makes the soldier jump *and* pauses the turret's animation.
+  - Turret mode: one R press fires twice in the first frame (`Turret.processInput` fires
+    without marking R, then the global `.r` fires again). Harmless only because
+    `createBullets` replaces the group.
+  - Cannon mode works because `Cannon.processInput` marks R first.
+- **The one-shot pattern is repeated by hand**: `contains(k) and !key_processed.contains(k)`
+  then `insert(k)`, in run_app, the scene, cannon, turret, soldier, and demo_app's copy.
+  Forgetting the `insert` is how the double-fire happens.
+- **`core.Input` itself**:
+  - The mouse handler sets both button flags from each event, so any button event
+    overwrites the other button (pressing or releasing right clears a held left).
+  - `scroll_xoffset` / `scroll_yoffset` are never cleared (consumers watch `update_tick`).
+  - `key_shift` / `key_alt` only change on key events.
+  - Policy in core: the key callback closes the window on Escape, and `init` resets the
+    GLFW clock (`glfw.setTime(0)`).
+  - A single global (`pub var input`), and its GLFW callbacks replace ImGui's, so an app
+    with a panel can't use it.
+
+### Input across the repo
+
+Three styles, none shared:
+
+| Style | Apps |
+|---|---|
+| `core.Input` (callbacks, `key_presses` / `key_processed`) | bullets, animation_example, scene_tree, skybox |
+| Their own copy of the same pattern in `state.zig` | demo_app, level_01, angrybot (from redfish) |
+| Polling `window.getKey` with `zgui.io.getWantCaptureKeyboard()`, edge-detecting by hand (`space_was_down`) | camera_rig, shadows, turrets |
+
+### Recommendation
+
+The plan's direction holds; what's missing is small and mostly cleanup, not architecture:
+
+1. **`core.Input` helpers**: `isDown(key)` and `pressedOnce(key)` (true on the first frame
+   of a press, and marks it processed), so one-shot handling is one call and can't be half
+   done. Then fix the mouse buttons (one set of held buttons), clear scroll each frame,
+   take Shift / Alt from the key set, and move Escape-to-close to the apps.
+2. **bullets debug scene**: delete the dead code; rename `motion_object` to an
+   `InputMode`-style name; split `processInput` into `processModeInput` and
+   `processGlobalKeys` as the plan sketches; have every handler use `pressedOnce`, which
+   fixes the double fire and the Space collision (or move pause off Space).
+3. **ImGui**: let `core.Input` either chain to ImGui's callbacks or poll
+   (`window.getKey`) and skip keys ImGui wants, so the panel apps can use it too. Moving
+   demo_app / level_01 / angrybot onto `core.Input` can wait; their copies work and match
+   redfish.
+
+Approaches 3 (binding tables) and 4 (receivers) stay unneeded: bullets has five modes and
+fixed keys. The game scenario's capturable turret now has a natural shape from plan 008:
+AI is the turret's pattern in `update`; capturing it would swap in a manual pattern whose
+target yaw and pitch come from input, with the mode switch deciding who gets the keys.
+
+## Phases (2026-10-01)
+
+### Phase 1: `core.Input` helpers and the bullets debug scene (done 2026-10-01)
+- [x] `Input.isDown(key)`, `Input.pressedOnce(key)` (true on a press's first ask, marks the
+      key processed until release)
+- [x] Mouse buttons: each event changes only its own button
+- [x] Scroll: callbacks add up into `pending_scroll`; `update` hands out the frame's
+      scroll and clears it
+- [x] `key_shift` / `key_alt` from the held keys (either side), not the event's mods
+- [x] Escape no longer closes the window in core: bullets, skybox, and scene_tree check
+      `isDown(.escape)` in their loops (animation_example has its own key callback that
+      already did)
+- [x] bullets debug scene: dead code deleted (`MotionType`, `motion_type`, the
+      commented-out blocks, `printMotionViewState`); `MotionObject` → `InputMode` with only
+      the five modes used; `processInput` = `processModeInput` then `processGlobalKeys`,
+      the global keys as `pressedOnce` calls grouped by purpose
+- [x] Objects' one-shot keys through `pressedOnce`: turret and cannon R, soldier and
+      spacesuit actions; held keys through `isDown`. `FreeCamera`'s no-op one-shot check
+      deleted; run_app's Page Up / Down use `pressedOnce`
+- [x] Tests: `pressedOnce` and `isDown` across press, hold, release; Shift / Alt from
+      either side; one mouse button released leaves the other held
+
+### Phase 2: ImGui
+- [ ] `core.Input` alongside ImGui: chain to ImGui's GLFW callbacks, or poll
+      (`window.getKey`) and skip keys ImGui wants, so panel apps (camera_rig, shadows,
+      turrets) can use it instead of their hand-made edge detection
+
+### Later
+- demo_app / level_01 / angrybot onto `core.Input` (their `state.zig` copies work and match
+  redfish)
+- The game scenario: a player, and a turret the player can capture (a manual turret
+  pattern fed by input; see the review)
+
+## Notes & Decisions
+
+**2026-10-01**: Phase 1 done.
+- Fixed by `pressedOnce`: in turret mode one R fired twice in a frame; in soldier mode
+  Space jumped and also paused the turret. A mode's handler now claims its keys before the
+  global pass, so Space is jump / roll in the soldier and spacesuit modes and pause in the
+  others.
+- One-shot actions of the soldier and spacesuit used to re-request their state every
+  frame the key was held (until the global pass marked it); now once per press.
+- Kept: `Input.init` still resets the GLFW clock to 0; scene_tree and animation_example
+  take their first frame's delta from it.
+- Tests: 101 pass (3 new). bullets, skybox, scene_tree, and animation_example start
+  without errors. (animation_example logs "Invalid animation id 4, max is 0": its
+  starting `animation_index` is 4 for a model with one baked animation; not an input
+  issue, left as is.)
+- Next: phase 2.

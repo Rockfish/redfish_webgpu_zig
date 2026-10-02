@@ -1,4 +1,5 @@
 const std = @import("std");
+const glfw = @import("zglfw");
 const core = @import("core");
 const math = @import("math");
 
@@ -44,28 +45,14 @@ const GpuContext = core.GpuContext;
 
 const basic_lights = scene_lights.basic_lights;
 
-pub const MotionType = enum {
-    /// Direct movement along camera's local axes (Left, Right, Up, Down)
-    translate,
-    /// Rotation around target point (OrbitLeft, OrbitRight, OrbitUp, OrbitDown)
-    orbit,
-    /// Movement around target maintaining height (CircleLeft, CircleRight)
-    circle,
-    /// In-place rotation (RotateLeft, RotateRight, RotateUp, RotateDown)
-    rotate,
-    /// Move look view
-    look,
-};
-
-pub const MotionObject = enum {
-    base,
-    gimbal,
-    turret,
+/// Which object gets the mode keys (arrows, W/A/S/D, digits, ...): one at a time, picked
+/// with C, N, T, M, Z.
+pub const InputMode = enum {
+    camera,
     cannon,
+    turret,
     spacesuit,
     soldier,
-    enemy,
-    camera,
 };
 
 pub const SceneDebug = struct {
@@ -81,8 +68,7 @@ pub const SceneDebug = struct {
     toon_soldier: *ToonSoldier = undefined,
     barrel: *Shape = undefined,
     input_tick: u64 = 0,
-    motion_type: MotionType = .circle,
-    motion_object: MotionObject = .spacesuit,
+    input_mode: InputMode = .spacesuit,
     reset: bool = false,
     run_animation: bool = true,
 
@@ -162,161 +148,91 @@ pub const SceneDebug = struct {
         self.floor.draw(frame);
     }
 
+    /// The mode's object handles its keys first; the global keys then see only the keys
+    /// it didn't claim (`pressedOnce` marks a key as used). So Space is a jump or a roll in
+    /// the soldier and spacesuit modes, and pauses the turret in the others.
     fn processInput(self: *Self, input: *core.Input) !void {
-        // const dt = input.delta_time;
+        try self.processModeInput(input);
+        try self.processGlobalKeys(input);
+    }
 
-        switch (self.motion_object) {
-            .turret => try self.turret.processInput(input),
-            .cannon => try self.cannon.processInput(input),
+    fn processModeInput(self: *Self, input: *core.Input) !void {
+        switch (self.input_mode) {
             .camera => try self.scene_camera.processInput(input),
+            .cannon => try self.cannon.processInput(input),
+            .turret => try self.turret.processInput(input),
             .spacesuit => try self.spacesuit.processInput(input),
             .soldier => try self.toon_soldier.processInput(input),
-            else => {},
-        }
-
-        var iterator = input.key_presses.iterator();
-        while (iterator.next()) |k| {
-            // if (self.motion_object != .turret) {
-            // const movement_object = if (self.motion_object == .base) &self.getCamera().base_movement else &self.getCamera().gimbal_movement;
-            //
-            // switch (self.motion_type) {
-            //     .translate => switch (k) {
-            //         .w => movement_object.processMovement(.forward, dt),
-            //         .s => movement_object.processMovement(.backward, dt),
-            //         .a, .left => movement_object.processMovement(.left, dt),
-            //         .d, .right => movement_object.processMovement(.right, dt),
-            //         .up => movement_object.processMovement(.up, dt),
-            //         .down => movement_object.processMovement(.down, dt),
-            //         else => {},
-            //     },
-            //     .orbit => switch (k) {
-            //         .w, .up => movement_object.processMovement(.orbit_up, dt),
-            //         .s, .down => movement_object.processMovement(.orbit_down, dt),
-            //         .a, .left => movement_object.processMovement(.orbit_left, dt),
-            //         .d, .right => movement_object.processMovement(.orbit_right, dt),
-            //         else => {},
-            //     },
-            //     .circle => switch (k) {
-            //         .w, .up => movement_object.processMovement(.circle_up, dt),
-            //         .s, .down => movement_object.processMovement(.circle_down, dt),
-            //         .a, .left => movement_object.processMovement(.circle_left, dt),
-            //         .d, .right => movement_object.processMovement(.circle_right, dt),
-            //         else => {},
-            //     },
-            //     .rotate, .look => switch (k) {
-            //         .w, .up => movement_object.processMovement(.rotate_up, dt),
-            //         .s, .down => movement_object.processMovement(.rotate_down, dt),
-            //         .a, .left => movement_object.processMovement(.rotate_left, dt),
-            //         .d, .right => movement_object.processMovement(.rotate_right, dt),
-            //         else => {},
-            //     },
-            // }
-            // }
-
-            // One-shot keys: fire once per press
-            if (input.key_processed.contains(k)) {
-                continue;
-            }
-            input.key_processed.insert(k);
-
-            switch (k) {
-                .b => {
-                    self.skybox.is_visible = !self.skybox.is_visible;
-                },
-                .c => {
-                    self.motion_object = .camera;
-                },
-                .n => {
-                    self.motion_object = .cannon;
-                    std.debug.print("Motion object: cannon (arrows aim, r fires)\n", .{});
-                },
-                .f => {
-                    self.floor.plane.shape.is_visible = !self.floor.plane.shape.is_visible;
-                },
-                .g => {
-                    const gravity: f32 = if (self.turret.bullets.gravity == 0.0) bullet_system.GRAVITY else 0.0;
-                    self.turret.bullets.gravity = gravity;
-                    self.cannon.bullets.gravity = gravity;
-                    std.debug.print("Bullet gravity: {d}\n", .{gravity});
-                },
-                .l => {
-                    // Explicit re-level after orbit/circle basis drift (see Movement.levelTowardTarget)
-                    const cam = self.getSceneCamera().getCamera();
-                    if (input.key_shift) {
-                        cam.movement.levelTowardTarget(null);
-                        std.debug.print("Level: right ∥ XZ, preserve bank\n", .{});
-                    } else {
-                        cam.movement.levelUpright();
-                        std.debug.print("Level: upright (world up)\n", .{});
-                    }
-                },
-                .m => {
-                    self.motion_object = .spacesuit;
-                },
-                .p => {
-                    const is_visible = !self.turret.bullets.is_lines_visible;
-                    self.turret.bullets.is_lines_visible = is_visible;
-                    self.cannon.bullets.is_lines_visible = is_visible;
-                    std.debug.print("Predicted bullet paths: {}\n", .{is_visible});
-                },
-                .r => try self.turret.fire(),
-                .t => {
-                    self.motion_object = .turret;
-                },
-                .z => {
-                    self.motion_object = .soldier;
-                },
-                .minus => {
-                    self.getSceneCamera().getCamera().setPerspective();
-                    std.debug.print("Projection: Perspective\n", .{});
-                },
-                .equal => {
-                    self.getSceneCamera().getCamera().setOrthographic();
-                    std.debug.print("Projection: Orthographic\n", .{});
-                },
-                .three => {
-                    // self.motion_type = .orbit;
-                    // self.printMotionViewState();
-                },
-                .four => {
-                    // self.motion_type = .rotate;
-                    // self.printMotionViewState();
-                },
-                .five => {
-                    // self.motion_type = .look;
-                    // self.printMotionViewState();
-                },
-                .six => {
-                    // self.motion_object = if (self.motion_object == .base) .gimbal else .base;
-                    // self.printMotionViewState();
-                },
-                .seven => {
-                    // const camera = self.getCamera();
-                    // camera.view_mode = if (camera.view_mode == .base) .gimbal else .base;
-                    // camera.view_cache_valid = false;
-                    // self.printMotionViewState();
-                },
-                .eight => {},
-                .nine => {},
-                .zero => {
-                    // self.motion_object = .turret;
-                },
-                .F12 => {
-                    std.debug.print("Screenshot requested (F12)\n", .{});
-                },
-                .space => {
-                    self.run_animation = !self.run_animation;
-                },
-                else => {},
-            }
         }
     }
 
-    pub fn printMotionViewState(self: *Self) void {
-        std.debug.print("-----\n", .{});
-        // std.debug.print("Look mode: {any}\n", .{self.getCamera().view_mode});
-        std.debug.print("Motion type: {any}\n", .{self.motion_type});
-        std.debug.print("Motion object: {any}\n", .{self.motion_object});
-        std.debug.print("-----\n", .{});
+    /// One-shot keys that work in every mode.
+    fn processGlobalKeys(self: *Self, input: *core.Input) !void {
+        // Mode switches
+        const mode_keys = [_]struct { key: glfw.Key, mode: InputMode }{
+            .{ .key = .c, .mode = .camera },
+            .{ .key = .n, .mode = .cannon },
+            .{ .key = .t, .mode = .turret },
+            .{ .key = .m, .mode = .spacesuit },
+            .{ .key = .z, .mode = .soldier },
+        };
+        for (mode_keys) |binding| {
+            if (input.pressedOnce(binding.key)) {
+                self.input_mode = binding.mode;
+                std.debug.print("Input mode: {s}\n", .{@tagName(binding.mode)});
+            }
+        }
+
+        // Scene toggles
+        if (input.pressedOnce(.b)) {
+            self.skybox.is_visible = !self.skybox.is_visible;
+        }
+        if (input.pressedOnce(.f)) {
+            self.floor.plane.shape.is_visible = !self.floor.plane.shape.is_visible;
+        }
+        if (input.pressedOnce(.space)) {
+            self.run_animation = !self.run_animation;
+        }
+
+        // Bullets
+        if (input.pressedOnce(.r)) {
+            try self.turret.fire();
+        }
+        if (input.pressedOnce(.g)) {
+            const gravity: f32 = if (self.turret.bullets.gravity == 0.0) bullet_system.GRAVITY else 0.0;
+            self.turret.bullets.gravity = gravity;
+            self.cannon.bullets.gravity = gravity;
+            std.debug.print("Bullet gravity: {d}\n", .{gravity});
+        }
+        if (input.pressedOnce(.p)) {
+            const is_visible = !self.turret.bullets.is_lines_visible;
+            self.turret.bullets.is_lines_visible = is_visible;
+            self.cannon.bullets.is_lines_visible = is_visible;
+            std.debug.print("Predicted bullet paths: {}\n", .{is_visible});
+        }
+
+        // Camera
+        const camera = self.getSceneCamera().getCamera();
+        if (input.pressedOnce(.l)) {
+            // Explicit re-level after orbit/circle basis drift (see Movement.levelTowardTarget)
+            if (input.key_shift) {
+                camera.movement.levelTowardTarget(null);
+                std.debug.print("Level: right ∥ XZ, preserve bank\n", .{});
+            } else {
+                camera.movement.levelUpright();
+                std.debug.print("Level: upright (world up)\n", .{});
+            }
+        }
+        if (input.pressedOnce(.minus)) {
+            camera.setPerspective();
+            std.debug.print("Projection: Perspective\n", .{});
+        }
+        if (input.pressedOnce(.equal)) {
+            camera.setOrthographic();
+            std.debug.print("Projection: Orthographic\n", .{});
+        }
+        if (input.pressedOnce(.F12)) {
+            std.debug.print("Screenshot requested (F12)\n", .{});
+        }
     }
 };

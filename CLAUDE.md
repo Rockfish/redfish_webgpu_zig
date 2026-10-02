@@ -34,7 +34,8 @@ the regression check. Since then:
   `core.ballistics`; `examples/turrets` (track, sweep, mortar, programs, turret types)
 - Plan 009 gravity bullets: `examples/bullets` steps with `core.ballistics` (G gravity, P paths)
 
-No active plan; see `docs/plans/active-plans.md`.
+Active plan: 010 input (phase 1: `Input.isDown` / `pressedOnce`, bullets mode and
+global keys; next: `core.Input` alongside ImGui). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

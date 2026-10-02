@@ -535,7 +535,8 @@ fn keyHandler(
     mods: glfw.Mods,
 ) callconv(.c) void {
     _ = scancode;
-    state.input.handleKey(key, action, mods);
+    _ = mods;
+    state.input.handleKey(key, action);
     if (key == .escape) {
         window.setShouldClose(true);
     }

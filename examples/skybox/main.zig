@@ -142,6 +142,9 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     // -----------
     while (!window.shouldClose()) {
         glfw.pollEvents();
+        if (state.input.isDown(.escape)) {
+            window.setShouldClose(true);
+        }
 
         const currentFrame: f32 = @floatCast(glfw.getTime());
         state.delta_time = currentFrame - state.last_frame;

@@ -151,19 +151,19 @@ pub const Spacesuit = struct {
     pub fn processInput(self: *Self, input: *core.Input) !void {
         const dt = input.delta_time;
 
-        // One-shot actions (highest priority, checked with key_processed for single-fire)
+        // One-shot actions first, so they claim their keys before the scene's global keys
         self.processOneShotKeys(input);
 
         // Rotation (A/D)
-        if (input.key_presses.contains(.a)) {
+        if (input.isDown(.a)) {
             self.transform.rotateAxis(vec3(0.0, 1.0, 0.0), self.rotation_speed * dt);
         }
-        if (input.key_presses.contains(.d)) {
+        if (input.isDown(.d)) {
             self.transform.rotateAxis(vec3(0.0, 1.0, 0.0), -self.rotation_speed * dt);
         }
 
         // Locomotion
-        if (input.key_presses.contains(.w)) {
+        if (input.isDown(.w)) {
             const is_running = input.key_shift;
             const speed = if (is_running) self.run_speed else self.walk_speed;
             const fwd = self.transform.forward();
@@ -174,7 +174,7 @@ pub const Spacesuit = struct {
             } else {
                 _ = self.state_machine.requestState(.walk);
             }
-        } else if (input.key_presses.contains(.s)) {
+        } else if (input.isDown(.s)) {
             const fwd = self.transform.forward();
             self.transform.translation = self.transform.translation.add(fwd.mulScalar(self.walk_speed * dt));
             _ = self.state_machine.requestState(.run_back);
@@ -195,7 +195,7 @@ pub const Spacesuit = struct {
         };
 
         inline for (one_shot_keys) |entry| {
-            if (input.key_presses.contains(entry.key) and !input.key_processed.contains(entry.key)) {
+            if (input.pressedOnce(entry.key)) {
                 _ = self.state_machine.requestState(entry.anim);
             }
         }

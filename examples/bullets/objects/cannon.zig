@@ -215,18 +215,10 @@ pub const Cannon = struct {
                 .down => self.target_pitch = @max(self.min_pitch, self.target_pitch - step),
                 else => {},
             }
+        }
 
-            if (input.key_processed.contains(k)) {
-                continue;
-            }
-
-            switch (k) {
-                .r => {
-                    input.key_processed.insert(k);
-                    try self.fire();
-                },
-                else => {},
-            }
+        if (input.pressedOnce(.r)) {
+            try self.fire();
         }
     }
 

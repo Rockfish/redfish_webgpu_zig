@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-01 - Input helpers, plan 010 phase 1
+- **core.Input**: `isDown(key)` and `pressedOnce(key)`; mouse buttons tracked separately (releasing one no longer clears the other); scroll per frame; Shift / Alt from the held keys; Escape handling moved to the apps; tests
+- **bullets**: debug scene input split into the mode's keys, then global one-shot keys (`InputMode`); dead motion-type code deleted; one-shot keys through `pressedOnce`, which fixes R firing twice in turret mode and Space both jumping and pausing in soldier mode
+- **skybox, scene_tree**: Escape checked in the loop
+
 ### 2026-10-01 - Gravity bullets, plan 009 phase 2 (plan finished)
 - **bullets**: `BulletSystem.update` steps with `core.ballistics.step` (exact under gravity, the same arc at any frame rate); `drawLines` draws each bullet's predicted path (`ballistics.positionAt`) instead of straight rays; debug scene: G toggles gravity, P the predicted paths
 - **Plans**: 009 completed; its stale `fromDirectionWithRight` sample (+Z forward) replaced with the -Z forward basis the code uses

@@ -76,10 +76,6 @@ pub const FreeCamera = struct {
                 .d => self.camera.processMovement(.right, dt),
                 else => {},
             }
-            // One-shot keys: fire once per press
-            if (input.key_processed.contains(k)) {
-                continue;
-            }
         }
     }
 };

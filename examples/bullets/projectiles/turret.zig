@@ -109,17 +109,10 @@ pub const Turret = struct {
                 },
                 else => {},
             }
+        }
 
-            if (input.key_processed.contains(k)) {
-                continue;
-            }
-
-            switch (k) {
-                .r => {
-                    try self.fire();
-                },
-                else => {},
-            }
+        if (input.pressedOnce(.r)) {
+            try self.fire();
         }
     }
 };
