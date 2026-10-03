@@ -18,10 +18,13 @@ const Lights = scene_lights.Lights;
 const SkyBoxDirections = @import("../objects/skyboxes.zig").SkyBoxDirections;
 const Spacesuit = @import("../objects/spacesuit.zig").Spacesuit;
 const ToonSoldier = @import("../objects/toon_soldier.zig").ToonSoldier;
+const character_control = @import("../objects/character_control.zig");
 
 const bullet_system = @import("../projectiles/bullet_system.zig");
 const Turret = @import("../projectiles/turret.zig").Turret;
 
+const Vec2 = math.Vec2;
+const vec2 = math.vec2;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 const Vec4 = math.Vec4;
@@ -40,6 +43,7 @@ const Lines = core.shapes.Lines;
 const Plane = core.shapes.Plane;
 
 const Transform = core.Transform;
+const motion = core.motion;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
 
@@ -53,6 +57,13 @@ pub const InputMode = enum {
     turret,
     spacesuit,
     soldier,
+};
+
+/// In the soldier and spacesuit modes: a third-person camera following the character, or
+/// the free camera left where it is (V switches).
+pub const CameraView = enum {
+    follow,
+    free,
 };
 
 pub const SceneDebug = struct {
@@ -69,6 +80,8 @@ pub const SceneDebug = struct {
     barrel: *Shape = undefined,
     input_tick: u64 = 0,
     input_mode: InputMode = .spacesuit,
+    camera_view: CameraView = .follow,
+    follow: motion.FollowCamera = undefined,
     reset: bool = false,
     run_animation: bool = true,
 
@@ -102,6 +115,7 @@ pub const SceneDebug = struct {
 
         scene.floor.plane.shape.is_visible = true;
         scene.skybox.is_visible = false;
+        scene.follow = .init(scene.spacesuit.transform.translation, character_control.facingYaw(scene.spacesuit.transform));
 
         return try Scene.init(context.alloc, "Debug", scene, input);
     }
@@ -122,6 +136,7 @@ pub const SceneDebug = struct {
         try self.toon_soldier.update(input);
 
         try self.processInput(input);
+        self.updateFollowCamera(input);
 
         if (self.run_animation == true) {
             try self.turret.update(input);
@@ -161,9 +176,43 @@ pub const SceneDebug = struct {
             .camera => try self.scene_camera.processInput(input),
             .cannon => try self.cannon.processInput(input),
             .turret => try self.turret.processInput(input),
-            .spacesuit => try self.spacesuit.processInput(input),
-            .soldier => try self.toon_soldier.processInput(input),
+            .spacesuit => try self.controlCharacter(self.spacesuit, input),
+            .soldier => try self.controlCharacter(self.toon_soldier, input),
         }
+    }
+
+    /// The character takes the gamepad's move stick, relative to the follow camera, while
+    /// it's pushed; otherwise the keyboard.
+    fn controlCharacter(self: *Self, character: anytype, input: *core.Input) !void {
+        const move = motion.cameraRelativeMove(input.gamepad.left_stick, self.follow.yaw);
+        if (move.lengthSquared() > 0.0) {
+            character.drive(move, input);
+        } else {
+            try character.processInput(input);
+        }
+    }
+
+    /// The controlled character's transform, in the modes that have a character.
+    fn characterTransform(self: *const Self) ?Transform {
+        return switch (self.input_mode) {
+            .spacesuit => self.spacesuit.transform,
+            .soldier => self.toon_soldier.transform,
+            .camera, .cannon, .turret => null,
+        };
+    }
+
+    /// The follow camera trails the character; the right stick or the arrow keys turn it,
+    /// the left trigger or Q swing it behind the character.
+    fn updateFollowCamera(self: *Self, input: *core.Input) void {
+        if (self.camera_view != .follow) {
+            return;
+        }
+        const transform = self.characterTransform() orelse return;
+
+        const is_recentering = input.isDown(.q) or input.gamepad.left_trigger > 0.5;
+        const recenter_yaw: ?f32 = if (is_recentering) character_control.facingYaw(transform) else null;
+        self.follow.update(transform.translation, cameraTurn(input), recenter_yaw, input.delta_time);
+        self.getSceneCamera().getCamera().movement.reset(self.follow.position, self.follow.focus);
     }
 
     /// One-shot keys that work in every mode.
@@ -179,8 +228,17 @@ pub const SceneDebug = struct {
         for (mode_keys) |binding| {
             if (input.pressedOnce(binding.key)) {
                 self.input_mode = binding.mode;
+                // A new character: start behind it
+                if (self.characterTransform()) |transform| {
+                    self.follow.reset(transform.translation, character_control.facingYaw(transform));
+                }
                 std.debug.print("Input mode: {s}\n", .{@tagName(binding.mode)});
             }
+        }
+
+        if (input.pressedOnce(.v)) {
+            self.camera_view = if (self.camera_view == .follow) .free else .follow;
+            std.debug.print("Camera view: {s}\n", .{@tagName(self.camera_view)});
         }
 
         // Scene toggles
@@ -236,3 +294,18 @@ pub const SceneDebug = struct {
         }
     }
 };
+
+/// The follow camera's turn this frame: the gamepad's right stick plus the arrow keys, each
+/// axis -1 to 1.
+fn cameraTurn(input: *const core.Input) Vec2 {
+    const stick = input.gamepad.right_stick;
+    const keys_x = axisFromKeys(input, .left, .right);
+    const keys_y = axisFromKeys(input, .down, .up);
+    return vec2(std.math.clamp(stick.x + keys_x, -1.0, 1.0), std.math.clamp(stick.y + keys_y, -1.0, 1.0));
+}
+
+fn axisFromKeys(input: *const core.Input, negative: glfw.Key, positive: glfw.Key) f32 {
+    const low: f32 = if (input.isDown(negative)) 1.0 else 0.0;
+    const high: f32 = if (input.isDown(positive)) 1.0 else 0.0;
+    return high - low;
+}

@@ -21,6 +21,7 @@ const Frame = core.Frame;
 const MeshPrimitive = core.MeshPrimitive;
 const Input = core.Input;
 const AnimationRepeatMode = core.AnimationRepeatMode;
+const character_control = @import("character_control.zig");
 
 const SpacesuitStateMachine = core.AnimationStateMachine(SpacesuitStateEnum);
 
@@ -183,6 +184,18 @@ pub const Spacesuit = struct {
         }
     }
 
+    /// Analog control: walks or runs along `move` (a direction on the ground from the
+    /// move stick, length 0 to 1), facing where it goes; actions as `processInput`.
+    pub fn drive(self: *Self, move: Vec3, input: *core.Input) void {
+        self.processOneShotKeys(input);
+        const gait = character_control.drive(&self.transform, move, @abs(self.walk_speed), @abs(self.run_speed), input.delta_time);
+        _ = self.state_machine.requestState(switch (gait) {
+            .idle => .idle,
+            .walk => .walk,
+            .run => .run,
+        });
+    }
+
     fn processOneShotKeys(self: *Self, input: *core.Input) void {
         const one_shot_keys = .{
             .{ .key = .space, .anim = SpacesuitStateEnum.roll },
@@ -196,6 +209,19 @@ pub const Spacesuit = struct {
 
         inline for (one_shot_keys) |entry| {
             if (input.pressedOnce(entry.key)) {
+                _ = self.state_machine.requestState(entry.anim);
+            }
+        }
+
+        // The same actions on the gamepad's face buttons
+        const one_shot_buttons = .{
+            .{ .button = .a, .anim = SpacesuitStateEnum.roll },
+            .{ .button = .x, .anim = SpacesuitStateEnum.punch_left },
+            .{ .button = .b, .anim = SpacesuitStateEnum.kick_right },
+            .{ .button = .y, .anim = SpacesuitStateEnum.sword_slash },
+        };
+        inline for (one_shot_buttons) |entry| {
+            if (input.buttonPressedOnce(entry.button)) {
                 _ = self.state_machine.requestState(entry.anim);
             }
         }

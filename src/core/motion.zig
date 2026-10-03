@@ -6,6 +6,8 @@
 //! | Pattern       | State         | Result                                        |
 //! |---------------|---------------|-----------------------------------------------|
 //! | `SmoothFollow`| position, aim | damped camera position and look-at point      |
+//! | `FollowCamera`| yaw, pitch, focus | third-person camera on a leash, stick-turned |
+//! | `cameraRelativeMove` | none   | stick direction turned to the camera's yaw    |
 //! | `PathFollow`  | distance      | position moving along waypoints at a speed    |
 //! | `Shake`       | trauma, time  | offset added to the frame's view, after it    |
 //! | `YawPitchAim` | yaw, pitch    | aim on two axes with speeds and limits        |
@@ -29,6 +31,7 @@ const RenderContext = @import("render_context.zig").RenderContext;
 const Vec3 = math.Vec3;
 const Mat4 = math.Mat4;
 const Quat = math.Quat;
+const Vec2 = math.Vec2;
 
 /// A follower (usually a camera) that trails a moving followee: it sits at
 /// `followee + offset` and looks at the followee, both damped, so it eases after the
@@ -66,6 +69,87 @@ pub const SmoothFollow = struct {
         movement.reset(self.position, self.aim);
     }
 };
+
+/// A third-person camera that follows a character, in the style of Zelda: The Wind Waker
+/// and Halo: it orbits a look-at point above the character at a fixed distance, turned by
+/// the camera stick, and is dragged along like on a leash when the character moves. Each
+/// frame it keeps its place and turns to face the character's new position, then steps to
+/// the right distance: walking sideways swings it around, walking toward it pushes it
+/// back, walking away pulls it along behind, with no special cases. `recenter` swings it
+/// behind the character.
+///
+/// Angles in radians with `YawPitchAim`'s conventions for the view direction: yaw 0 looks
+/// down -Z, positive yaw turns left, negative pitch looks down.
+pub const FollowCamera = struct {
+    yaw: f32 = 0.0,
+    pitch: f32 = -0.35,
+    /// From the look-at point to the camera.
+    distance: f32 = 7.0,
+    /// The look-at point's height above the character's position.
+    height: f32 = 1.5,
+    /// Radians per second at full camera stick.
+    yaw_speed: f32 = 2.5,
+    pitch_speed: f32 = 1.5,
+    min_pitch: f32 = -1.2,
+    max_pitch: f32 = 0.3,
+    /// How fast the look-at point catches up with the character, per second (`dampVec3`).
+    follow_rate: f32 = 8.0,
+    /// How fast `recenter` swings the camera behind the character, per second.
+    recenter_rate: f32 = 6.0,
+    /// The damped look-at point.
+    focus: Vec3,
+    position: Vec3,
+
+    const Self = @This();
+
+    /// Behind `target` looking along `yaw`, in place (no swoop on the first frame).
+    pub fn init(target: Vec3, yaw: f32) Self {
+        var self: Self = .{ .yaw = yaw, .focus = Vec3.Zero, .position = Vec3.Zero };
+        self.reset(target, yaw);
+        return self;
+    }
+
+    /// Jumps to behind `target` looking along `yaw`.
+    pub fn reset(self: *Self, target: Vec3, yaw: f32) void {
+        self.yaw = yaw;
+        self.focus = target.add(Vec3.init(0.0, self.height, 0.0));
+        self.place();
+    }
+
+    /// Follows `target` (the character's position) and turns by `turn` (the camera stick,
+    /// each axis -1 to 1: +x turns the view right, +y up). With `recenter_yaw`, swings
+    /// toward looking along it (pass the character's facing to get behind it).
+    pub fn update(self: *Self, target: Vec3, turn: Vec2, recenter_yaw: ?f32, dt: f32) void {
+        self.focus = dampVec3(self.focus, target.add(Vec3.init(0.0, self.height, 0.0)), self.follow_rate, dt);
+
+        // The leash: face the focus from where the camera is
+        const to_focus = self.focus.sub(self.position);
+        if (to_focus.x * to_focus.x + to_focus.z * to_focus.z > 1e-6) {
+            self.yaw = yawPitchOf(to_focus).yaw;
+        }
+
+        if (recenter_yaw) |yaw| {
+            self.yaw = dampAngle(self.yaw, yaw, self.recenter_rate, dt);
+        }
+        self.yaw = wrapAngle(self.yaw - turn.x * self.yaw_speed * dt);
+        self.pitch = std.math.clamp(self.pitch + turn.y * self.pitch_speed * dt, self.min_pitch, self.max_pitch);
+        self.place();
+    }
+
+    /// The camera at `distance` from the focus, looking at it along `yaw` and `pitch`.
+    fn place(self: *Self) void {
+        self.position = self.focus.sub(yawPitchDirection(self.yaw, self.pitch).mulScalar(self.distance));
+    }
+};
+
+/// A move stick turned into a world direction on the ground, relative to a camera looking
+/// along `camera_yaw` (`YawPitchAim`'s yaw): stick up moves away from the camera, right
+/// moves to the camera's right. The length is the stick's (0 to 1).
+pub fn cameraRelativeMove(stick: Vec2, camera_yaw: f32) Vec3 {
+    const forward = Vec3.init(-@sin(camera_yaw), 0.0, -@cos(camera_yaw));
+    const right = Vec3.init(@cos(camera_yaw), 0.0, -@sin(camera_yaw));
+    return forward.mulScalar(stick.y).add(right.mulScalar(stick.x));
+}
 
 /// Camera shake for impacts and explosions, with the trauma model (Squirrel Eiserloh,
 /// "Math for Game Programmers: Juicing Your Cameras With Math", GDC 2016): `addTrauma` on a
@@ -807,6 +891,77 @@ test "Shake.Offset.apply: moves the view with the camera and leaves the rest" {
     try std.testing.expectApproxEqAbs(before.y, after.y, 1e-5);
     try std.testing.expectApproxEqAbs(before.z, after.z, 1e-5);
     try expectVec3ApproxEq(Vec3.init(0.2, 1.9, 5.3), shaken.view_position, 1e-6);
+}
+
+test "cameraRelativeMove: up is away from the camera, right is its right" {
+    const up = Vec2.new(0.0, 1.0);
+    const right = Vec2.new(1.0, 0.0);
+    try expectVec3ApproxEq(Vec3.init(0.0, 0.0, -1.0), cameraRelativeMove(up, 0.0), 1e-6);
+    try expectVec3ApproxEq(Vec3.init(1.0, 0.0, 0.0), cameraRelativeMove(right, 0.0), 1e-6);
+    // Camera turned left 90° (looking down -X): up goes -X, right goes -Z
+    try expectVec3ApproxEq(Vec3.init(-1.0, 0.0, 0.0), cameraRelativeMove(up, deg(90.0)), 1e-6);
+    try expectVec3ApproxEq(Vec3.init(0.0, 0.0, -1.0), cameraRelativeMove(right, deg(90.0)), 1e-6);
+}
+
+test "FollowCamera: still with a still character and no stick" {
+    var camera = FollowCamera.init(Vec3.init(2.0, 0.0, 3.0), deg(30.0));
+    const start = camera.position;
+    for (0..60) |_| {
+        camera.update(Vec3.init(2.0, 0.0, 3.0), Vec2.new(0.0, 0.0), null, 1.0 / 60.0);
+    }
+    try expectVec3ApproxEq(start, camera.position, 1e-4);
+    try std.testing.expectApproxEqAbs(camera.distance, camera.position.sub(camera.focus).length(), 1e-4);
+}
+
+test "FollowCamera: the stick turns it by the same angle at 10, 60, and 144 fps" {
+    var at: [3]f32 = undefined;
+    for ([_]u32{ 10, 60, 144 }, &at) |fps, *yaw| {
+        var camera = FollowCamera.init(Vec3.Zero, 0.0);
+        for (0..fps) |_| {
+            camera.update(Vec3.Zero, Vec2.new(0.4, 0.0), null, 1.0 / @as(f32, @floatFromInt(fps)));
+        }
+        yaw.* = camera.yaw;
+    }
+    // Pushing right turns the view right (negative yaw): 0.4 of 2.5 rad/s for 1 s
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), at[1], 1e-3);
+    try std.testing.expectApproxEqAbs(at[1], at[0], 1e-3);
+    try std.testing.expectApproxEqAbs(at[1], at[2], 1e-3);
+}
+
+test "FollowCamera: on a leash; pulled behind, swung around, pitch limited" {
+    var camera = FollowCamera.init(Vec3.Zero, 0.0);
+    const dt: f32 = 1.0 / 60.0;
+
+    // Walking away (down -Z, the way it looks) for 3 s: still behind, at its distance
+    var target = Vec3.Zero;
+    for (0..180) |_| {
+        target = target.add(Vec3.init(0.0, 0.0, -3.0 * dt));
+        camera.update(target, Vec2.new(0.0, 0.0), null, dt);
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), camera.yaw, 1e-3);
+    try std.testing.expect(camera.position.z > target.z);
+    try std.testing.expectApproxEqAbs(camera.distance, camera.position.sub(camera.focus).length(), 1e-3);
+
+    // Walking to the right for 3 s swings it around to look right (negative yaw)
+    for (0..180) |_| {
+        target = target.add(Vec3.init(3.0 * dt, 0.0, 0.0));
+        camera.update(target, Vec2.new(0.0, 0.0), null, dt);
+    }
+    try std.testing.expect(camera.yaw < deg(-30.0));
+
+    // Pitch stops at its limit
+    for (0..600) |_| {
+        camera.update(target, Vec2.new(0.0, -1.0), null, dt);
+    }
+    try std.testing.expectApproxEqAbs(camera.min_pitch, camera.pitch, 1e-6);
+}
+
+test "FollowCamera: recenter swings it behind the character" {
+    var camera = FollowCamera.init(Vec3.Zero, 0.0);
+    for (0..120) |_| {
+        camera.update(Vec3.Zero, Vec2.new(0.0, 0.0), deg(120.0), 1.0 / 60.0);
+    }
+    try std.testing.expectApproxEqAbs(deg(120.0), camera.yaw, 1e-3);
 }
 
 fn deg(degrees: f32) f32 {

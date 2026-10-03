@@ -3,7 +3,7 @@
 > Imported from redfish_gl_zig on 2026-09-28. **In this repo:** made active 2026-10-01 after the review at the end; phases there. Paths below refer to redfish; bullets was reorganized in the port.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Active (phases 1-2 done 2026-10-02)
+**Status**: Active (phases 1-3 done 2026-10-03)
 **Created**: 2026-02-11
 
 ## Context
@@ -447,19 +447,23 @@ Driving the soldier and the spacesuit (bullets) with a gamepad: one stick moves 
 character, the other turns a third-person camera that follows it, in the style of Zelda:
 The Wind Waker (and Halo's).
 
-- **Gamepad in `core.Input`**: GLFW's gamepad API (`glfwGetGamepadState`, standard
-  mappings from SDL's GameControllerDB), polled in `update`: sticks as `Vec2` with a
-  radial dead zone and a response curve (fine control near the center), triggers 0..1,
-  buttons with `isDown` / `pressedOnce` like keys, connect / disconnect.
-- **Camera-relative movement**: the move stick's direction is turned by the camera's yaw,
-  so pushing up always moves away from the camera; the character turns toward its move
-  direction (`dampAngle`), walks or runs by how far the stick is pushed.
-- **Follow camera**: orbits the character at a distance and height; the camera stick
-  turns it around the character (yaw) and up / down (pitch, limited); it follows with lag
-  (`dampVec3`) and, as in Wind Waker, swings back behind the character while it moves
-  and the camera stick is left alone; a button recenters it behind the character.
-- Keyboard and gamepad feed the same character controls, so either works.
-- Later, with plan 012's blend space: walk / run blending by stick magnitude.
+- [x] **Gamepad in `core.Input`**: GLFW's gamepad API (`glfwGetGamepadState`, standard
+      mappings from SDL's GameControllerDB), polled in `update`: sticks as `Vec2` with a
+      radial dead zone and a response curve (fine control near the center), triggers
+      0..1, buttons with `isButtonDown` / `buttonPressedOnce` like keys, connect /
+      disconnect.
+- [x] **Camera-relative movement**: the move stick's direction is turned by the camera's
+      yaw (`motion.cameraRelativeMove`), so pushing up always moves away from the camera;
+      the character turns toward its move direction (`dampAngle`), walks or runs by how
+      far the stick is pushed.
+- [x] **Follow camera** (`motion.FollowCamera`): orbits the character at a distance and
+      height; the camera stick turns it around the character (yaw) and up / down (pitch,
+      limited); it follows with lag (`dampVec3`); a button recenters it behind the
+      character. Swinging behind the moving character came out as a leash rather than an
+      auto-recenter (see the phase 3 note).
+- [x] Keyboard and gamepad drive the same characters: the stick while it's pushed, the
+      keyboard otherwise; arrow keys turn the follow camera too.
+- [ ] Later, with plan 012's blend space: walk / run blending by stick magnitude.
 
 Sticks (decided 2026-10-02, John): as Wind Waker and Halo, the left stick moves the
 character and the right stick turns the camera.
@@ -501,3 +505,39 @@ character and the right stick turns the camera.
 - Tests: 102 pass (1 new: no keys while ImGui wants the keyboard, the held key counting
   once ImGui lets go). camera_rig, shadows, and turrets start without errors.
 - Next: phase 3, game controller.
+
+**2026-10-03**: Phase 3 done (not yet tried with a real controller here).
+- `core.Input`: `gamepad` (`GamepadInput`: `is_connected`, `left_stick` / `right_stick`
+  with +y up, `left_trigger` / `right_trigger` 0..1, buttons), read from the first
+  joystick GLFW recognizes as a gamepad, each `update`. `shapeStick(x, y, dead_zone,
+  exponent)`: radial dead zone (0.15), the rest of the travel stretched to 0..1 and bent
+  by an exponent (1.5), so small pushes give fine control; tested. Button names are
+  GLFW's Xbox names (`.a` is the bottom face button, cross on a PlayStation pad).
+- `motion.cameraRelativeMove(stick, camera_yaw)`: the stick as a world direction on the
+  ground, relative to the camera; tested.
+- `motion.FollowCamera`: the camera keeps its place each frame and turns to face the
+  character's (damped) look-at point, then steps to its distance: a leash. Walking
+  sideways swings it around, walking toward it pushes it back, walking away pulls it
+  along behind. That gives the Wind Waker feel without an auto-recenter rule (which would
+  spin the camera around a character running toward it). The stick turns it (+x turns the
+  view right, +y up, at `yaw_speed` / `pitch_speed` per second), pitch is limited,
+  `recenter_yaw` swings it behind the character. Tests: still with a still character;
+  the same turn at 10, 60, and 144 fps; pulled behind and swung around; pitch limits;
+  recenter.
+- bullets: `objects/character_control.zig` drives a character along the stick's
+  direction (turning its +Z, the glTF front, toward it; walk below 75% stick, run above)
+  and gives the camera yaw behind it. The soldier and the spacesuit get `drive(move,
+  input)` and their actions on the face buttons (A jump / roll, X, B, Y the others). In
+  their modes the debug scene puts the follow camera on the character (reset behind it
+  on switching): left stick moves, right stick or arrow keys turn the camera, left
+  trigger or Q recenter, V switches to the free camera and back.
+- Checked with a temporary edit faking the left stick: the spacesuit turns and runs where
+  the stick points, with the run animation, and the camera swings after it.
+- Tests: 109 pass (7 new).
+- Fix (same day): John's Bluetooth Xbox controller wasn't read. GLFW listed it (GUID
+  `030000005e040000130b000009050000`: Xbox Series controller, firmware 5.x) but not as a
+  gamepad: GLFW's built-in copy of SDL_GameControllerDB predates that firmware. Now
+  `src/core/gamecontrollerdb_macos.txt` (the database's macOS lines, 325 controllers,
+  zlib license, how to refresh in its header) is embedded and given to GLFW in
+  `Input.init` (`updateGamepadMappings`), and a joystick that's connected without a
+  mapping is logged once with its GUID.

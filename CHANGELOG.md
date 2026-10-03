@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-03 - Game controller and follow camera, plan 010 phase 3
+- **core.Input**: gamepad (sticks with a radial dead zone and response curve, triggers, buttons with `isButtonDown` / `buttonPressedOnce`); tests; current macOS gamepad mappings from SDL_GameControllerDB (`gamecontrollerdb_macos.txt`, for controllers newer than GLFW's built-in list, such as the Xbox Series controller over Bluetooth); a warning naming a connected joystick that has no mapping
+- **core.motion**: `FollowCamera`, a third-person camera on a leash (Wind Waker / Halo style: dragged along by the character, turned by the camera stick, recenter behind); `cameraRelativeMove`; tests
+- **bullets**: the soldier and spacesuit run where the left stick points, relative to the camera, and act on the face buttons; in their modes a follow camera trails them (right stick or arrows turn it, left trigger or Q recenter, V for the free camera)
+
 ### 2026-10-02 - Input with ImGui, plan 010 phase 2
 - **core.Input**: works alongside ImGui (`Input.init` before `gui.init`; keys ignored while ImGui wants the keyboard, mouse buttons and scroll while it wants the mouse); `isMouseDown`; test
 - **camera_rig, shadows, turrets**: on `core.Input` instead of polling `window.getKey` with hand-made edge detection

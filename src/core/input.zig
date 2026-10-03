@@ -1,8 +1,16 @@
 const std = @import("std");
 const glfw = @import("zglfw");
 const zgui = @import("zgui");
+const math = @import("math");
 
 const EnumSet = std.EnumSet;
+const Vec2 = math.Vec2;
+const vec2 = math.vec2;
+
+const log = std.log.scoped(.input);
+
+/// Gamepad mappings newer than GLFW's built-in ones (see the file's header).
+const gamepad_mappings = @embedFile("gamecontrollerdb_macos.txt");
 
 const XY = struct {
     x: f32 = 0.0,
@@ -10,6 +18,27 @@ const XY = struct {
 };
 
 pub var input: Input = .{};
+
+/// The first connected gamepad, read each frame by `Input.update` through GLFW's gamepad
+/// API (standard layout from SDL's GameControllerDB mappings, which GLFW includes: Xbox
+/// names, so `.a` is the bottom face button, cross on a PlayStation pad).
+pub const GamepadInput = struct {
+    is_connected: bool = false,
+    /// Shaped by the dead zone and response curve (`shapeStick`): length 0 to 1, +y up.
+    left_stick: Vec2 = vec2(0.0, 0.0),
+    right_stick: Vec2 = vec2(0.0, 0.0),
+    /// 0 released to 1 fully pulled.
+    left_trigger: f32 = 0.0,
+    right_trigger: f32 = 0.0,
+    buttons: EnumSet(GamepadButton) = EnumSet(GamepadButton).initEmpty(),
+    /// Buttons `buttonPressedOnce` has seen, until they're released.
+    buttons_processed: EnumSet(GamepadButton) = EnumSet(GamepadButton).initEmpty(),
+    /// Set once a joystick without a gamepad mapping has been reported, so it's logged
+    /// only once.
+    has_reported_unmapped: bool = false,
+};
+
+pub const GamepadButton = glfw.Gamepad.Button;
 
 /// Keyboard, mouse, and window state from GLFW callbacks, read once per frame by an app's
 /// update. Keys:
@@ -57,6 +86,14 @@ pub const Input = struct {
     cursor: bool = false,
     cursor_xy: XY = .{},
 
+    gamepad: GamepadInput = .{},
+    /// Stick travel ignored around the center, as a fraction of full travel: worn sticks
+    /// rest a little off center.
+    stick_dead_zone: f32 = 0.15,
+    /// Response curve past the dead zone: 1 is linear; higher gives finer control near the
+    /// center.
+    stick_exponent: f32 = 1.5,
+
     /// Set by `update` from ImGui, when there is an ImGui context.
     gui_has_keyboard: bool = false,
     gui_has_mouse: bool = false,
@@ -76,6 +113,9 @@ pub const Input = struct {
         const framebuffer_height = window_height * window_scale[1];
 
         initWindowHandlers(window);
+        if (!glfw.updateGamepadMappings(gamepad_mappings)) {
+            log.warn("gamepad mappings not loaded; only GLFW's built-in ones apply", .{});
+        }
 
         glfw.setTime(0.0);
         input.window_width = window_width;
@@ -103,6 +143,22 @@ pub const Input = struct {
         self.scroll_xoffset = scroll.x;
         self.scroll_yoffset = scroll.y;
         self.pending_scroll = .{};
+
+        self.pollGamepad();
+    }
+
+    /// True while `button` on the gamepad is held.
+    pub fn isButtonDown(self: *const Self, button: GamepadButton) bool {
+        return self.gamepad.buttons.contains(button);
+    }
+
+    /// True once per press of `button`, as `pressedOnce` for keys.
+    pub fn buttonPressedOnce(self: *Self, button: GamepadButton) bool {
+        if (!self.isButtonDown(button) or self.gamepad.buttons_processed.contains(button)) {
+            return false;
+        }
+        self.gamepad.buttons_processed.insert(button);
+        return true;
     }
 
     /// True while `key` is held (and ImGui doesn't want the keyboard).
@@ -132,6 +188,36 @@ pub const Input = struct {
         };
     }
 
+    /// Reads the first joystick GLFW recognizes as a gamepad; none leaves everything at rest.
+    fn pollGamepad(self: *Self) void {
+        const pad = &self.gamepad;
+        const state = firstGamepadState() orelse {
+            const has_reported = pad.has_reported_unmapped or reportUnmappedJoystick();
+            pad.* = .{ .has_reported_unmapped = has_reported };
+            return;
+        };
+
+        const axes = state.axes;
+        const Axis = glfw.Gamepad.Axis;
+        // GLFW's stick y is +1 down; flip it so up is +y
+        pad.left_stick = shapeStick(axes[@intFromEnum(Axis.left_x)], -axes[@intFromEnum(Axis.left_y)], self.stick_dead_zone, self.stick_exponent);
+        pad.right_stick = shapeStick(axes[@intFromEnum(Axis.right_x)], -axes[@intFromEnum(Axis.right_y)], self.stick_dead_zone, self.stick_exponent);
+        // Triggers go from -1 released to +1 pulled
+        pad.left_trigger = (axes[@intFromEnum(Axis.left_trigger)] + 1.0) * 0.5;
+        pad.right_trigger = (axes[@intFromEnum(Axis.right_trigger)] + 1.0) * 0.5;
+
+        pad.is_connected = true;
+        for (state.buttons, 0..) |action, i| {
+            const button: GamepadButton = @enumFromInt(i);
+            if (action == .press) {
+                pad.buttons.insert(button);
+            } else {
+                pad.buttons.remove(button);
+                pad.buttons_processed.remove(button);
+            }
+        }
+    }
+
     pub fn handleKey(self: *Self, key: glfw.Key, action: glfw.Action) void {
         switch (action) {
             .press => self.key_presses.insert(key),
@@ -148,6 +234,43 @@ pub const Input = struct {
         self.key_alt = keys.contains(.left_alt) or keys.contains(.right_alt);
     }
 };
+
+/// A stick's raw position (each axis -1 to 1) shaped for control: nothing inside the
+/// dead zone, then the remaining travel stretched to 0..1 and bent by `exponent`, the
+/// direction kept (a radial dead zone, so diagonals aren't clipped). Length at most 1.
+pub fn shapeStick(x: f32, y: f32, dead_zone: f32, exponent: f32) Vec2 {
+    const length = @sqrt(x * x + y * y);
+    if (length <= dead_zone) {
+        return vec2(0.0, 0.0);
+    }
+    const travel = @min((length - dead_zone) / (1.0 - dead_zone), 1.0);
+    const scale = std.math.pow(f32, travel, exponent) / length;
+    return vec2(x * scale, y * scale);
+}
+
+fn firstGamepadState() ?glfw.Gamepad.State {
+    for (0..glfw.Joystick.maximum_supported) |id| {
+        const joystick: glfw.Joystick = @enumFromInt(id);
+        const gamepad = joystick.asGamepad() orelse continue;
+        return gamepad.getState() catch continue;
+    }
+    return null;
+}
+
+/// Logs the first joystick that isn't a gamepad (GLFW has no mapping for it): it's
+/// connected but `Input` can't read it. True if there was one.
+fn reportUnmappedJoystick() bool {
+    for (0..glfw.Joystick.maximum_supported) |id| {
+        const joystick: glfw.Joystick = @enumFromInt(id);
+        if (!joystick.isPresent()) {
+            continue;
+        }
+        const guid: []const u8 = joystick.getGuid() catch "?";
+        log.warn("joystick {d} (GUID {s}) has no gamepad mapping; add its SDL_GameControllerDB line to gamecontrollerdb_macos.txt", .{ id, guid });
+        return true;
+    }
+    return false;
+}
 
 fn initWindowHandlers(window: *glfw.Window) void {
     _ = window.setKeyCallback(keyHandler);
@@ -263,4 +386,31 @@ test "while ImGui wants the keyboard, keys are neither down nor pressed" {
     // Still held when ImGui lets go: the press counts then
     state.gui_has_keyboard = false;
     try std.testing.expect(state.pressedOnce(.space));
+}
+
+test "shapeStick: still in the dead zone, full at the edge, direction kept" {
+    const dead_zone: f32 = 0.15;
+    const at_rest = shapeStick(0.1, -0.05, dead_zone, 1.5);
+    try std.testing.expectEqual(@as(f32, 0.0), at_rest.x);
+    try std.testing.expectEqual(@as(f32, 0.0), at_rest.y);
+
+    const full = shapeStick(0.0, 1.0, dead_zone, 1.5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), full.y, 1e-5);
+
+    // A corner past full travel is clamped to length 1, still diagonal
+    const corner = shapeStick(1.0, 1.0, dead_zone, 1.5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), @sqrt(corner.lengthSquared()), 1e-5);
+    try std.testing.expectApproxEqAbs(corner.x, corner.y, 1e-6);
+
+    // Halfway out of the dead zone gives less than half (the curve), more than nothing
+    const half = shapeStick(dead_zone + (1.0 - dead_zone) * 0.5, 0.0, dead_zone, 1.5);
+    try std.testing.expect(half.x > 0.2 and half.x < 0.5);
+}
+
+test "buttonPressedOnce: once per press, as keys" {
+    var state: Input = .{};
+    state.gamepad.buttons.insert(.a);
+    try std.testing.expect(state.isButtonDown(.a));
+    try std.testing.expect(state.buttonPressedOnce(.a));
+    try std.testing.expect(!state.buttonPressedOnce(.a));
 }

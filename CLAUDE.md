@@ -35,7 +35,8 @@ the regression check. Since then:
 - Plan 009 gravity bullets: `examples/bullets` steps with `core.ballistics` (G gravity, P paths)
 
 Active plan: 010 input (phase 1: `Input.isDown` / `pressedOnce`, bullets mode and
-global keys; phase 2: with ImGui; next: game controller). See `docs/plans/active-plans.md`.
+global keys; phase 2: with ImGui; phase 3: gamepad, `motion.FollowCamera`). See
+`docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
