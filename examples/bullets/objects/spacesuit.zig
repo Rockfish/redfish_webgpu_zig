@@ -154,6 +154,10 @@ pub const Spacesuit = struct {
 
         // One-shot actions first, so they claim their keys before the scene's global keys
         self.processOneShotKeys(input);
+        // A kick or roll plays in place: no moving or turning until it's done
+        if (!self.state_machine.isInterruptible()) {
+            return;
+        }
 
         // Rotation (A/D)
         if (input.isDown(.a)) {
@@ -188,6 +192,9 @@ pub const Spacesuit = struct {
     /// move stick, length 0 to 1), facing where it goes; actions as `processInput`.
     pub fn drive(self: *Self, move: Vec3, input: *core.Input) void {
         self.processOneShotKeys(input);
+        if (!self.state_machine.isInterruptible()) {
+            return;
+        }
         const gait = character_control.drive(&self.transform, move, @abs(self.walk_speed), @abs(self.run_speed), input.delta_time);
         _ = self.state_machine.requestState(switch (gait) {
             .idle => .idle,

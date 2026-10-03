@@ -85,8 +85,7 @@ pub fn AnimationStateMachine(comptime StateEnum: type) type {
                 return true;
             }
 
-            const current_config = self.state_configs[@intFromEnum(self.current_state)];
-            if (!current_config.interruptible) {
+            if (!self.isInterruptible()) {
                 if (self.debug) {
                     std.debug.print("FSM: {s} denied ({s} not interruptible)\n", .{
                         @tagName(new_state),
@@ -98,6 +97,13 @@ pub fn AnimationStateMachine(comptime StateEnum: type) type {
 
             self.transitionTo(new_state);
             return true;
+        }
+
+        /// True when a request can change the current state; false while a one-shot action
+        /// that can't be interrupted (a kick, a roll) plays. A character skips movement
+        /// then, or it slides through the action.
+        pub fn isInterruptible(self: *const Self) bool {
+            return self.state_configs[@intFromEnum(self.current_state)].interruptible;
         }
 
         /// Force a state change, ignoring interruptibility.

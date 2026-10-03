@@ -388,3 +388,12 @@ interruptible flag). Gaps, roughly in order of value:
 4. Smaller: no transition rules beyond `interruptible` (fine at this size); takes only
    `ModelInstance` (angrybot uses `Model`); logs with `std.debug.print` instead of a scoped
    log (STYLE section 7).
+5. **Characters slide through stationary actions** (John, 2026-10-03). In bullets, holding
+   W or the move stick while kicking, punching, or rolling keeps moving the soldier or
+   spacesuit. Not the animation (their roots stay put: at most 0.2 model units, back where
+   they started) but the callers: `requestState` returns false while a non-interruptible
+   action plays, and both `processInput` (keyboard) and `drive` (gamepad,
+   `character_control.zig`) move and turn the character regardless. Fix: an
+   `isInterruptible()` on the state machine, and the characters skip movement and turning
+   (taking only action buttons) while it's false. **Fixed 2026-10-03**: checked with the
+   stick held through a kick, the spacesuit stays put for the kick and runs on after.

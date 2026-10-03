@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-03 - Characters stand still during actions
+- **core.AnimationStateMachine**: `isInterruptible()`
+- **bullets**: the soldier and spacesuit no longer slide while kicking, punching, rolling, or jumping with W or the move stick held; movement and turning wait for the action to end (plan 012 review item 5)
+
 ### 2026-10-03 - Game controller and follow camera, plan 010 phase 3
 - **core.Input**: gamepad (sticks with a radial dead zone and response curve, triggers, buttons with `isButtonDown` / `buttonPressedOnce`); tests; current macOS gamepad mappings from SDL_GameControllerDB (`gamecontrollerdb_macos.txt`, for controllers newer than GLFW's built-in list, such as the Xbox Series controller over Bluetooth); a warning naming a connected joystick that has no mapping
 - **core.motion**: `FollowCamera`, a third-person camera on a leash (Wind Waker / Halo style: dragged along by the character, turned by the camera stick, recenter behind); `cameraRelativeMove`; tests
