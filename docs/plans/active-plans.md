@@ -8,7 +8,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
   modes and one-shot keys; reviewed against bullets 2026-10-01.
   - Phase 1 done 2026-10-01: `Input.isDown` / `pressedOnce`, mouse, scroll, and modifier
     fixes, Escape moved to the apps; bullets debug scene split into mode and global keys.
-    Next: phase 2, `core.Input` alongside ImGui.
+  - Phase 2 done 2026-10-02: `core.Input` alongside ImGui (keys and mouse ignored while
+    ImGui wants them); camera_rig, shadows, turrets moved onto it. Next: phase 3, game
+    controller (third-person soldier and spacesuit, Wind Waker style camera).
 
 ## ⏸️ Parked
 
@@ -91,3 +93,5 @@ control, `track`), 3 (`sweep`), 4 (mortar), and 5 (programs, types, ball turret)
 plan finished. Plan 009 finished with `core.ballistics` in the bullets example.
 
 **2026-10-01 (later)**: Plan 010 reviewed against bullets and made active; phase 1 done.
+
+**2026-10-02**: Plan 010 phase 2 done; phase 3 (game controller) added.

@@ -3,7 +3,7 @@
 > Imported from redfish_gl_zig on 2026-09-28. **In this repo:** made active 2026-10-01 after the review at the end; phases there. Paths below refer to redfish; bullets was reorganized in the port.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Active (phase 1 done 2026-10-01)
+**Status**: Active (phases 1-2 done 2026-10-02)
 **Created**: 2026-02-11
 
 ## Context
@@ -432,10 +432,37 @@ target yaw and pitch come from input, with the mode switch deciding who gets the
 - [x] Tests: `pressedOnce` and `isDown` across press, hold, release; Shift / Alt from
       either side; one mouse button released leaves the other held
 
-### Phase 2: ImGui
-- [ ] `core.Input` alongside ImGui: chain to ImGui's GLFW callbacks, or poll
-      (`window.getKey`) and skip keys ImGui wants, so panel apps (camera_rig, shadows,
-      turrets) can use it instead of their hand-made edge detection
+### Phase 2: ImGui (done 2026-10-02)
+- [x] `core.Input` alongside ImGui: `Input.init` before `gui.init`, so ImGui's GLFW
+      backend chains to Input's callbacks; `update` reads ImGui's want-capture flags
+      (when an ImGui context exists), and `isDown` / `pressedOnce` see no keys while ImGui
+      wants the keyboard, `isMouseDown` no buttons and the scroll is zero while it wants
+      the mouse
+- [x] camera_rig, shadows, turrets on `core.Input`: no more `window.getKey` polling,
+      hand-made edge detection (`space_was_down`), or capture checks; frame time from
+      `input.update`
+
+### Phase 3: Game controller
+Driving the soldier and the spacesuit (bullets) with a gamepad: one stick moves the
+character, the other turns a third-person camera that follows it, in the style of Zelda:
+The Wind Waker (and Halo's).
+
+- **Gamepad in `core.Input`**: GLFW's gamepad API (`glfwGetGamepadState`, standard
+  mappings from SDL's GameControllerDB), polled in `update`: sticks as `Vec2` with a
+  radial dead zone and a response curve (fine control near the center), triggers 0..1,
+  buttons with `isDown` / `pressedOnce` like keys, connect / disconnect.
+- **Camera-relative movement**: the move stick's direction is turned by the camera's yaw,
+  so pushing up always moves away from the camera; the character turns toward its move
+  direction (`dampAngle`), walks or runs by how far the stick is pushed.
+- **Follow camera**: orbits the character at a distance and height; the camera stick
+  turns it around the character (yaw) and up / down (pitch, limited); it follows with lag
+  (`dampVec3`) and, as in Wind Waker, swings back behind the character while it moves
+  and the camera stick is left alone; a button recenters it behind the character.
+- Keyboard and gamepad feed the same character controls, so either works.
+- Later, with plan 012's blend space: walk / run blending by stick magnitude.
+
+Sticks (decided 2026-10-02, John): as Wind Waker and Halo, the left stick moves the
+character and the right stick turns the camera.
 
 ### Later
 - demo_app / level_01 / angrybot onto `core.Input` (their `state.zig` copies work and match
@@ -459,3 +486,18 @@ target yaw and pitch come from input, with the mode switch deciding who gets the
   starting `animation_index` is 4 for a model with one baked animation; not an input
   issue, left as is.)
 - Next: phase 2.
+
+**2026-10-02**: Phase 2 done.
+- ImGui chains to callbacks installed before it, and passes every key and click on, even
+  while a text field has focus; so the capture check lives in `Input.update` (ImGui's
+  want-capture flags), and every reader of keys goes through `isDown` / `pressedOnce`.
+  The flags come from the previous frame's ImGui frame, as ImGui intends.
+- `key_shift` / `key_alt` read the held-key set directly, so they work while ImGui has
+  the keyboard (ImGui's own shortcuts).
+- Typing a value into an ImGui slider takes Cmd+click (ImGui's Ctrl is Cmd on macOS) or
+  Tab first; a plain click drags. Unchanged by this phase: ImGui gets every event.
+- camera_rig's C (recenter) is now once per press; it was every frame while held, with
+  the same result.
+- Tests: 102 pass (1 new: no keys while ImGui wants the keyboard, the held key counting
+  once ImGui lets go). camera_rig, shadows, and turrets start without errors.
+- Next: phase 3, game controller.

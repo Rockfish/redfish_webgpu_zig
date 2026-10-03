@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-02 - Input with ImGui, plan 010 phase 2
+- **core.Input**: works alongside ImGui (`Input.init` before `gui.init`; keys ignored while ImGui wants the keyboard, mouse buttons and scroll while it wants the mouse); `isMouseDown`; test
+- **camera_rig, shadows, turrets**: on `core.Input` instead of polling `window.getKey` with hand-made edge detection
+- **Plans**: 010 phase 3 (game controller, third-person camera) added
+
 ### 2026-10-01 - Input helpers, plan 010 phase 1
 - **core.Input**: `isDown(key)` and `pressedOnce(key)`; mouse buttons tracked separately (releasing one no longer clears the other); scroll per frame; Shift / Alt from the held keys; Escape handling moved to the apps; tests
 - **bullets**: debug scene input split into the mode's keys, then global one-shot keys (`InputMode`); dead motion-type code deleted; one-shot keys through `pressedOnce`, which fixes R firing twice in turret mode and Space both jumping and pausing in soldier mode

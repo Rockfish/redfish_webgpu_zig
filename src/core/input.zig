@@ -1,5 +1,6 @@
 const std = @import("std");
 const glfw = @import("zglfw");
+const zgui = @import("zgui");
 
 const EnumSet = std.EnumSet;
 
@@ -20,6 +21,11 @@ pub var input: Input = .{};
 ///   an app runs its mode's handler before its global keys.
 ///
 /// Escape doesn't close the window here; each app decides what Escape does.
+///
+/// With ImGui: call `Input.init` before `gui.init`, so ImGui's GLFW backend chains to these
+/// callbacks. While ImGui wants the keyboard (a text field has focus) `isDown` and
+/// `pressedOnce` see no keys; while it wants the mouse (the pointer is over a panel)
+/// `isMouseDown` sees no buttons and the frame's scroll is zero.
 pub const Input = struct {
     window_width: f32 = 0.0,
     window_height: f32 = 0.0,
@@ -51,6 +57,10 @@ pub const Input = struct {
     cursor: bool = false,
     cursor_xy: XY = .{},
 
+    /// Set by `update` from ImGui, when there is an ImGui context.
+    gui_has_keyboard: bool = false,
+    gui_has_mouse: bool = false,
+
     /// Incremented on structural changes (resize, scroll) that consumers
     /// like cameras need to react to. Not incremented by mouse or key input.
     update_tick: u64 = 0,
@@ -78,30 +88,48 @@ pub const Input = struct {
         return &input;
     }
 
-    /// Once per frame, after `glfw.pollEvents`: the frame's time and scroll.
+    /// Once per frame, after `glfw.pollEvents`: the frame's time, whether ImGui wants the
+    /// keyboard or mouse, and the frame's scroll.
     pub fn update(self: *Self) void {
         const current_time: f32 = @floatCast(glfw.getTime());
         self.delta_time = current_time - self.total_time;
         self.total_time = current_time;
 
-        self.scroll_xoffset = self.pending_scroll.x;
-        self.scroll_yoffset = self.pending_scroll.y;
+        const has_gui = zgui.getCurrentContext() != null;
+        self.gui_has_keyboard = has_gui and zgui.io.getWantCaptureKeyboard();
+        self.gui_has_mouse = has_gui and zgui.io.getWantCaptureMouse();
+
+        const scroll = if (self.gui_has_mouse) XY{} else self.pending_scroll;
+        self.scroll_xoffset = scroll.x;
+        self.scroll_yoffset = scroll.y;
         self.pending_scroll = .{};
     }
 
-    /// True while `key` is held.
+    /// True while `key` is held (and ImGui doesn't want the keyboard).
     pub fn isDown(self: *const Self, key: glfw.Key) bool {
-        return self.key_presses.contains(key);
+        return !self.gui_has_keyboard and self.key_presses.contains(key);
     }
 
     /// True once per press of `key`: the first time it's asked while the key is held. Marks
-    /// the key processed until it's released.
+    /// the key processed until it's released. False while ImGui wants the keyboard.
     pub fn pressedOnce(self: *Self, key: glfw.Key) bool {
-        if (!self.key_presses.contains(key) or self.key_processed.contains(key)) {
+        if (!self.isDown(key) or self.key_processed.contains(key)) {
             return false;
         }
         self.key_processed.insert(key);
         return true;
+    }
+
+    /// True while `button` is held (and ImGui doesn't want the mouse).
+    pub fn isMouseDown(self: *const Self, button: glfw.MouseButton) bool {
+        if (self.gui_has_mouse) {
+            return false;
+        }
+        return switch (button) {
+            .left => self.mouse_left_button,
+            .right => self.mouse_right_button,
+            else => false,
+        };
     }
 
     pub fn handleKey(self: *Self, key: glfw.Key, action: glfw.Action) void {
@@ -115,8 +143,9 @@ pub const Input = struct {
         }
 
         // From the held keys: GLFW's mods on a key event can lag the modifier's own press
-        self.key_shift = self.isDown(.left_shift) or self.isDown(.right_shift);
-        self.key_alt = self.isDown(.left_alt) or self.isDown(.right_alt);
+        const keys = self.key_presses;
+        self.key_shift = keys.contains(.left_shift) or keys.contains(.right_shift);
+        self.key_alt = keys.contains(.left_alt) or keys.contains(.right_alt);
     }
 };
 
@@ -222,4 +251,16 @@ test "mouse buttons: releasing one leaves the other held" {
     mouseHandler(window, .right, .press, .{});
     mouseHandler(window, .right, .release, .{});
     try std.testing.expect(input.mouse_left_button and !input.mouse_right_button);
+}
+
+test "while ImGui wants the keyboard, keys are neither down nor pressed" {
+    var state: Input = .{};
+    state.handleKey(.space, .press);
+    state.gui_has_keyboard = true;
+    try std.testing.expect(!state.isDown(.space));
+    try std.testing.expect(!state.pressedOnce(.space));
+
+    // Still held when ImGui lets go: the press counts then
+    state.gui_has_keyboard = false;
+    try std.testing.expect(state.pressedOnce(.space));
 }

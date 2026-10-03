@@ -23,6 +23,7 @@ const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
 const Arenas = core.Arenas;
+const Input = core.Input;
 const CameraGimbal = core.CameraGimbal;
 const DrawUniforms = core.DrawUniforms;
 const Frame = core.Frame;
@@ -155,31 +156,29 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     var follow: BaseFollow = .{ .focus = start_focus };
     var shake: motion.Shake = .{ .decay = 1.2, .max_offset = 0.4, .max_angle = 0.06 };
 
+    // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
+    const input = Input.init(window);
     gui.init(allocator, window, gpu);
     defer gui.deinit();
 
     var settings: Settings = .{};
-    var space_was_down = false;
-    var last_time: f32 = @floatCast(zglfw.getTime());
 
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        if (window.getKey(.escape) == .press) {
+        input.update();
+        if (input.isDown(.escape)) {
             window.setShouldClose(true);
         }
 
-        const time: f32 = @floatCast(zglfw.getTime());
-        const delta_time = time - last_time;
-        last_time = time;
+        const time = input.total_time;
+        const delta_time = input.delta_time;
 
         // A hit on each Space press, not each frame it's held
-        const space_down = window.getKey(.space) == .press and !zgui.io.getWantCaptureKeyboard();
-        if (space_down and !space_was_down) {
+        if (input.pressedOnce(.space)) {
             shake.addTrauma(settings.hit_trauma);
         }
-        space_was_down = space_down;
 
-        processKeys(window, camera, delta_time);
+        processKeys(input, camera, delta_time);
 
         // The focus moves on; the base follows, then the view mode picks what's shown
         focus_path.speed = settings.focus_speed;
@@ -258,10 +257,7 @@ fn place(position: Vec3, scale: Vec3) Mat4 {
     return Mat4.fromTranslation(position).mulMat4(&Mat4.fromScale(scale));
 }
 
-fn processKeys(window: *zglfw.Window, camera: *CameraGimbal, delta_time: f32) void {
-    if (zgui.io.getWantCaptureKeyboard()) {
-        return;
-    }
+fn processKeys(input: *Input, camera: *CameraGimbal, delta_time: f32) void {
     const base_keys = [_]struct { key: zglfw.Key, direction: MovementDirection }{
         .{ .key = .left, .direction = .circle_left },
         .{ .key = .right, .direction = .circle_right },
@@ -271,7 +267,7 @@ fn processKeys(window: *zglfw.Window, camera: *CameraGimbal, delta_time: f32) vo
         .{ .key = .s, .direction = .radius_out },
     };
     for (base_keys) |binding| {
-        if (window.getKey(binding.key) == .press) {
+        if (input.isDown(binding.key)) {
             camera.processBaseMovement(binding.direction, delta_time);
         }
     }
@@ -282,11 +278,11 @@ fn processKeys(window: *zglfw.Window, camera: *CameraGimbal, delta_time: f32) vo
         .{ .key = .k, .direction = .rotate_down },
     };
     for (gimbal_keys) |binding| {
-        if (window.getKey(binding.key) == .press) {
+        if (input.isDown(binding.key)) {
             camera.processGimbalMovement(binding.direction, delta_time);
         }
     }
-    if (window.getKey(.c) == .press) {
+    if (input.pressedOnce(.c)) {
         recenterGimbal(camera);
     }
 }

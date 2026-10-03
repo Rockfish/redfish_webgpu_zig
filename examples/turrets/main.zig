@@ -35,6 +35,7 @@ const turret_module = @import("turret.zig");
 const turret_types = @import("turret_types.zig");
 
 const Arenas = core.Arenas;
+const Input = core.Input;
 const Camera = core.Camera;
 const DrawUniforms = core.DrawUniforms;
 const ExplosionShapes = explosions_module.ExplosionShapes;
@@ -429,31 +430,28 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         .acceleration = Vec3.Zero,
         .radius = TARGET_RADIUS,
     };
-    var space_was_down = false;
 
+    // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
+    const input = Input.init(window);
     gui.init(allocator, window, gpu);
     defer gui.deinit();
 
-    var last_time: f32 = @floatCast(zglfw.getTime());
-
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        if (window.getKey(.escape) == .press) {
+        input.update();
+        if (input.isDown(.escape)) {
             window.setShouldClose(true);
         }
 
-        const time: f32 = @floatCast(zglfw.getTime());
-        const delta_time = time - last_time;
-        last_time = time;
+        const time = input.total_time;
+        const delta_time = input.delta_time;
 
         // Pause on each Space press, not each frame it's held
-        const space_down = window.getKey(.space) == .press and !zgui.io.getWantCaptureKeyboard();
-        if (space_down and !space_was_down) {
+        if (input.pressedOnce(.space)) {
             settings.paused = !settings.paused;
         }
-        space_was_down = space_down;
 
-        processKeys(window, camera, delta_time);
+        processKeys(input, camera, delta_time);
 
         if (!settings.paused) {
             target_path.speed = settings.target_speed;
@@ -570,10 +568,7 @@ fn totalHits(turrets: []const Turret, ball: *const BallTurret) u32 {
     return hits;
 }
 
-fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
-    if (zgui.io.getWantCaptureKeyboard()) {
-        return;
-    }
+fn processKeys(input: *const Input, camera: *Camera, delta_time: f32) void {
     const bindings = [_]struct { key: zglfw.Key, direction: MovementDirection }{
         .{ .key = .left, .direction = .circle_left },
         .{ .key = .right, .direction = .circle_right },
@@ -583,7 +578,7 @@ fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
         .{ .key = .s, .direction = .radius_out },
     };
     for (bindings) |binding| {
-        if (window.getKey(binding.key) == .press) {
+        if (input.isDown(binding.key)) {
             camera.processMovement(binding.direction, delta_time);
         }
     }

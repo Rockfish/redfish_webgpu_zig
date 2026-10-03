@@ -24,6 +24,7 @@ const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
 const Arenas = core.Arenas;
+const Input = core.Input;
 const Camera = core.Camera;
 const DrawUniforms = core.DrawUniforms;
 const Frame = core.Frame;
@@ -225,24 +226,25 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
 
     var camera_path: PathFollow = .{ .points = &camera_waypoints, .speed = 0.0, .repeat = .loop };
 
+    // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
+    const input = Input.init(window);
     gui.init(allocator, window, gpu);
     defer gui.deinit();
 
     var rebuild: Rebuild = .{};
-    var last_time: f32 = @floatCast(zglfw.getTime());
 
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        if (window.getKey(.escape) == .press) {
+        input.update();
+        if (input.isDown(.escape)) {
             window.setShouldClose(true);
         }
 
-        const time: f32 = @floatCast(zglfw.getTime());
-        const delta_time = time - last_time;
-        last_time = time;
+        const time = input.total_time;
+        const delta_time = input.delta_time;
 
         if (settings.camera_path == .off) {
-            processKeys(window, camera, delta_time);
+            processKeys(input, camera, delta_time);
         } else {
             flyCamera(camera, &camera_path, settings, delta_time);
         }
@@ -404,10 +406,7 @@ fn drawPath(frame: *const Frame, lines: *Lines, path: PathFollow) void {
     lines.draw(frame, &segments);
 }
 
-fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
-    if (zgui.io.getWantCaptureKeyboard()) {
-        return;
-    }
+fn processKeys(input: *const Input, camera: *Camera, delta_time: f32) void {
     const bindings = [_]struct { key: zglfw.Key, direction: core.MovementDirection }{
         .{ .key = .left, .direction = .circle_left },
         .{ .key = .right, .direction = .circle_right },
@@ -417,7 +416,7 @@ fn processKeys(window: *zglfw.Window, camera: *Camera, delta_time: f32) void {
         .{ .key = .s, .direction = .radius_out },
     };
     for (bindings) |binding| {
-        if (window.getKey(binding.key) == .press) {
+        if (input.isDown(binding.key)) {
             camera.processMovement(binding.direction, delta_time);
         }
     }
