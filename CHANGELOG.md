@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-10-04 - Units, clip rates, no crossfade pops; tower attack spec phase A
+- **core.AnimationStateMachine**: each playing clip is a track with its own clock; an interrupted crossfade fades every playing clip out from where it is instead of dropping one at once (plan 012 review item 1); `setPlaybackRate` (negative plays backward), `StateConfig.rate`; a looping state still fading out resumes where it is; `update(model, dt)` (no frame time); scoped log
+- **core.WeightedAnimation**: `clip_time`, for callers that keep each clip's clock
+- **bullets**: the soldier loads `Character_Soldier.gltf`, 1.8 m tall (1 world unit = 1 m; scale from the model's bounds); walk and run speeds from the clips' measured foot speeds, with the clip rate matched to the speed; ImGui in bullets (`Scene.drawGui`), a soldier panel in soldier mode (speed, rate, walk / run sliders, rate matching on / off)
+- **Docs**: `docs/reviews/2026-10-04-link-style-controller-review.md`, the tower attack spec (Wind Waker-style control, a squad of 6, first-person shooting, a turret range); plan 012 redirected to it
+
 ### 2026-10-03 - Characters stand still during actions
 - **core.AnimationStateMachine**: `isInterruptible()`
 - **bullets**: the soldier and spacesuit no longer slide while kicking, punching, rolling, or jumping with W or the move stick held; movement and turning wait for the action to end (plan 012 review item 5)

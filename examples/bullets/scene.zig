@@ -16,6 +16,7 @@ pub const Scene = struct {
         type_id: usize,
         update_fn: *const fn (ptr: *anyopaque, state: *anyopaque) anyerror!void,
         draw_fn: *const fn (ptr: *anyopaque, frame: *const Frame, time: f32) void,
+        draw_gui_fn: *const fn (ptr: *anyopaque) void,
         clean_up_fn: *const fn (ptr: *anyopaque) void,
     };
 
@@ -40,6 +41,13 @@ pub const Scene = struct {
                 }
             }
 
+            pub fn drawGuiFn(obj_ptr: *anyopaque) void {
+                const obj: ObjectType = @ptrCast(@alignCast(obj_ptr));
+                if (std.meta.hasMethod(ObjectType, "drawGui")) {
+                    return obj.drawGui();
+                }
+            }
+
             pub fn cleanUpFn(obj_ptr: *anyopaque) void {
                 const obj: ObjectType = @ptrCast(@alignCast(obj_ptr));
                 if (std.meta.hasMethod(ObjectType, "cleanUp")) {
@@ -56,6 +64,7 @@ pub const Scene = struct {
                 .type_id = typeId(@TypeOf(object_ptr)),
                 .update_fn = gen.updateFn,
                 .draw_fn = gen.drawFn,
+                .draw_gui_fn = gen.drawGuiFn,
                 .clean_up_fn = gen.cleanUpFn,
             },
         };
@@ -74,13 +83,17 @@ pub const Scene = struct {
         self.dispatch.draw_fn(self.dispatch.obj_ptr, frame, time);
     }
 
+    /// The scene's ImGui windows, between `gui.newFrame` and `gui.draw`.
+    pub fn drawGui(self: *Scene) void {
+        self.dispatch.draw_gui_fn(self.dispatch.obj_ptr);
+    }
+
     // Possible other functions:
     // frameStart()
     // frameEnd()
     // new()
     // exit()
     // resized()
-    // render_gui()
 
     pub fn castTo(self: *Self, comptime T: type) ?*T {
         if (self.dispatch.type_id != typeId(T)) {

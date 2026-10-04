@@ -109,6 +109,10 @@ pub const WeightedAnimation = struct {
     weight: f32,
     offset: f32, // Time offset for animation synchronization
     optional_start: f32 = 0.0, // Optional start time for one-shot animations
+    /// Seconds into the clip (from `start_time`), for a caller that keeps each clip's
+    /// clock itself (`AnimationStateMachine`: rates, reverse play). Replaces the time
+    /// from `frame_time`, `offset`, and `optional_start`; clamped to the clip.
+    clip_time: ?f32 = null,
 
     pub fn init(
         animation_index: u32,
@@ -512,7 +516,9 @@ pub const Animator = struct {
 
             var target_anim_time: f32 = weighted.start_time;
 
-            if (weighted.optional_start > 0.0) {
+            if (weighted.clip_time) |clip_time| {
+                target_anim_time += std.math.clamp(clip_time, 0.0, time_range);
+            } else if (weighted.optional_start > 0.0) {
                 const time = (frame_time - weighted.optional_start) + weighted.offset;
                 target_anim_time += @min(time, time_range);
             } else {

@@ -4,14 +4,16 @@
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
 **Where it stands (2026-10-04):** `src/core/animation_fsm.zig` drives the spacesuit and
-toon soldier in `examples/bullets` (keyboard and gamepad, `objects/character_control.zig`,
-follow camera from plan 010). Review item 5 (sliding through actions) is fixed with
-`isInterruptible()`. **Next, in order:** (1) review item 1, the crossfade-interrupt pop;
-(2) review item 6 option B1, authored travel for the spacesuit's roll; (3) review item 2,
-a blend-space state tried on angrybot's locomotion (and walk / run by stick magnitude for
-the bullets characters, plan 010 phase 3's open item).
+toon soldier in `examples/bullets`. Review item 5 (sliding through actions) is fixed.
+**Redirected 2026-10-04** by the tower attack spec,
+`docs/reviews/2026-10-04-link-style-controller-review.md`: Wind Waker-style control for
+a captain (the toon soldier) with a squad of 6, first-person aim and shoot, a turret
+range. Its phases (section 12) replace the order below: **A** units, scale, FSM fading
+list and clip time with rate matching (in progress); **B** ground motor and jump;
+**C0** `src/core/gameplay/`; **C** turret range scene; **D** first person; **E-G** squad.
+Review item 6 (roll travel) and items 2-3 (blend space, phase sync) are deferred.
 
-**Status**: Active (resumed 2026-10-04; phases 1-2 done, review items 5 fixed)
+**Status**: Active (resumed 2026-10-04; phases 1-2 done, review item 5 fixed; tower attack spec phase A in progress)
 **Priority**: High
 **Estimated Effort**: Medium (3-4 days)
 **Created**: 2026-02-16
@@ -418,3 +420,9 @@ interruptible flag). Gaps, roughly in order of value:
    movement locked during that clip (an animator hook). Recommended: B1, then B2 if the
    overshoot shows; A when an asset has real root motion. **Decided 2026-10-04 (John):
    start with B1.**
+7. **Toon Walk clip: the front of the foot sinks into the floor** (John, 2026-10-04).
+   Seen from the side at floor level: as the planted foot travels back, its front half
+   goes below the floor instead of the foot rolling up onto the toes. Run is fine. A
+   quirk of the Walk / Walk_Shoot clips in the toon kit, not the FSM or the scale (not
+   a constant offset, so a height adjustment wouldn't fix it). To be fixed in the
+   animation itself if it matters; just a note for now.

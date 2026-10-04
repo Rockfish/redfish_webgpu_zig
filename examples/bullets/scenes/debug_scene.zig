@@ -163,6 +163,13 @@ pub const SceneDebug = struct {
         self.floor.draw(frame);
     }
 
+    /// The soldier's tuning panel in the soldier mode.
+    pub fn drawGui(self: *Self) void {
+        if (self.input_mode == .soldier) {
+            self.toon_soldier.drawGui();
+        }
+    }
+
     /// The mode's object handles its keys first; the global keys then see only the keys
     /// it didn't claim (`pressedOnce` marks a key as used). So Space is a jump or a roll in
     /// the soldier and spacesuit modes, and pauses the turret in the others.

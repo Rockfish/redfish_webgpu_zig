@@ -5,6 +5,7 @@ const world_module = @import("world.zig");
 
 const Allocator = std.mem.Allocator;
 const Input = core.Input;
+const gui = core.gui;
 const GpuContext = core.GpuContext;
 const World = world_module.World;
 
@@ -16,7 +17,10 @@ const CLEAR_COLOR = [4]f64{ 0.0, 0.0, 0.0, 1.0 };
 
 pub fn run_app(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, max_duration: ?f32, initial_scene: world_module.SceneId) !void {
     log.info("Starting simple bullets test app", .{});
+    // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
+    gui.init(init.gpa, window, gpu);
+    defer gui.deinit();
 
     const world = try World.init(init, gpu, input, initial_scene);
     defer world.deinit(init);
@@ -73,6 +77,11 @@ pub fn run_app(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext, m
 
         const frame = gpu.beginFrame(CLEAR_COLOR) orelse continue;
         world.scene.draw(&frame, input.total_time);
+
+        gui.newFrame();
+        world.scene.drawGui();
+        gui.draw(frame);
+
         gpu.endFrame(frame);
     }
 

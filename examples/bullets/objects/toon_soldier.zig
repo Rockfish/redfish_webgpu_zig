@@ -1,9 +1,8 @@
 const std = @import("std");
+const zgui = @import("zgui");
 const core = @import("core");
 const math = @import("math");
 
-const Vec2 = math.Vec2;
-const vec2 = math.vec2;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 const Vec4 = math.Vec4;
@@ -25,9 +24,20 @@ const character_control = @import("character_control.zig");
 
 const ToonStateMachine = core.AnimationStateMachine(ToonAnimation);
 
+const log = std.log.scoped(.toon_soldier);
+
 const path_soldier = "assets/toon_shooter_kit/Characters/glTF/Character_Soldier.gltf";
 const path_enemy = "assets/toon_shooter_kit/Characters/glTF/Character_Enemy.gltf";
 const path_hazmat = "assets/toon_shooter_kit/Characters/glTF/Character_Hazmat.gltf";
+
+/// The soldier's height in meters (1 world unit = 1 m); its scale follows from the
+/// model's height.
+const HEIGHT: f32 = 1.8;
+/// How fast a planted foot moves back in the Walk and Run clips, in model units per
+/// second (measured from the clips: docs/reviews/2026-10-04-link-style-controller-review.md
+/// section 3.3). Moving at these speeds times the scale, the feet don't slide.
+const WALK_CLIP_SPEED: f32 = 2.6;
+const RUN_CLIP_SPEED: f32 = 4.5;
 
 const ToonAnimation = enum(u32) {
     death,
@@ -70,14 +80,18 @@ pub const ToonSoldier = struct {
     model: *core.ModelInstance,
     shader: *core.Shader,
     position: Vec3 = vec3(0.0, 0.0, 3.0),
-    direction: Vec2 = vec2(0.0, 0.0),
-    scale: Vec3 = vec3(1.0, 1.0, 1.0),
+    /// The model's scale for `HEIGHT`.
+    scale: f32,
     transform: core.Transform = core.Transform.identity(),
     rotation_speed: f32 = 2.0,
-    /// Units per second (negative: the model faces -forward). redfish moved a fixed step per
-    /// frame with vsync off, so the speed depended on frame rate.
-    walk_speed: f32 = -1.5,
-    run_speed: f32 = -7.5,
+    /// Meters per second.
+    walk_speed: f32,
+    run_speed: f32,
+    /// This frame's speed, for matching the walk and run clips' rate to it.
+    speed: f32 = 0.0,
+    /// Plays walk and run at the rate that matches `speed`, so the feet don't slide at
+    /// any speed. Off: as authored, for finding the speed where they don't.
+    match_rate: bool = true,
     state_machine: ToonStateMachine,
     current_weapon: Weapon = .ShortCannon,
 
@@ -93,7 +107,11 @@ pub const ToonSoldier = struct {
             .alpha_to_coverage = true,
         });
 
-        const model = try rm.loadModel("toon_soldier", path_enemy);
+        const model = try rm.loadModel("toon_soldier", path_soldier);
+        const bounds = model.gltf_asset.calculateBoundingBox(0);
+        const model_height = bounds.max.y - bounds.min.y;
+        const scale = HEIGHT / model_height;
+        log.info("model height {d:.2}, scale {d:.3} for {d:.2} m", .{ model_height, scale, HEIGHT });
 
         const configs = buildStateConfigs();
         var fsm = ToonStateMachine.init(configs, .idle, model);
@@ -103,11 +121,14 @@ pub const ToonSoldier = struct {
         soldier.* = .{
             .model = model,
             .shader = shader,
+            .scale = scale,
+            .walk_speed = WALK_CLIP_SPEED * scale,
+            .run_speed = RUN_CLIP_SPEED * scale,
             .state_machine = fsm,
         };
 
         soldier.transform.translation = soldier.position;
-        soldier.transform.scale = soldier.scale;
+        soldier.transform.scale = vec3(scale, scale, scale);
         soldier.equipWeapon(soldier.current_weapon);
 
         return soldier;
@@ -124,7 +145,27 @@ pub const ToonSoldier = struct {
     }
 
     pub fn update(self: *Self, input: *Input) !void {
-        try self.state_machine.update(self.model, input.total_time, input.delta_time);
+        self.matchClipRate();
+        try self.state_machine.update(self.model, input.delta_time);
+    }
+
+    /// The tuning panel: speeds in meters per second and the clips' rates.
+    pub fn drawGui(self: *Self) void {
+        zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
+        zgui.setNextWindowSize(.{ .w = 320, .h = 200, .cond = .first_use_ever });
+        if (zgui.begin("soldier", .{})) {
+            const state = self.state_machine.getCurrentState();
+            zgui.text("state: {s}", .{@tagName(state)});
+            zgui.text("speed: {d:.2} m/s ({d:.2} heights/s)", .{ self.speed, self.speed / HEIGHT });
+            if (clipSpeed(state)) |clip_speed| {
+                zgui.text("clip foot speed: {d:.2} m/s", .{clip_speed * self.scale});
+            }
+            zgui.text("height: {d:.2} m, scale {d:.3}", .{ HEIGHT, self.scale });
+            _ = zgui.sliderFloat("walk (m/s)", .{ .v = &self.walk_speed, .min = 0.5, .max = 5.0 });
+            _ = zgui.sliderFloat("run (m/s)", .{ .v = &self.run_speed, .min = 1.0, .max = 10.0 });
+            _ = zgui.checkbox("match clip rate to speed", .{ .v = &self.match_rate });
+        }
+        zgui.end();
     }
 
     /// Lit by the frame's SceneLights (redfish's PBR light uniforms were never set here).
@@ -138,6 +179,7 @@ pub const ToonSoldier = struct {
         // One-shot actions first, so they claim their keys before the scene's global keys
         self.processOneShotKeys(input);
         // A kick or roll plays in place: no moving or turning until it's done
+        self.speed = 0.0;
         if (!self.state_machine.isInterruptible()) {
             return;
         }
@@ -150,12 +192,12 @@ pub const ToonSoldier = struct {
             self.transform.rotateAxis(vec3(0.0, 1.0, 0.0), -self.rotation_speed * dt);
         }
 
-        // Locomotion
+        // Locomotion, along the way the model faces (glTF models face +Z)
+        const facing = self.transform.rotation.rotateVec(Vec3.Z);
         if (input.isDown(.w)) {
             const is_running = input.key_shift;
-            const speed = if (is_running) self.run_speed else self.walk_speed;
-            const fwd = self.transform.forward();
-            self.transform.translation = self.transform.translation.add(fwd.mulScalar(speed * dt));
+            self.speed = if (is_running) self.run_speed else self.walk_speed;
+            self.transform.translation = self.transform.translation.add(facing.mulScalar(self.speed * dt));
 
             if (is_running) {
                 _ = self.state_machine.requestState(.run_shoot);
@@ -163,8 +205,8 @@ pub const ToonSoldier = struct {
                 _ = self.state_machine.requestState(.walk);
             }
         } else if (input.isDown(.s)) {
-            const fwd = self.transform.forward();
-            self.transform.translation = self.transform.translation.sub(fwd.mulScalar(self.walk_speed * dt));
+            self.speed = self.walk_speed;
+            self.transform.translation = self.transform.translation.sub(facing.mulScalar(self.speed * dt));
             _ = self.state_machine.requestState(.walk);
         } else {
             _ = self.state_machine.requestState(.idle);
@@ -175,10 +217,16 @@ pub const ToonSoldier = struct {
     /// move stick, length 0 to 1), facing where it goes; actions as `processInput`.
     pub fn drive(self: *Self, move: Vec3, input: *core.Input) void {
         self.processOneShotKeys(input);
+        self.speed = 0.0;
         if (!self.state_machine.isInterruptible()) {
             return;
         }
-        const gait = character_control.drive(&self.transform, move, @abs(self.walk_speed), @abs(self.run_speed), input.delta_time);
+        const gait = character_control.drive(&self.transform, move, self.walk_speed, self.run_speed, input.delta_time);
+        self.speed = switch (gait) {
+            .idle => 0.0,
+            .walk => self.walk_speed,
+            .run => self.run_speed,
+        };
         _ = self.state_machine.requestState(switch (gait) {
             .idle => .idle,
             .walk => .walk,
@@ -217,7 +265,23 @@ pub const ToonSoldier = struct {
             }
         }
     }
+
+    /// A walk or run plays at the rate that carries the feet at `speed`.
+    fn matchClipRate(self: *Self) void {
+        const clip_speed = clipSpeed(self.state_machine.getCurrentState()) orelse return;
+        const rate = if (self.match_rate and self.speed > 0.0) self.speed / (clip_speed * self.scale) else 1.0;
+        self.state_machine.setPlaybackRate(rate);
+    }
 };
+
+/// The foot speed of a walk or run state's clip, in model units per second.
+fn clipSpeed(state: ToonAnimation) ?f32 {
+    return switch (state) {
+        .walk, .walk_shoot => WALK_CLIP_SPEED,
+        .run, .run_gun, .run_shoot => RUN_CLIP_SPEED,
+        else => null,
+    };
+}
 
 fn buildStateConfigs() [ToonStateMachine.count]ToonStateMachine.StateConfig {
     const Forever = AnimationRepeatMode.Forever;

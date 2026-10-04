@@ -141,7 +141,7 @@ pub const Spacesuit = struct {
     }
 
     pub fn update(self: *Self, input: *Input) !void {
-        try self.state_machine.update(self.model, input.total_time, input.delta_time);
+        try self.state_machine.update(self.model, input.delta_time);
     }
 
     /// Lit by the frame's SceneLights (redfish's PBR light uniforms were never set here).
