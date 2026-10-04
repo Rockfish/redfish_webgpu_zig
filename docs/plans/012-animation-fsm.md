@@ -3,7 +3,15 @@
 > Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Phases 1-2 implemented (`src/core/animation_fsm.zig`, used by the spacesuit and toon soldier in bullets); phase 3 open. See the 2026-09-28 review notes at the end.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Planning
+**Where it stands (2026-10-04):** `src/core/animation_fsm.zig` drives the spacesuit and
+toon soldier in `examples/bullets` (keyboard and gamepad, `objects/character_control.zig`,
+follow camera from plan 010). Review item 5 (sliding through actions) is fixed with
+`isInterruptible()`. **Next, in order:** (1) review item 1, the crossfade-interrupt pop;
+(2) review item 6 option B1, authored travel for the spacesuit's roll; (3) review item 2,
+a blend-space state tried on angrybot's locomotion (and walk / run by stick magnitude for
+the bullets characters, plan 010 phase 3's open item).
+
+**Status**: Active (resumed 2026-10-04; phases 1-2 done, review items 5 fixed)
 **Priority**: High
 **Estimated Effort**: Medium (3-4 days)
 **Created**: 2026-02-16
@@ -397,3 +405,16 @@ interruptible flag). Gaps, roughly in order of value:
    `isInterruptible()` on the state machine, and the characters skip movement and turning
    (taking only action buttons) while it's false. **Fixed 2026-10-03**: checked with the
    stick held through a kick, the spacesuit stays put for the kick and runs on after.
+6. **Actions that should travel** (John, 2026-10-03): the spacesuit's roll should carry it
+   forward. The clip is animated in place: the `Body` bone (its local Z is forward once
+   the armature's rotations cancel; 1 bone unit = 2 world units with the armature's 100×
+   and the model's 0.02 scale) dips 0.84 in Y and lunges up to 0.33 forward, then returns
+   (first Z -0.05, last -0.04); kick has a 0.2 lunge that returns. So root-motion
+   extraction would give a roll forward and a slide back. Options: (A) root motion
+   extraction (a named root bone's horizontal movement moved from the pose to the
+   transform), right for assets with real travel; (B) authored travel per action state
+   (distance and ease over the clip, along the character's facing), (B1) alone, leaving
+   the clip's own lunge as a small overshoot, or (B2) with the root bone's horizontal
+   movement locked during that clip (an animator hook). Recommended: B1, then B2 if the
+   overshoot shows; A when an asset has real root motion. **Decided 2026-10-04 (John):
+   start with B1.**

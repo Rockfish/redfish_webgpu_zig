@@ -3,7 +3,11 @@
 > Imported from redfish_gl_zig on 2026-09-28. **In this repo:** made active 2026-10-01 after the review at the end; phases there. Paths below refer to redfish; bullets was reorganized in the port.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Status**: Active (phases 1-3 done 2026-10-03)
+**Status**: Parked 2026-10-04 (phases 1-3 done). Where it stands: `core.Input` has
+`isDown` / `pressedOnce`, works with ImGui, and reads gamepads (macOS mappings in
+`src/core/gamecontrollerdb_macos.txt`); `motion.FollowCamera` drives the bullets
+characters' third-person camera. Next step if resumed: the "Later" items (demo_app /
+level_01 / angrybot onto `core.Input`; the capturable-turret game scenario).
 **Created**: 2026-02-11
 
 ## Context

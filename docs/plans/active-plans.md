@@ -4,21 +4,18 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: input
-  modes and one-shot keys; reviewed against bullets 2026-10-01.
-  - Phase 1 done 2026-10-01: `Input.isDown` / `pressedOnce`, mouse, scroll, and modifier
-    fixes, Escape moved to the apps; bullets debug scene split into mode and global keys.
-  - Phase 2 done 2026-10-02: `core.Input` alongside ImGui (keys and mouse ignored while
-    ImGui wants them); camera_rig, shadows, turrets moved onto it.
-  - Phase 3 done 2026-10-03: gamepad in `core.Input`, `motion.FollowCamera` (a leash
-    camera) and `cameraRelativeMove`; the soldier and spacesuit in bullets run with the
-    left stick, the right stick turns the camera.
+- **[012-animation-fsm.md](012-animation-fsm.md)**: resumed 2026-10-04; phases 1-2
+  implemented (`animation_fsm.zig`, bullets), review item 5 (sliding through actions)
+  fixed. Next: review item 1 (crossfade-interrupt pop), then item 6 B1 (roll travel),
+  then item 2 (blend-space state on angrybot's locomotion).
 
 ## ⏸️ Parked
 
-- **[012-animation-fsm.md](012-animation-fsm.md)**: phases 1-2 implemented
-  (`animation_fsm.zig`, bullets). Next: the crossfade-interrupt fix, then a blend-space
-  state tried on angrybot's locomotion (review notes 2026-09-28).
+- **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: phases
+  1-3 done (2026-10-01 to 10-03): `Input.isDown` / `pressedOnce`, ImGui-aware input,
+  gamepad with current SDL mappings, `motion.FollowCamera`; bullets characters on the
+  controller. Next if resumed: the "Later" items (other apps onto `core.Input`, the
+  capturable turret).
 - **[005-scene-management.md](005-scene-management.md)**: discussed 2026-09-28 (union vs.
   dispatch, why Godot has node types). Next: a core transform hierarchy and a shared
   dispatch helper; a full scene system waits for a second game.
@@ -99,3 +96,6 @@ plan finished. Plan 009 finished with `core.ballistics` in the bullets example.
 **2026-10-02**: Plan 010 phase 2 done; phase 3 (game controller) added.
 
 **2026-10-03**: Plan 010 phase 3 (game controller, follow camera) done.
+
+**2026-10-04**: Plan 010 parked after phase 3; plan 012 made active (crossfade fix, roll
+travel B1, blend space).

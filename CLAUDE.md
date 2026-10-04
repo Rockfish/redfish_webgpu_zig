@@ -33,10 +33,11 @@ the regression check. Since then:
 - Plan 008 turrets: `core.motion` (`YawPitchAim`, `Sweep`), `core.FireControl`,
   `core.ballistics`; `examples/turrets` (track, sweep, mortar, programs, turret types)
 - Plan 009 gravity bullets: `examples/bullets` steps with `core.ballistics` (G gravity, P paths)
+- Plan 010 input: `core.Input` (`isDown`, `pressedOnce`, ImGui-aware, gamepad);
+  `motion.FollowCamera`; bullets characters on a game controller
 
-Active plan: 010 input (phase 1: `Input.isDown` / `pressedOnce`, bullets mode and
-global keys; phase 2: with ImGui; phase 3: gamepad, `motion.FollowCamera`). See
-`docs/plans/active-plans.md`.
+Active plan: 012 animation FSM (next: crossfade-interrupt fix, roll travel B1, blend
+space). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 
@@ -99,7 +100,9 @@ docs/
 - Shared shaders live in `src/core/shaders/` (`common.wgsl` embedded, `pbr.wgsl` loaded by path)
 - GL-era color constants go through `colors.srgbToLinear` to look the same
 - Request needed limits in `requiredLimits`; otherwise the device gets WebGPU defaults
-- Input: `core.Input` (`isDown`, `pressedOnce`), created before `gui.init` so ImGui chains to it
+- Input: `core.Input` (`isDown`, `pressedOnce`, gamepad), created before `gui.init` so ImGui
+  chains to it; a gamepad GLFW lists but doesn't map needs its SDL_GameControllerDB line in
+  `src/core/gamecontrollerdb_macos.txt`
 - GPU cleanup: `releaseGpuObjects()` on leaves, `cleanUp()` on aggregates, before arena reset
 
 ## Build
