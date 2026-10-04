@@ -469,7 +469,7 @@ weights:
 
 ### 10.4 Code
 
-- `src/core/steering.zig`: the behaviors as plain functions (`seek`, `arrive`, `flee`,
+- `src/core/gameplay/steering.zig`: the behaviors as plain functions (`seek`, `arrive`, `flee`,
   `separation`, `cohesion`, `alignment`, `Wander`), each returning a desired velocity.
   Testable on their own, like `core.motion`; reusable for enemies and civilians later.
 - The squad in bullets: `Squad` owns 6 members (`ModelInstance` each, Enemy and Hazmat

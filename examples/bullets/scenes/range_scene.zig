@@ -2,8 +2,8 @@
 //! and 5.5, phases C and D): a field with turrets of several sizes, the captain (the toon
 //! soldier) at one end with the follow camera. LT (or F) holds first person: the left
 //! stick moves, the right stick aims, RT (or the left mouse button) fires tracers. The
-//! turrets watch the captain but hold fire for now. The squad (phase E) follows the
-//! captain.
+//! turrets watch the captain but hold fire for now. The squad (phases E and F) follows
+//! the captain and, after a couple of his shots at one spot, fires at it too.
 
 const std = @import("std");
 const zgui = @import("zgui");
@@ -62,6 +62,8 @@ const TRACER_SPEED: f32 = 80.0;
 const TRACER_LIFETIME: f32 = 1.5;
 const TRACER_DAMAGE: f32 = 1.0;
 const TRACER_COLOR = vec4(1.0, 0.85, 0.4, 1.0);
+/// The squad's tracers, a redder yellow so the captain's own stand out.
+const SQUAD_TRACER_COLOR = vec4(1.0, 0.55, 0.25, 1.0);
 /// Shots leave from below and right of the eye (where the gun would be), so they're seen
 /// flying instead of shrinking to a dot, aimed at what the crosshair is on.
 const MUZZLE_OFFSET = vec3(0.18, -0.2, 0.0);
@@ -69,6 +71,15 @@ const MUZZLE_OFFSET = vec3(0.18, -0.2, 0.0);
 const SKY_AIM_DISTANCE: f32 = 100.0;
 /// A tracer's puff on the floor.
 const FLOOR_PUFF_RADIUS: f32 = 0.1;
+
+/// What the crosshair is on.
+const CrosshairAim = struct {
+    point: Vec3,
+    /// The turret it's on (an index into `turrets`), if any.
+    target: ?usize,
+    /// False when it's on nothing (the sky): `point` is just far out along the view.
+    is_on_something: bool,
+};
 
 const Placement = struct {
     turret_type: *const TurretType,
@@ -108,6 +119,7 @@ pub const RangeScene = struct {
     random: Random,
     shots_fired: u32 = 0,
     hits: u32 = 0,
+    squad_hits: u32 = 0,
 
     const Self = @This();
 
@@ -195,6 +207,8 @@ pub const RangeScene = struct {
         self.squad.draw(frame);
         const tracer_parts = [_]projectiles.Part{.{ .shape = self.turret_shapes.tracer, .model = Mat4.Identity, .color = TRACER_COLOR }};
         self.tracers.draw(frame, self.tracer_shader, &tracer_parts);
+        const squad_tracer_parts = [_]projectiles.Part{.{ .shape = self.turret_shapes.tracer, .model = Mat4.Identity, .color = SQUAD_TRACER_COLOR }};
+        self.squad.tracers.draw(frame, self.tracer_shader, &squad_tracer_parts);
         self.explosions.draw(frame, self.flash_shader, self.shape_shader, &self.explosion_shapes);
         self.floor.draw(frame);
     }
@@ -253,31 +267,42 @@ pub const RangeScene = struct {
         const eye = FirstPerson.eye(self.captain.transform.translation);
         const direction = self.first_person.direction();
         const muzzle = eye.add(self.viewOffset(MUZZLE_OFFSET));
-        const toward = self.crosshairPoint(eye, direction).sub(muzzle).toNormalized();
+        const aim = self.crosshairAim(eye, direction);
+        const toward = aim.point.sub(muzzle).toNormalized();
         while (self.fire_control.nextShot()) |age| {
             const shot = self.jitter.apply(&self.random, toward, TRACER_SPEED);
             self.tracers.spawn(muzzle, shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
             self.shots_fired += 1;
+            if (aim.is_on_something) {
+                self.squad.reportShot(aim.point, aim.target);
+            }
         }
     }
 
     /// What the crosshair is on: the nearest point where the view's ray from `eye` meets a
     /// live turret's hit sphere or the floor; far out along it when it meets neither.
-    fn crosshairPoint(self: *const Self, eye: Vec3, direction: Vec3) Vec3 {
+    fn crosshairAim(self: *const Self, eye: Vec3, direction: Vec3) CrosshairAim {
         var nearest: f32 = SKY_AIM_DISTANCE;
-        if (direction.y < 0.0) {
-            nearest = @min(nearest, -eye.y / direction.y);
+        var target: ?usize = null;
+        var is_on_something = false;
+        if (direction.y < 0.0 and -eye.y / direction.y < nearest) {
+            nearest = -eye.y / direction.y;
+            is_on_something = true;
         }
-        for (self.turrets) |turret| {
+        for (self.turrets, 0..) |turret, index| {
             if (turret.destroyed) {
                 continue;
             }
             const sphere = turret.hitSphere();
             if (raySphere(eye, direction, sphere.center, sphere.radius)) |distance| {
-                nearest = @min(nearest, distance);
+                if (distance < nearest) {
+                    nearest = distance;
+                    target = index;
+                    is_on_something = true;
+                }
             }
         }
-        return eye.add(direction.mulScalar(nearest));
+        return .{ .point = eye.add(direction.mulScalar(nearest)), .target = target, .is_on_something = is_on_something };
     }
 
     /// `offset` (right, up, forward) in the view's frame.
@@ -288,8 +313,20 @@ pub const RangeScene = struct {
         return right.mulScalar(offset.x).add(up.mulScalar(offset.y)).add(forward.mulScalar(offset.z));
     }
 
-    /// Tracers fly on; one that strikes a turret hurts it, one that hits the floor puffs.
+    /// The captain's and the squad's tracers fly on; one that strikes a turret hurts it,
+    /// one that hits the floor puffs. A destroyed focus turret ends the squad's fire.
     fn moveTracers(self: *Self, dt: f32) void {
+        self.hits += self.moveTracerPool(&self.tracers, dt);
+        self.squad_hits += self.moveTracerPool(&self.squad.tracers, dt);
+        if (self.squad.focus.target) |index| {
+            if (self.turrets[index].destroyed) {
+                self.squad.clearFocus();
+            }
+        }
+    }
+
+    /// Returns how many struck a turret.
+    fn moveTracerPool(self: *Self, tracers: *Projectiles, dt: f32) u32 {
         var targets: [placements.len]projectiles.Target = undefined;
         var owners: [placements.len]*TargetTurret = undefined;
         var count: usize = 0;
@@ -304,14 +341,16 @@ pub const RangeScene = struct {
         }
 
         var endings: [projectiles.MAX_PROJECTILES]projectiles.Ending = undefined;
-        for (self.tracers.updateTargets(dt, targets[0..count], &self.explosions, &endings)) |ending| {
+        var hits: u32 = 0;
+        for (tracers.updateTargets(dt, targets[0..count], &self.explosions, &endings)) |ending| {
             if (ending.target) |index| {
                 owners[index].hit(ending.position, TRACER_DAMAGE, &self.explosions);
-                self.hits += 1;
+                hits += 1;
             } else if (ending.grounded) {
                 self.explosions.add(ending.position, FLOOR_PUFF_RADIUS);
             }
         }
+        return hits;
     }
 
     fn processKeys(self: *Self, input: *core.Input) void {
@@ -344,7 +383,7 @@ pub const RangeScene = struct {
         zgui.setNextWindowSize(.{ .w = 360, .h = 260, .cond = .first_use_ever });
         if (zgui.begin("range", .{})) {
             zgui.text("LT / F: first person   RT / mouse: fire   R: reset", .{});
-            zgui.text("shots: {d}   hits: {d}", .{ self.shots_fired, self.hits });
+            zgui.text("shots: {d}   hits: {d}   squad hits: {d}", .{ self.shots_fired, self.hits, self.squad_hits });
             for (self.turrets, placements) |turret, placement| {
                 if (turret.destroyed) {
                     zgui.text("{s} {d:.1}: destroyed", .{ placement.turret_type.name, placement.size });

@@ -293,6 +293,21 @@ pub const ToonSoldier = struct {
         });
     }
 
+    /// Driven by code while shooting: moves along `move` while facing `heading`, gun up
+    /// (Idle_Shoot while `firing` and still, Walk_Shoot / Run_Shoot moving).
+    pub fn steerAiming(self: *Self, move: Vec3, heading: f32, firing: bool, dt: f32) void {
+        if (!self.state_machine.isInterruptible()) {
+            self.moveDuringAction(dt);
+            return;
+        }
+        const gait = self.motor.strafe(&self.transform, move, heading, dt);
+        _ = self.state_machine.requestState(switch (gait) {
+            .idle => if (firing) .idle_shoot else .idle,
+            .walk => .walk_shoot,
+            .run => .run_shoot,
+        });
+    }
+
     fn processOneShotKeys(self: *Self, input: *core.Input) void {
         const one_shot_keys = .{
             .{ .key = .space, .anim = ToonAnimation.jump },
