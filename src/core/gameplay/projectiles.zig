@@ -53,6 +53,15 @@ pub const Ending = struct {
     grounded: bool,
 };
 
+/// Where a shot in flight will end, if nothing stops it first (`predictedEnd`).
+pub const Prediction = struct {
+    position: Vec3,
+    /// Seconds until then.
+    time_left: f32,
+    /// Seconds from launch to then: `1 - time_left / fuse` is how far along it is.
+    fuse: f32,
+};
+
 /// One part of a projectile's look: a mesh placed in the projectile's own space (nose
 /// down -Z).
 pub const Part = struct {
@@ -139,6 +148,18 @@ pub const Projectiles = struct {
             i += 1;
         }
         return endings[0..ended];
+    }
+
+    /// Where shot `i` will be when its fuse runs out (a shell's burst), from where it is
+    /// now: exact under constant gravity, so warnings can mark it on the floor from launch.
+    /// It can end sooner, on a target or the floor.
+    pub fn predictedEnd(self: *const Self, i: usize) Prediction {
+        const time_left = @max(self.fuses[i] - self.ages[i], 0.0);
+        return .{
+            .position = ballistics.positionAt(self.positions[i], self.velocities[i], self.gravity, time_left),
+            .time_left = time_left,
+            .fuse = self.fuses[i],
+        };
     }
 
     /// Draws every shot, one instanced draw per part.
@@ -276,4 +297,26 @@ test "updateTargets: a tracer into the floor ends where it crossed it" {
     try std.testing.expectEqual(@as(?usize, null), ended[0].target);
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), ended[0].position.y, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, -1.0), ended[0].position.z, 1e-4);
+}
+
+test "predictedEnd: a lobbed shell's prediction stays where it bursts" {
+    const gravity = Vec3.init(0.0, -9.8, 0.0);
+    var shells: Projectiles = .{ .gravity = gravity, .blast_radius = 1.0 };
+    var explosions: Explosions = .{ .floor_color = Vec4.One };
+    var endings: [MAX_PROJECTILES]Ending = undefined;
+    const muzzle = Vec3.init(0.0, 2.0, 0.0);
+    const goal = Vec3.init(6.0, 1.0, -20.0);
+    const flight_time: f32 = 3.5;
+
+    shells.spawn(muzzle, ballistics.launchVelocity(muzzle, goal, flight_time, gravity), flight_time, 0.0);
+    try std.testing.expect(shells.predictedEnd(0).position.sub(goal).length() < 1e-3);
+    try std.testing.expectApproxEqAbs(flight_time, shells.predictedEnd(0).time_left, 1e-6);
+
+    // Halfway there, the same point, half the time left
+    for (0..105) |_| {
+        _ = shells.updateTargets(1.0 / 60.0, &.{}, &explosions, &endings);
+    }
+    const halfway = shells.predictedEnd(0);
+    try std.testing.expect(halfway.position.sub(goal).length() < 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.75), halfway.time_left, 1e-3);
 }

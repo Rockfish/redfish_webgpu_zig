@@ -54,10 +54,10 @@ pub const Node = struct {
 // origin and extend along +Y, spheres are centered.
 const base_size = vec3(4.0, 0.5, 4.0);
 const platform_size = vec3(2.5, 0.5, 2.5);
-const body_radius: f32 = 1.0;
+const body_radius: f32 = 0.5;
 const body_height: f32 = 0.8;
 const head_radius: f32 = 0.7;
-const barrel_radius: f32 = 0.2;
+const barrel_radius: f32 = 0.1;
 const barrel_length: f32 = 2.5;
 
 const base_children = [_]u32{Part.platform.index()};

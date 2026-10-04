@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-F done, G next)
+## Status: Active (started 2026-10-04; phases A-G done)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -125,6 +125,61 @@ range`): the captain (the toon Soldier), his squad of six, and turrets of severa
   focus, settled count, debug lines: spot yellow, steering cyan, aim red), the range
   (turret health, shots and hits).
 
+### Turrets fire back (phase G1)
+
+- **Range turret types** (`objects/range_turret_types.zig`): the core types slowed down.
+  Gun turrets (gatling, cannon, sweeper) slew at 18-30°/s, fire while turning, no lead,
+  3° spray (cannon 2°), in bursts (gatling 6 every 1.2 s, cannon 3 every 1.6 s) or a
+  slow 12°/s sweep at 8 shots per second. The mortar fires a shell every 4 s with a
+  3.5 s flight time and a 2.5 m blast; the battery sweeps 4 s, lobs two shells, waits
+  2 s.
+- **Detection ranges** (added 2026-10-04 after testing: every turret within 45 m fired
+  on the squad all the time, so there was no way to avoid being hit): each turret
+  watches the ground within its own range (gatling 0.6: 14 m, cannon and gatling 1.0:
+  16, sweeper 18, mortar and battery 24; the captain starts outside all of them), picks
+  someone inside at random every 4-9 s, keeps on them until they're 10% past the edge,
+  and holds fire with nobody inside. A thin ring on the floor shows each range, brighter
+  while it has someone. Panel: show ranges, a scale for all of them; T toggles fire.
+  People are spheres 0.45 m in radius, 1 m up.
+- **`Turret.updateAim` / `fireDueShots`**: `update` split so the range moves each
+  turret's shots itself against everyone (`Projectiles.updateTargets`).
+  `TargetTurret.update` reports `Strikes`: a tracer on someone, or any shell's blast.
+- **Warnings** (`objects/shell_warnings.zig`): a red ring the size of the blast where
+  each shell will burst, from launch, filling from the middle and brightening as it
+  nears; the point from `Projectiles.predictedEnd` (exact under constant gravity).
+  `core.shapes.createRing` (a flat annulus) added for it.
+- **Hits**: a tracer on the captain adds 0.3 trauma to the camera shake (`motion.Shake`
+  on the frame's view), a blast 0.8, a near miss up to half that out to two blast radii
+  past its edge. A member hit flinches (`ToonSoldier.flinch`: HitReact, `forceState`),
+  standing and holding fire until it's over. The range panel counts hits on the captain
+  and the squad.
+
+### Fear, scatter, regroup (phase G2)
+
+As the spec below, in `objects/squad.zig`: each member has a fear (0 to 1), a courage
+(0.35-0.85, picked at start), and a mood (follow, scatter, regroup; engaging is follow
+with a focus).
+
+- **Fear rises** with a blast (0.9 at its center, to zero at 3 blast radii), a hit
+  (0.35, with the flinch), a tracer into the floor within 2 m (0.08), standing under an
+  incoming shell's warning (0.8 per second at its center, out to 1.5 blast radii), and a
+  member running away within 3 m (0.25 per second, only to those not scattering). **It falls** 0.15 per second, 2.5
+  times faster within 5 m of the captain.
+- **What a member runs from** is the source of its biggest recent fright and how far
+  that reaches: the blast point (3 blast radii), the predicted burst (1.5), or the
+  turret that fired the tracer (its detection range).
+- **Scatter** above its courage: runs away from the threat, turned by its own angle
+  (±40°), until 3 m past its reach, holding fire. A scattering member doesn't flinch;
+  a following one flinches at most once every 2 s. **Regroup** below half its courage: runs
+  back to its spot; within 2 m of it, follows again.
+- Debug lines: a fear bar over each head (green follow, red scatter, magenta regroup),
+  orange to the threat while scattering. The squad panel lists each member's mood, fear,
+  and courage, and every fear setting.
+- **Cylinder fix** (same step): `createCylinder` halved the radius it was given (from
+  redfish_gl_zig); it now builds the radius asked for, and every caller passes half its
+  old value, so nothing changed size. The turret's rocket nose keeps its own radius
+  (twice the body's).
+
 ## Phase G Spec: Turrets Fire Back, Fear and Scatter
 
 ### Turrets
@@ -181,7 +236,8 @@ Each phase ends with a CHANGELOG entry and a commit.
 | D | First person: LT / F, eased camera, hidden model, aim, crosshair, tracers aimed at the crosshair's target | ✅ 2026-10-04 |
 | E | `core.gameplay.steering`; squad of 6 following, settling, rank yielding; tuning panel, debug lines | ✅ 2026-10-04 |
 | F | Squad focus fire | ✅ 2026-10-04 |
-| G | Turrets fire back (slow traverse, slow mortars with warning markers); hits on people (shake, flinch); fear, scatter, regroup | Next |
+| G1 | Turrets fire back (slow traverse, slow mortars with warning rings); hits on people (shake, flinch); detection ranges | ✅ 2026-10-04 |
+| G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
 
 ## Notes
 
@@ -190,3 +246,20 @@ done the same day; each tested by John on the controller. Tuning notes from test
 the halted squad twitched until settling and rank yielding were added (E); close-up
 shots landed low and right until shots aimed at the crosshair's target instead of a
 fixed 25 m point (D).
+
+**2026-10-04 (G2 testing)**: scattering members froze inside a turret's range, hit over
+and over, fear stuck at 1. Two causes: they ran only 10 m from the threat, and for a
+tracer the threat is the turret, whose range is 14-24 m, so they stopped inside it; and
+each hit forced a flinch, during which a member can't move. Fixed: a threat carries its
+reach (detection range, blast or warning reach) and members run until 3 m past it;
+scattering members don't flinch, following ones at most once every 2 s. Checked with a
+40 s run: every scatter ended outside the threat's reach; the slow moments left are the
+one flinch from the hit that starts a scatter, then the first steps.
+
+**2026-10-04 (G2 testing)**: two members stayed out after fleeing, standing together
+past the ranges, even with the captain nearby and back. Fear spread: every scattering
+member frightened everyone within 3 m at 0.25 per second, more than the 0.15 decay, so
+two scattered members standing together kept each other afraid and never fell below
+half their courage. Fixed: fear spreads only from a member running away (above walking
+speed), and only to members not scattering. Checked with a run where the turrets stop
+after 15 s: all six back to following by 30 s.

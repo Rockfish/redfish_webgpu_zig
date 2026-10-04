@@ -10,6 +10,8 @@ const vec3 = math.vec3;
 
 const Allocator = std.mem.Allocator;
 
+/// A closed cylinder standing on the x,z plane: its base centered on the origin, `radius`
+/// wide, `height` up +Y.
 pub const Cylinder = struct {
     pub fn init(allocator: Allocator, gpu: *const GpuContext, radius: f32, height: f32, sides: u32) !*shape.Shape {
         var builder = shape.ShapeBuilder.init(allocator, .cylinder);
@@ -19,7 +21,7 @@ pub const Cylinder = struct {
         try addDiskMesh(
             &builder,
             vec3(0.0, height, 0.0),
-            radius / 2.0,
+            radius,
             sides,
             .up,
         );
@@ -28,7 +30,7 @@ pub const Cylinder = struct {
         try addDiskMesh(
             &builder,
             vec3(0.0, 0.0, 0.0),
-            radius / 2.0,
+            radius,
             sides,
             .down,
         );
@@ -38,7 +40,7 @@ pub const Cylinder = struct {
             &builder,
             vec3(0.0, 0.0, 0.0),
             height,
-            radius / 2.0,
+            radius,
             sides,
         );
 

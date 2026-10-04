@@ -119,7 +119,7 @@ fn createShapes(context: core.Context, gpu: *GpuContext) ![@typeInfo(ShapeKind).
     return .{
         try core.shapes.createCube(context.alloc, gpu, .{}),
         try core.shapes.createSphere(context.alloc, gpu, 0.6, 20, 20),
-        try core.shapes.createCylinder(context.alloc, gpu, 1.2, 1.2, 20),
+        try core.shapes.createCylinder(context.alloc, gpu, 0.6, 1.2, 20),
         try core.shapes.createSquare(context.alloc, gpu),
         plane.shape,
         try core.shapes.loadOBJ(context.io, context.alloc, gpu, "assets/modular_ruins/OBJ/Barrel.obj"),

@@ -179,7 +179,7 @@ pub fn run(init: std.process.Init, window: *glfw.Window, gpu: *GpuContext) !void
     const cylinder = try shapes.createCylinder(
         context.alloc,
         gpu,
-        1.0,
+        0.5,
         4.0,
         20,
     );

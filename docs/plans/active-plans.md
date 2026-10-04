@@ -7,8 +7,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
   started 2026-10-04. Wind Waker-style captain (the toon Soldier) with first-person aim
   and shoot, a squad of six that follows and focus-fires, a turret range in bullets
-  (`-s range`), `src/core/gameplay/`. Phases A-F done. Next: phase G (turrets fire back,
-  slow mortars with warning markers, hits on people, fear and scatter).
+  (`-s range`), `src/core/gameplay/`. Phases A-G done: G1 (turrets fire back within
+  detection ranges, mortar warning rings, hits on people) and G2 (fear, scatter,
+  regroup) tested 2026-10-04. Next step to be decided.
 
 ## ⏸️ Parked
 

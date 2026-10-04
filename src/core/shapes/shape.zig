@@ -184,6 +184,7 @@ pub const ShapeType = enum {
     plane,
     cube,
     cylinder,
+    ring,
     sphere,
     skybox,
     custom,

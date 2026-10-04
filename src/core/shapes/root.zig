@@ -3,6 +3,7 @@ const GpuContext = @import("../gpu_context.zig").GpuContext;
 
 pub const cubeboid = @import("cubeboid.zig");
 pub const Cylinder = @import("cylinder.zig").Cylinder;
+pub const Ring = @import("ring.zig").Ring;
 pub const Sphere = @import("sphere.zig").Sphere;
 pub const Square = @import("square.zig").Square;
 pub const Plane = @import("plane.zig").Plane;
@@ -34,6 +35,10 @@ pub fn createCube(allocator: std.mem.Allocator, gpu: *const GpuContext, config: 
 
 pub fn createCylinder(allocator: std.mem.Allocator, gpu: *const GpuContext, radius: f32, height: f32, sides: u32) !*Shape {
     return try Cylinder.init(allocator, gpu, radius, height, sides);
+}
+
+pub fn createRing(allocator: std.mem.Allocator, gpu: *const GpuContext, inner_radius: f32, outer_radius: f32, sides: u32) !*Shape {
+    return try Ring.init(allocator, gpu, inner_radius, outer_radius, sides);
 }
 
 pub fn createSphere(allocator: std.mem.Allocator, gpu: *const GpuContext, radius: f32, poly_countX: u32, poly_countY: u32) !*Shape {

@@ -224,7 +224,7 @@ const SceneShapes = struct {
         return .{
             .floor = try core.shapes.createCube(context.alloc, gpu, .{ .width = 30.0, .height = 0.2, .depth = 30.0 }),
             .cube = try core.shapes.createCube(context.alloc, gpu, .{}),
-            .cylinder = try core.shapes.createCylinder(context.alloc, gpu, 1.0, 1.0, 24),
+            .cylinder = try core.shapes.createCylinder(context.alloc, gpu, 0.5, 1.0, 24),
             .focus = try core.shapes.createSphere(context.alloc, gpu, 0.5, 24, 24),
         };
     }

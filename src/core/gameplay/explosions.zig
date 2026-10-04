@@ -124,8 +124,9 @@ pub const Explosions = struct {
         }
     }
 
+    /// A burn mark 40% of the blast's radius: the scorch at its center.
     fn addMark(self: *Self, position: Vec3, radius: f32) void {
-        const mark: Mark = .{ .position = position, .radius = radius * 0.8, .age = 0.0 };
+        const mark: Mark = .{ .position = position, .radius = radius * 0.4, .age = 0.0 };
         if (self.mark_count < MAX_MARKS) {
             self.marks[self.mark_count] = mark;
             self.mark_count += 1;

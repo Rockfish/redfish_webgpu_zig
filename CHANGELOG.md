@@ -2,6 +2,17 @@
 
 ## Recent Changes
 
+### 2026-10-04 - Fear, scatter, regroup; detection ranges; tower attack phase G2
+- **core.shapes**: `createCylinder` builds the radius it's given (it halved it, as in redfish_gl_zig); callers pass half their old values, so nothing changes size (turret parts, the bullets cannon, explosions' burn marks, shadows, camera_rig, draw_test, scene_tree, level_01)
+- **bullets range**: each turret has a detection range (14-24 m; the captain starts outside them all) and fires only at people inside it, picking among them, keeping on its person until they're 10% past the edge; thin rings on the floor show the ranges, brighter while a turret has someone; panel: show ranges, a scale for all of them; strikes now report tracers into the floor and the turret that fired
+- **bullets squad**: fear and moods. Blasts, hits, near misses, standing under a shell's warning, and a neighbor running away (to those not running yet) raise a member's fear; it wears off, faster near the captain. Above its own courage a member scatters (runs from the threat, fanned out ±40°, until 3 m past the threat's reach: a turret's detection range, a blast's; holding fire, not flinching; following members flinch at most once every 2 s), below half of it regroups (runs back to its spot), then follows again; `Squad.hit`, `blast`, `nearMiss`, `warn`; fear bars and threat lines in the debug lines; each member's mood, fear, and courage and every fear setting in the panel
+
+### 2026-10-04 - The turrets fire back; tower attack phase G1
+- **core.gameplay.Turret**: `updateAim` and `fireDueShots` (public), so a caller can move the shots itself against several targets; `update` calls them as before
+- **core.gameplay.Projectiles**: `predictedEnd(i)` (where a shot will be when its fuse runs out, time left, fuse), exact under constant gravity; test
+- **core.shapes**: `createRing` (`Ring`, a flat annulus facing up)
+- **bullets range**: the turrets fire back (T toggles, range slider in the panel): range types slowed down (`objects/range_turret_types.zig`: slow traverse, fire while turning, no lead, more spray; mortar shells 3.5 s in the air with a 2.5 m blast); each turret picks the captain or a squad member every 4-9 s and fires within 45 m; its shots are tested against everyone (`TargetTurret.update` reports `Strikes`); a red warning ring where each shell will burst, filling as it nears (`objects/shell_warnings.zig`); a hit on the captain shakes the camera (`motion.Shake`; near misses less), a hit on a member makes it flinch (`ToonSoldier.flinch`, HitReact) and hold fire; hits counted in the range panel
+
 ### 2026-10-04 - Plan 019 (tower attack) split out of the review
 - **Docs**: the Wind Waker review's decisions, specs, and phases moved to `docs/plans/019-tower-attack-captain-and-squad.md` (active, phases A-F done, phase G spec); the review keeps its sections 1-8 with a pointer; plan 012 parked with its leftover items; `active-plans.md` and CLAUDE.md's status updated
 

@@ -308,6 +308,16 @@ pub const ToonSoldier = struct {
         });
     }
 
+    /// Hit: a flinch (HitReact) whatever it's doing, standing still until it's over. A
+    /// hit during a flinch doesn't restart it.
+    pub fn flinch(self: *Self) void {
+        self.state_machine.forceState(.hit_react);
+    }
+
+    pub fn isFlinching(self: *const Self) bool {
+        return self.state_machine.getCurrentState() == .hit_react;
+    }
+
     fn processOneShotKeys(self: *Self, input: *core.Input) void {
         const one_shot_keys = .{
             .{ .key = .space, .anim = ToonAnimation.jump },

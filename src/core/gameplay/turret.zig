@@ -47,13 +47,13 @@ const vec4 = math.vec4;
 // Part sizes. Cubes are centered on their origin, cylinders start at their origin and
 // extend along +Y, spheres are centered.
 pub const BASE_SIZE = vec3(1.6, 0.4, 1.6);
-const BODY_RADIUS: f32 = 0.6;
+const BODY_RADIUS: f32 = 0.3;
 const BODY_HEIGHT: f32 = 0.5;
 const HEAD_RADIUS: f32 = 0.45;
-const BARREL_RADIUS: f32 = 0.1;
+const BARREL_RADIUS: f32 = 0.05;
 pub const BARREL_LENGTH: f32 = 1.4;
 /// The ball turret's pedestal, on a base like the others.
-pub const PEDESTAL_RADIUS: f32 = 0.25;
+pub const PEDESTAL_RADIUS: f32 = 0.125;
 pub const PEDESTAL_HEIGHT: f32 = 1.2;
 /// Tracer size: thin, stretched along its path.
 const TRACER_SIZE = vec3(0.08, 0.08, 0.7);
@@ -61,7 +61,9 @@ const TRACER_SIZE = vec3(0.08, 0.08, 0.7);
 const TRACER_LIFETIME: f32 = 3.0;
 // Rocket sizes: a body along -Z, a stretched sphere for a nose, two crossed fins at the
 // tail.
-const ROCKET_RADIUS: f32 = 0.1;
+const ROCKET_RADIUS: f32 = 0.05;
+/// The nose is wider than the body, a bulb.
+const ROCKET_NOSE_RADIUS: f32 = 0.1;
 const ROCKET_LENGTH: f32 = 0.7;
 const ROCKET_NOSE_STRETCH: f32 = 2.2;
 const FIN_SIZE = vec3(0.5, 0.02, 0.2);
@@ -224,7 +226,7 @@ pub const TurretShapes = struct {
             .parts = parts,
             .tracer = try shapes_module.createCube(alloc, gpu, .{ .width = TRACER_SIZE.x, .height = TRACER_SIZE.y, .depth = TRACER_SIZE.z }),
             .rocket_body = try shapes_module.createCylinder(alloc, gpu, ROCKET_RADIUS, ROCKET_LENGTH, 12),
-            .rocket_nose = try shapes_module.createSphere(alloc, gpu, ROCKET_RADIUS, 12, 12),
+            .rocket_nose = try shapes_module.createSphere(alloc, gpu, ROCKET_NOSE_RADIUS, 12, 12),
             .rocket_fin = try shapes_module.createCube(alloc, gpu, .{ .width = FIN_SIZE.x, .height = FIN_SIZE.y, .depth = FIN_SIZE.z }),
             .pedestal = try shapes_module.createCylinder(alloc, gpu, PEDESTAL_RADIUS, PEDESTAL_HEIGHT, 16),
         };
@@ -313,6 +315,19 @@ pub const Turret = struct {
     /// Aims, fires the shots that are due, and moves the shots in flight; shells that end
     /// go into `explosions`. `trigger`: the turret may fire at all.
     pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random, explosions: *Explosions) void {
+        self.updateAim(dt, target, trigger);
+
+        // Shots in flight move first: a new shot is placed by its own age
+        const hit_target: projectiles.Target = .{ .position = target.position, .radius = target.radius };
+        self.tracers.update(dt, hit_target, explosions);
+        self.shells.update(dt, hit_target, explosions);
+        self.fireDueShots(random);
+    }
+
+    /// `update` without the shots: aims, decides whether shots are due, and poses the
+    /// parts. For a caller that moves `tracers` and `shells` itself, against several
+    /// targets (`Projectiles.updateTargets`), and then calls `fireDueShots`.
+    pub fn updateAim(self: *Self, dt: f32, target: TargetState, trigger: bool) void {
         self.advanceProgram(dt);
         self.aim.aimAt(self.patternAim(target, dt));
         self.aim.update(dt);
@@ -321,13 +336,31 @@ pub const Turret = struct {
         self.recoil -= self.recoil * motion.dampAlpha(RECOIL_RECOVERY, dt);
         self.pose();
 
-        // Shots in flight move first: a new shot is placed by its own age
-        const hit_target: projectiles.Target = .{ .position = target.position, .radius = target.radius };
         self.shells.blast_radius = self.weapon.blast_radius;
         self.shells.spin = self.weapon.shell_spin;
-        self.tracers.update(dt, hit_target, explosions);
-        self.shells.update(dt, hit_target, explosions);
-        self.fireDueShots(random);
+    }
+
+    /// Each due shot leaves the muzzle along the aim, spread by the weapon's jitter, and
+    /// kicks the barrel back. A mortar shell goes at its launch speed, along the barrel.
+    pub fn fireDueShots(self: *Self, random: *Random) void {
+        while (self.fire_control.nextShot()) |age| {
+            switch (self.pattern) {
+                .wait => continue,
+                .track, .sweep => {
+                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), self.weapon.speed);
+                    self.tracers.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
+                },
+                .mortar => |mortar| {
+                    const speed = (self.launch_velocity orelse continue).length();
+                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), speed);
+                    self.shells.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), mortar.flight_time, age);
+                },
+            }
+            self.recoil = self.weapon.recoil_distance;
+            if (self.program) |*program| {
+                program.shots += 1;
+            }
+        }
     }
 
     /// Runs `program` from its first step (null stops it; the pattern stays as it is).
@@ -488,29 +521,6 @@ pub const Turret = struct {
         for (&self.nodes) |*node| {
             const parent_transform = if (node.parent) |parent| self.nodes[@intFromEnum(parent)].world_transform else placement;
             node.world_transform = parent_transform.composeTransforms(node.local_transform);
-        }
-    }
-
-    /// Each due shot leaves the muzzle along the aim, spread by the weapon's jitter, and
-    /// kicks the barrel back. A mortar shell goes at its launch speed, along the barrel.
-    fn fireDueShots(self: *Self, random: *Random) void {
-        while (self.fire_control.nextShot()) |age| {
-            switch (self.pattern) {
-                .wait => continue,
-                .track, .sweep => {
-                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), self.weapon.speed);
-                    self.tracers.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
-                },
-                .mortar => |mortar| {
-                    const speed = (self.launch_velocity orelse continue).length();
-                    const shot = self.weapon.jitter.apply(random, self.aim.direction(), speed);
-                    self.shells.spawn(self.muzzle(), shot.direction.mulScalar(shot.speed), mortar.flight_time, age);
-                },
-            }
-            self.recoil = self.weapon.recoil_distance;
-            if (self.program) |*program| {
-                program.shots += 1;
-            }
         }
     }
 };
