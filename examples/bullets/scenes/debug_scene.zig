@@ -109,7 +109,7 @@ pub const SceneDebug = struct {
             .axis_lines = try AxisLines.init(rm),
             .turret = try Turret.init(rm),
             .spacesuit = try Spacesuit.init(rm),
-            .toon_soldier = try ToonSoldier.init(rm),
+            .toon_soldier = try ToonSoldier.init(rm, .soldier, .ShortCannon, true),
             .barrel = try rm.loadOBJ("assets/modular_ruins/OBJ/Barrel.obj"),
         };
 
@@ -135,7 +135,7 @@ pub const SceneDebug = struct {
     pub fn update(self: *Self, input: *core.Input) !void {
         try self.scene_camera.update(input);
         try self.spacesuit.update(input);
-        try self.toon_soldier.update(input);
+        try self.toon_soldier.update(input.delta_time);
 
         try self.processInput(input);
         self.updateFollowCamera(input);

@@ -1,5 +1,5 @@
 //! Game building blocks on top of the engine: ballistics, fire control, explosions,
-//! projectiles, turrets and their types, and (later) steering for squads. Code here may use the rest of core; nothing else in
+//! projectiles, turrets and their types, and steering for squads. Code here may use the rest of core; nothing else in
 //! core imports it.
 
 const std = @import("std");
@@ -16,6 +16,7 @@ pub const turret = @import("turret.zig");
 pub const Turret = turret.Turret;
 pub const TurretShapes = turret.TurretShapes;
 pub const turret_types = @import("turret_types.zig");
+pub const steering = @import("steering.zig");
 
 test {
     std.testing.refAllDecls(@This());

@@ -26,9 +26,20 @@ const ToonStateMachine = core.AnimationStateMachine(ToonAnimation);
 
 const log = std.log.scoped(.toon_soldier);
 
-const path_soldier = "assets/toon_shooter_kit/Characters/glTF/Character_Soldier.gltf";
-const path_enemy = "assets/toon_shooter_kit/Characters/glTF/Character_Enemy.gltf";
-const path_hazmat = "assets/toon_shooter_kit/Characters/glTF/Character_Hazmat.gltf";
+/// The three toon characters: the same rig and clips, different looks.
+pub const Look = enum {
+    soldier,
+    enemy,
+    hazmat,
+
+    fn path(self: Look) []const u8 {
+        return switch (self) {
+            .soldier => "assets/toon_shooter_kit/Characters/glTF/Character_Soldier.gltf",
+            .enemy => "assets/toon_shooter_kit/Characters/glTF/Character_Enemy.gltf",
+            .hazmat => "assets/toon_shooter_kit/Characters/glTF/Character_Hazmat.gltf",
+        };
+    }
+};
 
 /// The soldier's height in meters (1 world unit = 1 m); its scale follows from the
 /// model's height.
@@ -61,7 +72,7 @@ const ToonAnimation = enum(u32) {
     yes,
 };
 
-const Weapon = enum {
+pub const Weapon = enum {
     AK,
     GrenadeLauncher,
     Knife_1,
@@ -100,7 +111,9 @@ pub const ToonSoldier = struct {
 
     const Self = @This();
 
-    pub fn init(rm: *ResourceManager) !*ToonSoldier {
+    /// `debug` logs the state machine's transitions (for the player's character, not for
+    /// every squad member).
+    pub fn init(rm: *ResourceManager, look: Look, weapon: Weapon, debug: bool) !*ToonSoldier {
         const allocator = rm.context.alloc;
 
         // level_01's animated_pbr is the same shader as core pbr
@@ -110,7 +123,7 @@ pub const ToonSoldier = struct {
             .alpha_to_coverage = true,
         });
 
-        const model = try rm.loadModel("toon_soldier", path_soldier);
+        const model = try rm.loadModel(@tagName(look), look.path());
         const bounds = model.gltf_asset.calculateBoundingBox(0);
         const model_height = bounds.max.y - bounds.min.y;
         const scale = HEIGHT / model_height;
@@ -118,7 +131,7 @@ pub const ToonSoldier = struct {
 
         const configs = buildStateConfigs();
         var fsm = ToonStateMachine.init(configs, .idle, model);
-        fsm.debug = true;
+        fsm.debug = debug;
 
         const soldier = try allocator.create(ToonSoldier);
         soldier.* = .{
@@ -131,7 +144,7 @@ pub const ToonSoldier = struct {
 
         soldier.transform.translation = soldier.position;
         soldier.transform.scale = vec3(scale, scale, scale);
-        soldier.equipWeapon(soldier.current_weapon);
+        soldier.equipWeapon(weapon);
 
         return soldier;
     }
@@ -146,10 +159,10 @@ pub const ToonSoldier = struct {
         self.current_weapon = weapon;
     }
 
-    pub fn update(self: *Self, input: *Input) !void {
-        self.landAfterAirTime(input.delta_time);
+    pub fn update(self: *Self, dt: f32) !void {
+        self.landAfterAirTime(dt);
         self.matchClipRate();
-        try self.state_machine.update(self.model, input.delta_time);
+        try self.state_machine.update(self.model, dt);
     }
 
     /// The tuning panel: control style, speeds in meters per second, the Wind Waker
@@ -262,6 +275,21 @@ pub const ToonSoldier = struct {
             .idle => .idle,
             .walk => .walk_shoot,
             .run => .run_shoot,
+        });
+    }
+
+    /// Driven by code (a squad member), not the keys or gamepad: walks or runs along
+    /// `move` (a direction on the ground, length 0 to 1) in the Wind Waker style.
+    pub fn steer(self: *Self, move: Vec3, dt: f32) void {
+        if (!self.state_machine.isInterruptible()) {
+            self.moveDuringAction(dt);
+            return;
+        }
+        const gait = self.motor.update(.wind_waker, &self.transform, move, dt);
+        _ = self.state_machine.requestState(switch (gait) {
+            .idle => .idle,
+            .walk => .walk,
+            .run => .run,
         });
     }
 

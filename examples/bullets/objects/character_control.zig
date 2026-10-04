@@ -218,13 +218,13 @@ pub fn headingOfYaw(yaw: f32) f32 {
 }
 
 /// The angle about +Y from +Z to where the character's +Z points.
-fn heading(rotation: Quat) f32 {
+pub fn heading(rotation: Quat) f32 {
     const front = rotation.rotateVec(Vec3.Z);
     return std.math.atan2(front.x, front.z);
 }
 
 /// The direction on the ground at `angle` about +Y from +Z.
-fn headingDirection(angle: f32) Vec3 {
+pub fn headingDirection(angle: f32) Vec3 {
     return Vec3.init(@sin(angle), 0.0, @cos(angle));
 }
 

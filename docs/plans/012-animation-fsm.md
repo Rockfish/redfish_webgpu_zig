@@ -11,7 +11,7 @@ a captain (the toon soldier) with a squad of 6, first-person aim and shoot, a tu
 range. Its phases (section 12) replace the order below: **A** units, scale, FSM fading
 list and clip time with rate matching (done); **B** ground motor and jump (done);
 **C0** `src/core/gameplay/` (done); **C** turret range scene (done); **D** first person
-(done, in test); **E-G** squad.
+(done); **E** squad following (done, in test); **F-G** squad focus fire, fear.
 Review item 6 (roll travel) and items 2-3 (blend space, phase sync) are deferred.
 
 **Status**: Active (resumed 2026-10-04; phases 1-2 done, review item 5 fixed; tower attack spec phases A-C done)

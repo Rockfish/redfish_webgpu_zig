@@ -2,7 +2,8 @@
 //! and 5.5, phases C and D): a field with turrets of several sizes, the captain (the toon
 //! soldier) at one end with the follow camera. LT (or F) holds first person: the left
 //! stick moves, the right stick aims, RT (or the left mouse button) fires tracers. The
-//! turrets watch the captain but hold fire for now.
+//! turrets watch the captain but hold fire for now. The squad (phase E) follows the
+//! captain.
 
 const std = @import("std");
 const zgui = @import("zgui");
@@ -18,6 +19,7 @@ const scene_lights = @import("../objects/lights.zig");
 const ToonSoldier = @import("../objects/toon_soldier.zig").ToonSoldier;
 const TargetTurret = @import("../objects/target_turret.zig").TargetTurret;
 const FirstPerson = @import("../objects/first_person.zig").FirstPerson;
+const Squad = @import("../objects/squad.zig").Squad;
 const character_control = @import("../objects/character_control.zig");
 
 const gameplay = core.gameplay;
@@ -88,6 +90,7 @@ pub const RangeScene = struct {
     scene_camera: *SceneCamera,
     floor: Floor,
     captain: *ToonSoldier,
+    squad: Squad,
     follow: motion.FollowCamera,
     first_person: FirstPerson = .{},
     /// How the captain moves (K switches, or the soldier panel).
@@ -112,9 +115,12 @@ pub const RangeScene = struct {
         const rm = try ResourceManager.init(context, gpu);
         const camera = try FreeCamera.init(context.alloc, input.framebuffer_width, input.framebuffer_height);
 
-        const captain = try ToonSoldier.init(rm);
+        const captain = try ToonSoldier.init(rm, .soldier, .ShortCannon, true);
         captain.transform.translation = CAPTAIN_START;
         captain.transform.rotation = Quat.fromAxisAngle(Vec3.Y, std.math.pi);
+
+        var random = Random.init();
+        const squad = try Squad.init(rm, captain.transform, &random);
 
         var turrets: [placements.len]TargetTurret = undefined;
         for (placements, &turrets) |placement, *turret| {
@@ -130,6 +136,7 @@ pub const RangeScene = struct {
             .scene_camera = camera,
             .floor = floor,
             .captain = captain,
+            .squad = squad,
             .follow = .init(captain.transform.translation, character_control.facingYaw(captain.transform)),
             .shape_shader = try rm.createShader("src/core/shaders/basic_shape.wgsl", .{
                 .vertex_buffers = &Shape.vertex_buffer_layouts,
@@ -144,7 +151,7 @@ pub const RangeScene = struct {
             .turret_shapes = try .init(context, gpu),
             .explosion_shapes = try .init(context, gpu),
             .turrets = turrets,
-            .random = Random.init(),
+            .random = random,
         };
         return try Scene.init(context.alloc, "Range", scene, input);
     }
@@ -159,9 +166,10 @@ pub const RangeScene = struct {
     pub fn update(self: *Self, input: *core.Input) !void {
         const dt = input.delta_time;
         try self.scene_camera.update(input);
-        try self.captain.update(input);
+        try self.captain.update(input.delta_time);
 
         try self.controlCaptain(input);
+        try self.squad.update(self.captain.transform, self.captain.motor.speed, &self.random, dt);
         self.processKeys(input);
         self.placeCamera(input);
         self.fire(input);
@@ -184,6 +192,7 @@ pub const RangeScene = struct {
             turret.draw(frame, self.shape_shader, &self.turret_shapes);
         }
         self.captain.draw(frame);
+        self.squad.draw(frame);
         const tracer_parts = [_]projectiles.Part{.{ .shape = self.turret_shapes.tracer, .model = Mat4.Identity, .color = TRACER_COLOR }};
         self.tracers.draw(frame, self.tracer_shader, &tracer_parts);
         self.explosions.draw(frame, self.flash_shader, self.shape_shader, &self.explosion_shapes);
@@ -194,6 +203,7 @@ pub const RangeScene = struct {
     /// crosshair in first person.
     pub fn drawGui(self: *Self) void {
         self.captain.drawGui(&self.control_style);
+        self.squad.drawGui();
         self.drawRangePanel();
         if (self.first_person.hidesModel()) {
             drawCrosshair();
