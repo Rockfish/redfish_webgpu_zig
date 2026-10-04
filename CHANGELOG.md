@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-04 - Plan 019 (tower attack) split out of the review
+- **Docs**: the Wind Waker review's decisions, specs, and phases moved to `docs/plans/019-tower-attack-captain-and-squad.md` (active, phases A-F done, phase G spec); the review keeps its sections 1-8 with a pointer; plan 012 parked with its leftover items; `active-plans.md` and CLAUDE.md's status updated
+
 ### 2026-10-04 - The squad shoots where the captain shoots; tower attack spec phase F
 - **bullets range**: focus fire. Each captain shot reports what the crosshair is on; shots within 2 m of each other, each within 1.5 s of the last, make a focus point (their average). After 2, the squad engages: every member keeps following but turns to face the point (gun up: Idle_Shoot, Walk_Shoot, Run_Shoot), waits its own 0.2-0.8 s, and fires bursts (its own count, spacing, and pause) of jittered tracers that hurt the turrets; they stop 3 s after the captain's last shot at the point or when its turret is destroyed. Squad tracers are redder; the range panel counts squad hits; the squad panel shows the focus and its tuning, and debug lines from each engaged member's gun to the point
 - **bullets**: `ToonSoldier.steerAiming` (moves while facing a heading, gun up)

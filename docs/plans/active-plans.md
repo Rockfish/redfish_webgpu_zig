@@ -4,12 +4,18 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[012-animation-fsm.md](012-animation-fsm.md)**: resumed 2026-10-04; phases 1-2
-  implemented (`animation_fsm.zig`, bullets), review item 5 (sliding through actions)
-  fixed. Next: review item 1 (crossfade-interrupt pop), then item 6 B1 (roll travel),
-  then item 2 (blend-space state on angrybot's locomotion).
+- **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
+  started 2026-10-04. Wind Waker-style captain (the toon Soldier) with first-person aim
+  and shoot, a squad of six that follows and focus-fires, a turret range in bullets
+  (`-s range`), `src/core/gameplay/`. Phases A-F done. Next: phase G (turrets fire back,
+  slow mortars with warning markers, hits on people, fear and scatter).
 
 ## ⏸️ Parked
+
+- **[012-animation-fsm.md](012-animation-fsm.md)**: parked 2026-10-04 after review items
+  1 (fading tracks, no pops) and 5 (no sliding), and playback rates; the tower attack
+  work moved to plan 019. Next if resumed: blend space, phase sync, roll travel, root
+  lock, time queries / events.
 
 - **[010-input-handling-architecture.md](010-input-handling-architecture.md)**: phases
   1-3 done (2026-10-01 to 10-03): `Input.isDown` / `pressedOnce`, ImGui-aware input,
@@ -98,4 +104,6 @@ plan finished. Plan 009 finished with `core.ballistics` in the bullets example.
 **2026-10-03**: Plan 010 phase 3 (game controller, follow camera) done.
 
 **2026-10-04**: Plan 010 parked after phase 3; plan 012 made active (crossfade fix, roll
-travel B1, blend space).
+travel B1, blend space). Reviewed Grok's notes on Link's control in The Wind Waker
+(`docs/reviews/2026-10-04-link-style-controller-review.md`) for a tower attack game;
+phases A-F built the same day under plan 012, then moved to plan 019 (012 parked).

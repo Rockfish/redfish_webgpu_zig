@@ -9,8 +9,13 @@ other characters the same way.
 
 Sections: what we have (1), comments on the Grok notes (2), reference units (3), the
 architecture (4), the motion spec (5), the camera spec (6), the animation state machine
-changes (7), the soldier's clips and their gaps (8), decisions (9), the squad (10),
-the target range scene (11), phases (12), open questions (13).
+changes (7), the soldier's clips and their gaps (8).
+
+> **The decisions, specs, and phases that followed are in
+> [plan 019](../plans/019-tower-attack-captain-and-squad.md)** (moved there 2026-10-04,
+> when this review had grown into a plan). Sections 5.2 (lock-on) and 5.3 (roll) were
+> deferred; section 5.5 (first person) was built with LT, movement, and crosshair-only
+> shooting.
 
 ## 1. What We Have
 
@@ -58,7 +63,7 @@ Useful, with care on a few points:
 - **The scale paragraph** (8.5 mm per unit from a sword-length guess) is a guess on a
   guess; don't build on it. Section 3 is the alternative.
 - **Auto-jump off ledges** needs level geometry with edges; bullets has a flat floor.
-  Nothing to do until there's a level (see question 5).
+  Nothing to do until there's a level (plan 019: a jump button for now).
 
 Wind Waker's speeds as multiples of the run speed (17 u/f):
 
@@ -215,9 +220,9 @@ position += forward(facing) * speed * dt
   transform) if it needs to read as a brake.
 - Animation: one blend state over speed: idle (0) ↔ walk ↔ run, rates per section 3.4.
 
-### 5.2 Lock-on (Z-targeting) (deferred, section 9)
+### 5.2 Lock-on (Z-targeting) (deferred, plan 019)
 
-- **Hold LT** (question 1) to lock onto the nearest target in a cone in front of the
+- **Hold LT** to lock onto the nearest target in a cone in front of the
   camera, within a range (e.g. 25 m). The facing tracks the target (fast `dampAngle`).
 - Stick axes in the target frame: forward/back moves toward/away at 0.71 / 0.88 × run;
   left/right orbits the target at 0.71 × run (move tangentially, then correct the radius
@@ -230,16 +235,16 @@ position += forward(facing) * speed * dt
 - Animation: forward = Walk_Shoot / Run_Shoot (gun raised, facing the target), backward
   = the walk clip at a negative rate, sideways = see section 8.
 
-### 5.3 Roll (deferred, section 9)
+### 5.3 Roll (deferred, plan 019)
 
 - A while moving above walking speed: speed jumps to 1.53 × run, eases to 0.29 × run over
   the roll, direction = facing (a little steering, e.g. 90°/s).
 - Not interruptible; a press in the last ~0.15 s queues another roll (input buffer).
-- No roll clip in the toon kit (section 8, question 2).
+- No roll clip in the toon kit (section 8).
 
 ### 5.4 Jump and air
 
-- Jump button (question 5): vertical speed for a set jump height (meters), gravity from
+- Jump button (plan 019: animation only for now): vertical speed for a set jump height (meters), gravity from
   the tuning, horizontal speed kept, small air control. `Jump` on takeoff, `Jump_Idle`
   while airborne, `Jump_Land` on touching the ground: the landing is a condition (ground
   contact), not the end of a clip, so the controller requests it.
@@ -247,13 +252,13 @@ position += forward(facing) * speed * dt
 
 ### 5.5 First-person aim
 
-- Enter: LT (section 9). The camera eases from the follow
+- Enter: LT (plan 019). The camera eases from the follow
   position to the eye (about 0.2 s, `dampVec3`), and the character model is hidden once
   the camera is inside the head.
 - Aim: right stick yaws and pitches the view (`YawPitchAim`, limits about ±80° pitch);
   the character's facing follows the view's yaw.
 - Moving: Wind Waker stands Link still while aiming; a shooter usually allows a slow walk
-  (question 4).
+  (plan 019: moving allowed).
 - Fire: RT, along the view's center from the eye; a crosshair drawn with ImGui. Bullets
   from `bullet_system.zig`.
 - Exit: the same button, or B; the camera returns behind the character.
@@ -355,212 +360,4 @@ Ways to cover the gaps without new art, cheapest first:
 - **Sidehop**: Jump's takeoff + Jump_Land with the controller moving sideways.
 
 New clips (Mixamo, Quaternius) would need retargeting onto this rig, which the engine
-doesn't do; that's a separate project (question 2).
-
-## 9. Decisions (John, 2026-10-04)
-
-The game is **tower attack** (the reverse of tower defense): the player is the captain of
-a squad of soldiers attacking a tower. Controlled mayhem, lots happening at once, so
-looks and responsiveness matter more than exact animation blending (see
-`docs/plans/tower_attack_spec_notes.md`).
-
-- **The squad follows the captain** where he runs, and **shoots where he shoots**.
-- **LT switches to first person.** In first person: left stick moves, right stick aims,
-  RT fires. After a couple of the captain's shots at one spot, the squad starts firing at
-  that spot too, with jitter.
-- **Current animations only** for now; more may come later.
-- **Jump now.**
-- The three toon models (Soldier, Enemy, Hazmat) differ only in appearance: same rig,
-  same clips, same measurements.
-- **Targets are turrets** of different sizes in a **new scene**; they react to hits,
-  starting with tiny explosions where a bullet strikes.
-- **Scale**: the recommendation (1 unit = 1 m, the soldier 1.8 m, scale 0.79).
-
-Second round (John, 2026-10-04):
-
-- **Squad of 6**, undisciplined: they loosely cluster near the captain, move a bit
-  randomly, and can **panic and flee**. Steering behaviors (boids style): sensing each
-  other, with chase, cluster, and flee.
-- **Mortar shells fall slowly enough to give warning**; explosions near the squad make
-  them scatter.
-- **Shooting turrets traverse slowly, firing as they turn**, so the player has time to
-  react and run.
-- **First person only for shooting**, crosshair only. Firing from the hip would need a
-  mode switching the right stick from camera to aim; not now.
-- **The captain is the Soldier model**; the squad is a mix of Enemy and Hazmat, so the
-  player can always pick out the captain.
-- All the numbers are tuned later.
-
-What changes in the spec:
-
-| Section | Change |
-|---|---|
-| 5.2 Lock-on | **Deferred.** LT is first person; the squad's focus fire replaces lock-on as the way to concentrate on a target. Lock-on can come back on another button if wanted. |
-| 5.3 Roll | Deferred (no clip, not asked for). |
-| 5.4 Jump | Now. Animation-only on the flat floor (the clips carry the 0.7 m lift at scale 0.79); the root lock waits until there is something to jump onto. |
-| 5.5 First person | Moving allowed: left stick strafes relative to the view (walk / run clips under the hidden model, so the squad sees the captain move normally). Crosshair only, no weapon in view. No firing outside first person. |
-| 6 Camera | Follow and first person only; no lock-on mode. |
-| 7 FSM | Keep 1 (fading list: pops show even in mayhem, and squads switch states constantly), 2 (FSM-owned clip time and rate: rate matching is cheap and keeps a dozen soldiers from skating), 5 (time queries, for the shot frame). **Drop for now**: 3 (blend state) and 4 (phase sync); walk / run by a stick threshold with a crossfade and a matched rate is enough. 6 (root lock) waits with the jump. |
-| 10 Squad | Formation slots replaced by steering behaviors and a mood per member. |
-
-## 10. Squad Spec
-
-### 10.1 Steering behaviors, not formation slots
-
-Boids (Craig Reynolds, 1987) is three rules for a flock: separation, alignment,
-cohesion. His later "Steering Behaviors for Autonomous Characters" (GDC 1999) adds the
-ones a squad needs: seek, arrive, flee, evade, wander. Each behavior returns a desired
-velocity; a member adds them up with weights. Six members and a captain is 42 pairs a
-frame, so no spatial structure is needed.
-
-Behaviors per member, with what each one does here:
-
-| Behavior | Pulls toward / away from | Notes |
-|---|---|---|
-| **Arrive** (chase) | Its own spot near the captain | The spot is the captain's position plus a personal offset that wanders slowly (2-4 m, mostly behind), so the cluster is loose and shifting. Arrive slows down inside a radius, so members drift to a stop instead of orbiting the spot. |
-| **Separation** | Away from members closer than ~1 m | Strength grows as they get closer. Includes the captain. |
-| **Cohesion** | Toward the squad's center | Weak; keeps strays from wandering off. |
-| **Alignment** | The neighbors' average heading | Weak or off; a disciplined squad has it, this one barely. |
-| **Wander** | A slowly drifting direction | The randomness. A heading that drifts smoothly (a random target angle every second or two, approached with `dampAngle`), not new noise each frame, which would jitter and depend on the frame rate. |
-| **Flee** | Away from a threat point | Explosions, incoming shells' predicted impact points (`ballistics.positionAt`), turret fire landing nearby. Strength falls off with distance. |
-| **Stay out of the line of fire** | Out of a corridor in front of the captain's aim | Only in first person: members step out of the lane the captain is shooting down. Without it, the cluster behind and around him walks into his shots. |
-
-The sum is a desired velocity. It does **not** move the member directly: it goes into
-the same ground motor as the captain (section 5.1), as the "stick" (direction and
-throttle). The motor's turn rate and acceleration turn a twitchy sum into a character
-who turns, arcs, and picks walk or run, and the animation follows. This is the step
-that makes boids look like people instead of a swarm. The desired velocity is also
-damped (`dampVec3`, short) before the motor, since weighted sums can flip from frame to
-frame when two behaviors pull against each other.
-
-### 10.2 Mood: the members' state machine
-
-Each member has a **fear** value (0 to 1) and a mode. The mode sets the behavior
-weights:
-
-| Mode | Weights | Enter when | Leave when |
-|---|---|---|---|
-| **Follow** | arrive, separation, cohesion, wander | default | |
-| **Engage** | arrive (weak), separation; face and fire at the focus point | the captain sets a focus point (10.3) | focus point gone |
-| **Scatter** | flee strong, separation; run | fear above the member's own threshold | fear back below about half the threshold |
-| **Regroup** | arrive strong, run | leaving scatter | close to the captain again: follow |
-
-- **Fear rises** with explosions nearby (more for closer and bigger), incoming shells
-  aimed near the member (the warning: they react to the predicted impact before it
-  lands), and turret fire hitting close. **Fear decays** steadily (frame-rate
-  independent, `motion`), faster when near the captain: he steadies them.
-- **Each member has a random courage** (its scatter threshold) and random reaction
-  delays, so a blast makes the jumpy ones run first and the steady ones hold; that's
-  the undisciplined look. Fear also spreads a little: a member near a fleeing member
-  gains some fear.
-- Scatter is directional: away from the threat, plus a random angle (±40°), so they fan
-  out instead of running in a line.
-
-### 10.3 Focus fire
-
-- The captain's shot hits a point (the ray from the eye, section 11.2). Shots within
-  ~2 m of each other within ~1.5 s count as **one focus point** (their average).
-- After **2 shots** on a focus point, members in **follow** switch to **engage**: each
-  turns to it, waits its own delay (0.2 to 0.8 s, so they open up raggedly), and fires
-  bursts with `core.ShotJitter` at a random rate. Scattering members don't shoot.
-- The squad stops when the captain hasn't fired at the point for ~3 s, or the target is
-  destroyed, or the captain is far from them (back to follow).
-- Animation: Idle_Shoot when still, Walk_Shoot / Run_Shoot when moving.
-
-### 10.4 Code
-
-- `src/core/gameplay/steering.zig`: the behaviors as plain functions (`seek`, `arrive`, `flee`,
-  `separation`, `cohesion`, `alignment`, `Wander`), each returning a desired velocity.
-  Testable on their own, like `core.motion`; reusable for enemies and civilians later.
-- The squad in bullets: `Squad` owns 6 members (`ModelInstance` each, Enemy and Hazmat
-  mixed), their motors, moods, animation state machines, and the focus point; a tuning
-  struct holds the weights, radii, fear rates, and delays. Moves to a game when there is
-  one.
-- An ImGui panel for tuning: the weights and radii live, plus debug lines (each member's
-  desired velocity, its spot, its fear as color).
-
-## 11. Target Range Scene
-
-A new scene in bullets (next to the debug and gallery scenes): a field with turrets of
-several sizes at different distances, the captain and the squad at one end.
-
-### 11.1 Turrets
-
-- Reuse `examples/turrets`' turret shapes and types (`turret_types.zig`: gatling,
-  cannon, sweeper, mortar, battery) at three or four sizes (scale 0.5 to 3).
-- Each turret has a hit volume (a sphere or two, or a box) in meters, sized with it.
-- On a hit: a tiny explosion at the strike point, a brief flash, a small recoil / shake
-  of the turret (a damped offset, `core.motion`).
-- **They shoot back, slowly and readably:**
-  - **Gun turrets** traverse slowly (low `YawPitchAim` speeds) toward the squad's
-    center or a chosen member and **fire while turning**, so the stream walks toward the
-    squad and the player can see it coming and run. `FireControl` with no "on target"
-    requirement, jittered.
-  - **Mortars** fire high arcs with long flight times (`ballistics.launchVelocity` with
-    a flight time of 3-4 s), and the predicted impact point gets a **warning marker** on
-    the floor (a ring that grows or darkens as the shell nears). The squad reads the same
-    prediction (10.2).
-- **Health and destruction**: health shows as the base's color (green, yellow, red);
-  at zero the turret explodes (a big `explosions.add`) and is gone.
-- Hits on people: the captain's is a camera shake, a squad member's a flinch
-  (HitReact); no health for people yet.
-
-### 11.2 Shots
-
-- The captain's shot: a ray from the eye along the view center. **Visible tracers**
-  (fast projectiles, ~80 m/s, stepped with `core.ballistics.step`, tested against hit
-  volumes and the floor each frame, segment by segment) read better in mayhem than
-  hitscan and cost little. Tracers for the captain, the squad, and the gun turrets.
-- Strike: on a turret, a tiny explosion and the turret's reaction; on the floor, a puff
-  and a small mark.
-- Explosions: `examples/turrets/explosions.zig` (fireball, burn mark) already does this
-  at any radius. It moves to `src/core/gameplay/` (11.3) so bullets and turrets share
-  one copy; a strike is `explosions.add(point, 0.15)`.
-
-### 11.3 `src/core/gameplay/`: game building blocks
-
-John's suggestion (2026-10-04): a folder in core for game-type pieces, apart from the
-engine (rendering, assets, animation, input). Reached as `core.gameplay.<file>`
-through `gameplay/root.zig` (with `refAllDecls` so its tests run, as `utils/root.zig`).
-
-| File | From | Contents |
-|---|---|---|
-| `ballistics.zig` | `src/core/ballistics.zig` | `step`, `positionAt`, `launchVelocity`, `leadPoint` |
-| `fire_control.zig` | `src/core/fire_control.zig` | `FireControl`, `ShotJitter` |
-| `explosions.zig` | `examples/turrets/explosions.zig` | Fireballs and burn marks; its shader (`basic_shape.wgsl`) moves to `src/core/shaders/` |
-| `projectiles.zig`, `turret.zig`, `turret_types.zig` | `examples/turrets/` | Tracers and shells, `Turret` (now with a `size`), the turret types; `projectiles.wgsl` to `src/core/shaders/` (moved in C0 so bullets can use the turrets: an app can't import another app's files) |
-| `steering.zig` | new (10.4) | Seek, arrive, flee, separation, cohesion, alignment, wander |
-| later | new | Tracers / projectiles with hit tests, hit volumes, fear and morale if it outgrows the squad |
-
-The rule: `gameplay` may use the rest of core; nothing outside `gameplay` in core imports
-it. Callers change from `core.ballistics` to `core.gameplay.ballistics` (turrets,
-bullets, shadows, camera_rig, level_01 as they use them), and CLAUDE.md's references with
-them. Done as its own step before phase C, with no behavior change: the turrets example
-is the check.
-
-## 12. Phases
-
-Each phase ends with a CHANGELOG entry and a commit.
-
-| Phase | Work | Result |
-|---|---|---|
-| A | Units and scale: 1 m per unit, soldier height and scale, measured walk / run speeds; FSM fading list, FSM-owned clip time with rate matching; the captain loads `Character_Soldier.gltf` | Soldier at 1.8 m, feet don't skate, no pops |
-| B | Ground motor (section 5.1) replaces `character_control.drive`; jump (animation-only) | The Wind Waker ground feel |
-| C0 | `src/core/gameplay/` (11.3): move ballistics, fire control, explosions; no behavior change | Turrets example unchanged |
-| C | Target range scene: turrets at several sizes, hit volumes | A place to shoot |
-| D | First person: LT, camera transition, hidden model, aim, crosshair, tracers, strike explosions, turret reactions | The captain shoots and hits |
-| E | `core.steering`; squad of 6 following (follow mode), tuning panel and debug lines | The squad runs with the captain |
-| F | Squad focus fire (engage mode) | The squad shoots where the captain shoots |
-| G | Turrets fire back (slow traverse, slow mortars with markers); fear, scatter, regroup | Mayhem |
-
-## 13. Questions Answered (John, 2026-10-04)
-
-- **Gameplay folder**: `src/core/gameplay/` as a folder in core. No `aim.zig`:
-  `YawPitchAim` and `Sweep` stay in `motion.zig`.
-- **Hits on people**: the captain hit is a camera shake (`motion.Shake`); a squad member
-  hit is a flinch (HitReact). No health or death for people yet.
-- **Turrets are destroyable.** Health shows as the base's color: green, yellow, red,
-  then an explosion.
-- **Tracers pass through** squad members (no friendly fire).
-- **Turrets are basic shapes** at different sizes.
-- Phase A started 2026-10-04.
+doesn't do; that's a separate project (plan 019: current clips for now).

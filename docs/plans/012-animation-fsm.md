@@ -3,19 +3,17 @@
 > Imported from redfish_gl_zig on 2026-09-28. **In this repo:** Phases 1-2 implemented (`src/core/animation_fsm.zig`, used by the spacesuit and toon soldier in bullets); phase 3 open. See the 2026-09-28 review notes at the end.
 > File and API references in the body are to redfish_gl_zig (OpenGL) unless noted.
 
-**Where it stands (2026-10-04):** `src/core/animation_fsm.zig` drives the spacesuit and
-toon soldier in `examples/bullets`. Review item 5 (sliding through actions) is fixed.
-**Redirected 2026-10-04** by the tower attack spec,
-`docs/reviews/2026-10-04-link-style-controller-review.md`: Wind Waker-style control for
-a captain (the toon soldier) with a squad of 6, first-person aim and shoot, a turret
-range. Its phases (section 12) replace the order below: **A** units, scale, FSM fading
-list and clip time with rate matching (done); **B** ground motor and jump (done);
-**C0** `src/core/gameplay/` (done); **C** turret range scene (done); **D** first person
-(done); **E** squad following (done); **F** squad focus fire (done, in test); **G** turrets
-fire back, fear and scatter.
-Review item 6 (roll travel) and items 2-3 (blend space, phase sync) are deferred.
+**Where it stands (2026-10-04, parked):** `src/core/animation_fsm.zig` drives the
+spacesuit and the toon soldiers in `examples/bullets`. Done here: phases 1-2, review
+item 1 (no pop on an interrupted crossfade: fading tracks, each with its own clock),
+item 5 (no sliding through actions), and playback rates (`setPlaybackRate`, matched to
+speed). The tower attack work that grew out of this plan continues in
+[plan 019](019-tower-attack-captain-and-squad.md). **Next if resumed**: item 2 (blend
+space, tried on angrybot's locomotion), item 3 (phase sync), item 6 B1 (roll travel),
+the root-motion lock for jumps, time queries and events (for shot frames), and item 7
+(the toon Walk clip's foot sinking, an asset fix).
 
-**Status**: Active (resumed 2026-10-04; phases 1-2 done, review item 5 fixed; tower attack spec phases A-C done)
+**Status**: Parked 2026-10-04 (phases 1-2 done, review items 1 and 5 fixed; continued in plan 019)
 **Priority**: High
 **Estimated Effort**: Medium (3-4 days)
 **Created**: 2026-02-16
