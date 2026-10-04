@@ -9,11 +9,12 @@ toon soldier in `examples/bullets`. Review item 5 (sliding through actions) is f
 `docs/reviews/2026-10-04-link-style-controller-review.md`: Wind Waker-style control for
 a captain (the toon soldier) with a squad of 6, first-person aim and shoot, a turret
 range. Its phases (section 12) replace the order below: **A** units, scale, FSM fading
-list and clip time with rate matching (in progress); **B** ground motor and jump;
-**C0** `src/core/gameplay/`; **C** turret range scene; **D** first person; **E-G** squad.
+list and clip time with rate matching (done); **B** ground motor and jump (done);
+**C0** `src/core/gameplay/` (done); **C** turret range scene (done, in test); **D** first
+person; **E-G** squad.
 Review item 6 (roll travel) and items 2-3 (blend space, phase sync) are deferred.
 
-**Status**: Active (resumed 2026-10-04; phases 1-2 done, review item 5 fixed; tower attack spec phase A in progress)
+**Status**: Active (resumed 2026-10-04; phases 1-2 done, review item 5 fixed; tower attack spec phases A-C done)
 **Priority**: High
 **Estimated Effort**: Medium (3-4 days)
 **Created**: 2026-02-16

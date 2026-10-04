@@ -190,27 +190,8 @@ pub const SceneDebug = struct {
         }
     }
 
-    /// The character takes the gamepad's move stick, relative to the follow camera. In the
-    /// direct style the keyboard turns and moves it (A / D turn, W / S move) while the
-    /// stick is centered; in the Wind Waker style W / A / S / D are a stick too (Shift
-    /// runs), and the character is driven every frame so it slows down after the stick is
-    /// let go.
     fn controlCharacter(self: *Self, character: anytype, input: *core.Input) !void {
-        switch (self.control_style) {
-            .direct => {
-                const move = motion.cameraRelativeMove(input.gamepad.left_stick, self.follow.yaw);
-                if (move.lengthSquared() > 0.0) {
-                    character.drive(move, .direct, input);
-                } else {
-                    try character.processInput(input);
-                }
-            },
-            .wind_waker => {
-                const pad = input.gamepad.left_stick;
-                const stick = if (pad.lengthSquared() > 0.0) pad else keyboardStick(input);
-                character.drive(motion.cameraRelativeMove(stick, self.follow.yaw), .wind_waker, input);
-            },
-        }
+        try character_control.control(character, self.control_style, self.follow.yaw, input);
     }
 
     /// The controlled character's transform, in the modes that have a character.
@@ -229,10 +210,7 @@ pub const SceneDebug = struct {
             return;
         }
         const transform = self.characterTransform() orelse return;
-
-        const is_recentering = input.isDown(.q) or input.gamepad.left_trigger > 0.5;
-        const recenter_yaw: ?f32 = if (is_recentering) character_control.facingYaw(transform) else null;
-        self.follow.update(transform.translation, cameraTurn(input), recenter_yaw, input.delta_time);
+        character_control.followCharacter(&self.follow, transform, input);
         self.getSceneCamera().getCamera().movement.reset(self.follow.position, self.follow.focus);
     }
 
@@ -258,10 +236,7 @@ pub const SceneDebug = struct {
         }
 
         if (input.pressedOnce(.k)) {
-            self.control_style = switch (self.control_style) {
-                .direct => .wind_waker,
-                .wind_waker => .direct,
-            };
+            self.control_style = character_control.nextStyle(self.control_style);
             std.debug.print("Control style: {s}\n", .{@tagName(self.control_style)});
         }
 
@@ -323,29 +298,3 @@ pub const SceneDebug = struct {
         }
     }
 };
-
-/// The follow camera's turn this frame: the gamepad's right stick plus the arrow keys, each
-/// axis -1 to 1.
-fn cameraTurn(input: *const core.Input) Vec2 {
-    const stick = input.gamepad.right_stick;
-    const keys_x = axisFromKeys(input, .left, .right);
-    const keys_y = axisFromKeys(input, .down, .up);
-    return vec2(std.math.clamp(stick.x + keys_x, -1.0, 1.0), std.math.clamp(stick.y + keys_y, -1.0, 1.0));
-}
-
-/// W / A / S / D as a move stick: half travel walks, Shift makes it full travel (a run).
-fn keyboardStick(input: *const core.Input) Vec2 {
-    const keys = vec2(axisFromKeys(input, .a, .d), axisFromKeys(input, .s, .w));
-    const length = @sqrt(keys.lengthSquared());
-    if (length == 0.0) {
-        return keys;
-    }
-    const travel: f32 = if (input.key_shift) 1.0 else 0.5;
-    return vec2(keys.x * travel / length, keys.y * travel / length);
-}
-
-fn axisFromKeys(input: *const core.Input, negative: glfw.Key, positive: glfw.Key) f32 {
-    const low: f32 = if (input.isDown(negative)) 1.0 else 0.0;
-    const high: f32 = if (input.isDown(positive)) 1.0 else 0.0;
-    return high - low;
-}

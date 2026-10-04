@@ -14,14 +14,16 @@ const Scene = @import("scene.zig").Scene;
 const SceneDebug = @import("scenes/debug_scene.zig").SceneDebug;
 const RuinsGalleryScene = @import("scenes/ruins_gallery_scene.zig").RuinsGalleryScene;
 const ToonGalleryScene = @import("scenes/toon_gallery_scene.zig").ToonGalleryScene;
+const RangeScene = @import("scenes/range_scene.zig").RangeScene;
 
 pub const SceneId = enum {
     debug,
     ruins_gallery,
     toon_gallery,
+    range,
 };
 
-const scene_order = [_]SceneId{ .debug, .ruins_gallery, .toon_gallery };
+const scene_order = [_]SceneId{ .debug, .ruins_gallery, .toon_gallery, .range };
 
 pub const World = struct {
     alloc_arena: ArenaAllocator,
@@ -74,6 +76,7 @@ pub const World = struct {
             .debug => try SceneDebug.init(self.context, self.gpu, self.input),
             .ruins_gallery => try RuinsGalleryScene.init(self.context, self.gpu, self.input),
             .toon_gallery => try ToonGalleryScene.init(self.context, self.gpu, self.input),
+            .range => try RangeScene.init(self.context, self.gpu, self.input),
         };
     }
 

@@ -528,6 +528,7 @@ through `gameplay/root.zig` (with `refAllDecls` so its tests run, as `utils/root
 | `ballistics.zig` | `src/core/ballistics.zig` | `step`, `positionAt`, `launchVelocity`, `leadPoint` |
 | `fire_control.zig` | `src/core/fire_control.zig` | `FireControl`, `ShotJitter` |
 | `explosions.zig` | `examples/turrets/explosions.zig` | Fireballs and burn marks; its shader (`basic_shape.wgsl`) moves to `src/core/shaders/` |
+| `projectiles.zig`, `turret.zig`, `turret_types.zig` | `examples/turrets/` | Tracers and shells, `Turret` (now with a `size`), the turret types; `projectiles.wgsl` to `src/core/shaders/` (moved in C0 so bullets can use the turrets: an app can't import another app's files) |
 | `steering.zig` | new (10.4) | Seek, arrive, flee, separation, cohesion, alignment, wander |
 | later | new | Tracers / projectiles with hit tests, hit volumes, fear and morale if it outgrows the squad |
 

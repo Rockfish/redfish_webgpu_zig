@@ -7,13 +7,17 @@
 //! (docs/reviews/2026-10-04-link-style-controller-review.md section 5.1).
 
 const std = @import("std");
+const glfw = @import("zglfw");
 const core = @import("core");
 const math = @import("math");
 
+const Input = core.Input;
 const Transform = core.Transform;
 const motion = core.motion;
 const Quat = math.Quat;
+const Vec2 = math.Vec2;
 const Vec3 = math.Vec3;
+const vec2 = math.vec2;
 
 /// `direct`: stick travel (0 to 1) from which the character runs instead of walking.
 const RUN_THRESHOLD: f32 = 0.75;
@@ -146,6 +150,45 @@ pub const Motor = struct {
     }
 };
 
+/// One frame of control for `character` (the soldier or the spacesuit: `drive` and
+/// `processInput`) from the gamepad's move stick, relative to the camera's yaw. In the
+/// direct style the keyboard turns and moves it (A / D turn, W / S move) while the stick
+/// is centered; in the Wind Waker style W / A / S / D are a stick too (Shift runs), and the
+/// character is driven every frame so it slows down after the stick is let go.
+pub fn control(character: anytype, style: Style, camera_yaw: f32, input: *Input) !void {
+    switch (style) {
+        .direct => {
+            const move = motion.cameraRelativeMove(input.gamepad.left_stick, camera_yaw);
+            if (move.lengthSquared() > 0.0) {
+                character.drive(move, .direct, input);
+            } else {
+                try character.processInput(input);
+            }
+        },
+        .wind_waker => {
+            const pad = input.gamepad.left_stick;
+            const stick = if (pad.lengthSquared() > 0.0) pad else keyboardStick(input);
+            character.drive(motion.cameraRelativeMove(stick, camera_yaw), .wind_waker, input);
+        },
+    }
+}
+
+/// The follow camera trails the character at `transform`; the right stick or the arrow
+/// keys turn it, the left trigger or Q swing it behind the character.
+pub fn followCharacter(follow: *motion.FollowCamera, transform: Transform, input: *const Input) void {
+    const is_recentering = input.isDown(.q) or input.gamepad.left_trigger > 0.5;
+    const recenter_yaw: ?f32 = if (is_recentering) facingYaw(transform) else null;
+    follow.update(transform.translation, cameraTurn(input), recenter_yaw, input.delta_time);
+}
+
+/// The other style.
+pub fn nextStyle(style: Style) Style {
+    return switch (style) {
+        .direct => .wind_waker,
+        .wind_waker => .direct,
+    };
+}
+
 /// The camera yaw (`YawPitchAim`'s) that looks the way the character faces: for putting a
 /// follow camera behind it.
 pub fn facingYaw(transform: Transform) f32 {
@@ -161,6 +204,32 @@ fn heading(rotation: Quat) f32 {
 /// The direction on the ground at `angle` about +Y from +Z.
 fn headingDirection(angle: f32) Vec3 {
     return Vec3.init(@sin(angle), 0.0, @cos(angle));
+}
+
+/// The follow camera's turn this frame: the gamepad's right stick plus the arrow keys, each
+/// axis -1 to 1.
+fn cameraTurn(input: *const Input) Vec2 {
+    const stick = input.gamepad.right_stick;
+    const keys_x = axisFromKeys(input, .left, .right);
+    const keys_y = axisFromKeys(input, .down, .up);
+    return vec2(std.math.clamp(stick.x + keys_x, -1.0, 1.0), std.math.clamp(stick.y + keys_y, -1.0, 1.0));
+}
+
+/// W / A / S / D as a move stick: half travel walks, Shift makes it full travel (a run).
+fn keyboardStick(input: *const Input) Vec2 {
+    const keys = vec2(axisFromKeys(input, .a, .d), axisFromKeys(input, .s, .w));
+    const length = @sqrt(keys.lengthSquared());
+    if (length == 0.0) {
+        return keys;
+    }
+    const travel: f32 = if (input.key_shift) 1.0 else 0.5;
+    return vec2(keys.x * travel / length, keys.y * travel / length);
+}
+
+fn axisFromKeys(input: *const Input, negative: glfw.Key, positive: glfw.Key) f32 {
+    const low: f32 = if (input.isDown(negative)) 1.0 else 0.0;
+    const high: f32 = if (input.isDown(positive)) 1.0 else 0.0;
+    return high - low;
 }
 
 /// `current` stepped toward `target` by at most `max_step`, without overshooting.

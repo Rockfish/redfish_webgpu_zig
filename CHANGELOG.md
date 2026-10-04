@@ -2,6 +2,12 @@
 
 ## Recent Changes
 
+### 2026-10-04 - core.gameplay and the turret range; tower attack spec phases C0 and C
+- **core.gameplay** (new folder, `src/core/gameplay/`): game building blocks on top of the engine, which core itself doesn't import. Moved in: `ballistics`, `fire_control` (`FireControl`, `ShotJitter`), and from `examples/turrets` `explosions` (`Explosions`, `ExplosionShapes`), `projectiles`, `turret` (`Turret`, `TurretShapes`), `turret_types`; their shaders to `src/core/shaders/` (`basic_shape.wgsl`, `projectiles.wgsl`). Callers use `core.gameplay.*`
+- **core.gameplay.Turret**: `size` (scales the whole turret; `init(type, position, size)`), `setPartColor`
+- **bullets**: the range scene (`-s range`, or Page Up / Down): the captain (soldier) with the follow camera and the Wind Waker control, six turrets of sizes 0.6 to 3 that watch the captain; `TargetTurret` with health shown on the base (green, yellow, red), a tiny explosion, flash, and shake per hit, and a blast at zero health; H hits the turret the captain faces (until shooting, phase D), R resets; a range panel with each turret's health
+- **bullets**: the debug scene's character control and follow camera helpers moved to `character_control` (`control`, `followCharacter`, `nextStyle`), shared with the range
+
 ### 2026-10-04 - Wind Waker-style ground movement and jump; tower attack spec phase B
 - **bullets**: `character_control.Motor` with two styles, switched with K or the soldier panel: `direct` (the previous control) and `wind_waker` (moves the way the character faces; the facing turns toward the stick at a set rate, faster standing than running, so hard stick changes run arcs; stick travel is the throttle; speed builds and falls off; sharp turns slow it; a reversal at speed skids to a stop before turning); in the Wind Waker style W / A / S / D act as a stick (Shift runs)
 - **bullets**: the soldier's jump is takeoff, air, landing (Jump, Jump_Idle, Jump_Land; animation only) and carries on at the speed it had; the soldier panel has the motor's tuning (accel, decel, turn rates, skid)

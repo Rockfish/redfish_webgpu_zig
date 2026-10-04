@@ -11,7 +11,7 @@ fn printUsage() void {
     std.debug.print("Usage: bullets [options]\n", .{});
     std.debug.print("Options:\n", .{});
     std.debug.print("  --duration, -d <seconds>     Run for specified duration then exit\n", .{});
-    std.debug.print("  --scene, -s <name>           Start in debug, ruins_gallery, or toon_gallery\n", .{});
+    std.debug.print("  --scene, -s <name>           Start in debug, ruins_gallery, toon_gallery, or range\n", .{});
     std.debug.print("  --help, -h                   Show this help message\n", .{});
 }
 
