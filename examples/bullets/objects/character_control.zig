@@ -59,6 +59,8 @@ pub const Motor = struct {
     /// Meters per second, now.
     speed: f32 = 0.0,
     skidding: bool = false,
+    /// `strafe`'s direction of travel, kept while it slows down.
+    strafe_direction: Vec3 = Vec3.Zero,
 
     const Self = @This();
 
@@ -69,6 +71,25 @@ pub const Motor = struct {
             .direct => self.updateDirect(transform, move, dt),
             .wind_waker => self.updateWindWaker(transform, move, dt),
         }
+        return self.gait();
+    }
+
+    /// Moves along `move` (length 0 to 1, the throttle) while facing `heading` (about +Y
+    /// from +Z): first person, where the view sets the facing. Speed builds and falls off
+    /// as in the Wind Waker style.
+    pub fn strafe(self: *Self, transform: *Transform, move: Vec3, facing: f32, dt: f32) Gait {
+        const throttle = @min(move.length(), 1.0);
+        const target_speed = throttle * self.run_speed;
+        const seconds = if (target_speed > self.speed) self.accel_time else self.decel_time;
+        self.speed = moveTowardScalar(self.speed, target_speed, self.run_speed / seconds * dt);
+        self.skidding = false;
+
+        // Coasting to a stop keeps the last direction
+        if (throttle > 0.0) {
+            self.strafe_direction = move.mulScalar(1.0 / move.length());
+        }
+        transform.rotation = Quat.fromAxisAngle(Vec3.Y, facing);
+        transform.translation = transform.translation.add(self.strafe_direction.mulScalar(self.speed * dt));
         return self.gait();
     }
 
@@ -165,19 +186,14 @@ pub fn control(character: anytype, style: Style, camera_yaw: f32, input: *Input)
                 try character.processInput(input);
             }
         },
-        .wind_waker => {
-            const pad = input.gamepad.left_stick;
-            const stick = if (pad.lengthSquared() > 0.0) pad else keyboardStick(input);
-            character.drive(motion.cameraRelativeMove(stick, camera_yaw), .wind_waker, input);
-        },
+        .wind_waker => character.drive(motion.cameraRelativeMove(moveStick(input), camera_yaw), .wind_waker, input),
     }
 }
 
 /// The follow camera trails the character at `transform`; the right stick or the arrow
-/// keys turn it, the left trigger or Q swing it behind the character.
-pub fn followCharacter(follow: *motion.FollowCamera, transform: Transform, input: *const Input) void {
-    const is_recentering = input.isDown(.q) or input.gamepad.left_trigger > 0.5;
-    const recenter_yaw: ?f32 = if (is_recentering) facingYaw(transform) else null;
+/// keys turn it; `recenter` swings it behind the character.
+pub fn followCharacter(follow: *motion.FollowCamera, transform: Transform, recenter: bool, input: *const Input) void {
+    const recenter_yaw: ?f32 = if (recenter) facingYaw(transform) else null;
     follow.update(transform.translation, cameraTurn(input), recenter_yaw, input.delta_time);
 }
 
@@ -195,6 +211,12 @@ pub fn facingYaw(transform: Transform) f32 {
     return motion.yawPitchOf(transform.rotation.rotateVec(Vec3.Z)).yaw;
 }
 
+/// The heading (about +Y from +Z, as the character's) that looks along a camera `yaw`.
+pub fn headingOfYaw(yaw: f32) f32 {
+    const direction = motion.yawPitchDirection(yaw, 0.0);
+    return std.math.atan2(direction.x, direction.z);
+}
+
 /// The angle about +Y from +Z to where the character's +Z points.
 fn heading(rotation: Quat) f32 {
     const front = rotation.rotateVec(Vec3.Z);
@@ -206,9 +228,15 @@ fn headingDirection(angle: f32) Vec3 {
     return Vec3.init(@sin(angle), 0.0, @cos(angle));
 }
 
-/// The follow camera's turn this frame: the gamepad's right stick plus the arrow keys, each
-/// axis -1 to 1.
-fn cameraTurn(input: *const Input) Vec2 {
+/// The move stick: the gamepad's left stick while it's pushed, else W / A / S / D.
+pub fn moveStick(input: *const Input) Vec2 {
+    const pad = input.gamepad.left_stick;
+    return if (pad.lengthSquared() > 0.0) pad else keyboardStick(input);
+}
+
+/// The camera (or aim) turn this frame: the gamepad's right stick plus the arrow keys,
+/// each axis -1 to 1.
+pub fn cameraTurn(input: *const Input) Vec2 {
     const stick = input.gamepad.right_stick;
     const keys_x = axisFromKeys(input, .left, .right);
     const keys_y = axisFromKeys(input, .down, .up);

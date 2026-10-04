@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-04 - First person aim and shoot; tower attack spec phase D
+- **core.gameplay.Projectiles**: `updateTargets`, shots against several targets, reporting each ended shot (`Ending`: where, which target, into the floor; struck shots end on the target's surface, grounded ones where they crossed the floor); `update` is now a one-target wrapper; tests
+- **bullets range**: LT or F holds first person (the camera eases to the eye in 0.2 s, the captain's model hides, the aim stick or arrows turn the view, pitch within ±80°, the left stick or W / A / S / D strafe, the captain faces the view); RT or the left mouse button fires tracers (6 per second, slight jitter) from below right of the eye, aimed at what the crosshair is on (the view ray cast against the turrets and floor), so they land on it at any distance; tracers hurt the turret they strike (strike explosion, flash, shake) and puff on the floor; an ImGui crosshair; shots and hits counted in the range panel, aim speed sliders; H (the stand-in hit) removed
+- **bullets**: `Motor.strafe` (move along the stick, face a given heading); `character_control.moveStick`, `cameraTurn`, `headingOfYaw`; `followCharacter` takes whether to recenter (the range recenters on Q only, LT is first person there)
+
 ### 2026-10-04 - core.gameplay and the turret range; tower attack spec phases C0 and C
 - **core.gameplay** (new folder, `src/core/gameplay/`): game building blocks on top of the engine, which core itself doesn't import. Moved in: `ballistics`, `fire_control` (`FireControl`, `ShotJitter`), and from `examples/turrets` `explosions` (`Explosions`, `ExplosionShapes`), `projectiles`, `turret` (`Turret`, `TurretShapes`), `turret_types`; their shaders to `src/core/shaders/` (`basic_shape.wgsl`, `projectiles.wgsl`). Callers use `core.gameplay.*`
 - **core.gameplay.Turret**: `size` (scales the whole turret; `init(type, position, size)`), `setPartColor`

@@ -93,6 +93,8 @@ pub const ToonSoldier = struct {
     match_rate: bool = true,
     /// Seconds in the air so far, during Jump_Idle.
     air_time: f32 = 0.0,
+    /// False hides the model (first person: the camera is inside the head).
+    visible: bool = true,
     state_machine: ToonStateMachine,
     current_weapon: Weapon = .ShortCannon,
 
@@ -184,7 +186,9 @@ pub const ToonSoldier = struct {
 
     /// Lit by the frame's SceneLights (redfish's PBR light uniforms were never set here).
     pub fn draw(self: *Self, frame: *const Frame) void {
-        self.model.draw(frame, self.shader, self.transform.toMatrix());
+        if (self.visible) {
+            self.model.draw(frame, self.shader, self.transform.toMatrix());
+        }
     }
 
     pub fn processInput(self: *Self, input: *core.Input) !void {
@@ -242,6 +246,22 @@ pub const ToonSoldier = struct {
             .idle => .idle,
             .walk => .walk,
             .run => .run,
+        });
+    }
+
+    /// First person: moves along `move` (the move stick turned to the view) while facing
+    /// `heading`, the view's; gun raised (Walk_Shoot / Run_Shoot); actions as `drive`.
+    pub fn strafe(self: *Self, move: Vec3, heading: f32, input: *core.Input) void {
+        self.processOneShotKeys(input);
+        if (!self.state_machine.isInterruptible()) {
+            self.moveDuringAction(input.delta_time);
+            return;
+        }
+        const gait = self.motor.strafe(&self.transform, move, heading, input.delta_time);
+        _ = self.state_machine.requestState(switch (gait) {
+            .idle => .idle,
+            .walk => .walk_shoot,
+            .run => .run_shoot,
         });
     }
 

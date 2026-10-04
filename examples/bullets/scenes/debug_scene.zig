@@ -210,7 +210,8 @@ pub const SceneDebug = struct {
             return;
         }
         const transform = self.characterTransform() orelse return;
-        character_control.followCharacter(&self.follow, transform, input);
+        const recenter = input.isDown(.q) or input.gamepad.left_trigger > 0.5;
+        character_control.followCharacter(&self.follow, transform, recenter, input);
         self.getSceneCamera().getCamera().movement.reset(self.follow.position, self.follow.focus);
     }
 
