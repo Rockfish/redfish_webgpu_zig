@@ -103,10 +103,9 @@ pub const Spacesuit = struct {
     scale: Vec3 = vec3(0.02, 0.02, 0.02),
     transform: core.Transform = core.Transform.identity(),
     rotation_speed: f32 = 2.0,
-    /// Units per second. redfish moved a fixed step per frame with vsync off, so the speed
-    /// depended on frame rate (and was ~0.1 units/s at 60 fps).
-    walk_speed: f32 = 1.5,
-    run_speed: f32 = 4.5,
+    /// Speeds in units per second (redfish moved a fixed step per frame with vsync off, so
+    /// the speed depended on frame rate, ~0.1 units/s at 60 fps) and the ground movement.
+    motor: character_control.Motor = .{ .walk_speed = 1.5, .run_speed = 4.5 },
     state_machine: SpacesuitStateMachine,
 
     const Self = @This();
@@ -170,7 +169,7 @@ pub const Spacesuit = struct {
         // Locomotion
         if (input.isDown(.w)) {
             const is_running = input.key_shift;
-            const speed = if (is_running) self.run_speed else self.walk_speed;
+            const speed = if (is_running) self.motor.run_speed else self.motor.walk_speed;
             const fwd = self.transform.forward();
             self.transform.translation = self.transform.translation.sub(fwd.mulScalar(speed * dt));
 
@@ -181,7 +180,7 @@ pub const Spacesuit = struct {
             }
         } else if (input.isDown(.s)) {
             const fwd = self.transform.forward();
-            self.transform.translation = self.transform.translation.add(fwd.mulScalar(self.walk_speed * dt));
+            self.transform.translation = self.transform.translation.add(fwd.mulScalar(self.motor.walk_speed * dt));
             _ = self.state_machine.requestState(.run_back);
         } else {
             _ = self.state_machine.requestState(.idle);
@@ -189,13 +188,14 @@ pub const Spacesuit = struct {
     }
 
     /// Analog control: walks or runs along `move` (a direction on the ground from the
-    /// move stick, length 0 to 1), facing where it goes; actions as `processInput`.
-    pub fn drive(self: *Self, move: Vec3, input: *core.Input) void {
+    /// move stick, length 0 to 1) in the given style; actions as `processInput`.
+    pub fn drive(self: *Self, move: Vec3, style: character_control.Style, input: *core.Input) void {
         self.processOneShotKeys(input);
         if (!self.state_machine.isInterruptible()) {
+            self.motor.stop();
             return;
         }
-        const gait = character_control.drive(&self.transform, move, @abs(self.walk_speed), @abs(self.run_speed), input.delta_time);
+        const gait = self.motor.update(style, &self.transform, move, input.delta_time);
         _ = self.state_machine.requestState(switch (gait) {
             .idle => .idle,
             .walk => .walk,

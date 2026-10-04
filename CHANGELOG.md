@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-04 - Wind Waker-style ground movement and jump; tower attack spec phase B
+- **bullets**: `character_control.Motor` with two styles, switched with K or the soldier panel: `direct` (the previous control) and `wind_waker` (moves the way the character faces; the facing turns toward the stick at a set rate, faster standing than running, so hard stick changes run arcs; stick travel is the throttle; speed builds and falls off; sharp turns slow it; a reversal at speed skids to a stop before turning); in the Wind Waker style W / A / S / D act as a stick (Shift runs)
+- **bullets**: the soldier's jump is takeoff, air, landing (Jump, Jump_Idle, Jump_Land; animation only) and carries on at the speed it had; the soldier panel has the motor's tuning (accel, decel, turn rates, skid)
+
 ### 2026-10-04 - Units, clip rates, no crossfade pops; tower attack spec phase A
 - **core.AnimationStateMachine**: each playing clip is a track with its own clock; an interrupted crossfade fades every playing clip out from where it is instead of dropping one at once (plan 012 review item 1); `setPlaybackRate` (negative plays backward), `StateConfig.rate`; a looping state still fading out resumes where it is; `update(model, dt)` (no frame time); scoped log
 - **core.WeightedAnimation**: `clip_time`, for callers that keep each clip's clock

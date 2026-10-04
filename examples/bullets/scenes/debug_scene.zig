@@ -81,6 +81,8 @@ pub const SceneDebug = struct {
     input_tick: u64 = 0,
     input_mode: InputMode = .spacesuit,
     camera_view: CameraView = .follow,
+    /// How the soldier and spacesuit move (K switches, or the soldier panel).
+    control_style: character_control.Style = .wind_waker,
     follow: motion.FollowCamera = undefined,
     reset: bool = false,
     run_animation: bool = true,
@@ -166,7 +168,7 @@ pub const SceneDebug = struct {
     /// The soldier's tuning panel in the soldier mode.
     pub fn drawGui(self: *Self) void {
         if (self.input_mode == .soldier) {
-            self.toon_soldier.drawGui();
+            self.toon_soldier.drawGui(&self.control_style);
         }
     }
 
@@ -188,14 +190,26 @@ pub const SceneDebug = struct {
         }
     }
 
-    /// The character takes the gamepad's move stick, relative to the follow camera, while
-    /// it's pushed; otherwise the keyboard.
+    /// The character takes the gamepad's move stick, relative to the follow camera. In the
+    /// direct style the keyboard turns and moves it (A / D turn, W / S move) while the
+    /// stick is centered; in the Wind Waker style W / A / S / D are a stick too (Shift
+    /// runs), and the character is driven every frame so it slows down after the stick is
+    /// let go.
     fn controlCharacter(self: *Self, character: anytype, input: *core.Input) !void {
-        const move = motion.cameraRelativeMove(input.gamepad.left_stick, self.follow.yaw);
-        if (move.lengthSquared() > 0.0) {
-            character.drive(move, input);
-        } else {
-            try character.processInput(input);
+        switch (self.control_style) {
+            .direct => {
+                const move = motion.cameraRelativeMove(input.gamepad.left_stick, self.follow.yaw);
+                if (move.lengthSquared() > 0.0) {
+                    character.drive(move, .direct, input);
+                } else {
+                    try character.processInput(input);
+                }
+            },
+            .wind_waker => {
+                const pad = input.gamepad.left_stick;
+                const stick = if (pad.lengthSquared() > 0.0) pad else keyboardStick(input);
+                character.drive(motion.cameraRelativeMove(stick, self.follow.yaw), .wind_waker, input);
+            },
         }
     }
 
@@ -241,6 +255,14 @@ pub const SceneDebug = struct {
                 }
                 std.debug.print("Input mode: {s}\n", .{@tagName(binding.mode)});
             }
+        }
+
+        if (input.pressedOnce(.k)) {
+            self.control_style = switch (self.control_style) {
+                .direct => .wind_waker,
+                .wind_waker => .direct,
+            };
+            std.debug.print("Control style: {s}\n", .{@tagName(self.control_style)});
         }
 
         if (input.pressedOnce(.v)) {
@@ -309,6 +331,17 @@ fn cameraTurn(input: *const core.Input) Vec2 {
     const keys_x = axisFromKeys(input, .left, .right);
     const keys_y = axisFromKeys(input, .down, .up);
     return vec2(std.math.clamp(stick.x + keys_x, -1.0, 1.0), std.math.clamp(stick.y + keys_y, -1.0, 1.0));
+}
+
+/// W / A / S / D as a move stick: half travel walks, Shift makes it full travel (a run).
+fn keyboardStick(input: *const core.Input) Vec2 {
+    const keys = vec2(axisFromKeys(input, .a, .d), axisFromKeys(input, .s, .w));
+    const length = @sqrt(keys.lengthSquared());
+    if (length == 0.0) {
+        return keys;
+    }
+    const travel: f32 = if (input.key_shift) 1.0 else 0.5;
+    return vec2(keys.x * travel / length, keys.y * travel / length);
 }
 
 fn axisFromKeys(input: *const core.Input, negative: glfw.Key, positive: glfw.Key) f32 {

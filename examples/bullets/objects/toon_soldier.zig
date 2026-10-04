@@ -38,6 +38,8 @@ const HEIGHT: f32 = 1.8;
 /// section 3.3). Moving at these speeds times the scale, the feet don't slide.
 const WALK_CLIP_SPEED: f32 = 2.6;
 const RUN_CLIP_SPEED: f32 = 4.5;
+/// Seconds in the air between the Jump clip (takeoff) and Jump_Land.
+const AIR_TIME: f32 = 0.2;
 
 const ToonAnimation = enum(u32) {
     death,
@@ -84,14 +86,13 @@ pub const ToonSoldier = struct {
     scale: f32,
     transform: core.Transform = core.Transform.identity(),
     rotation_speed: f32 = 2.0,
-    /// Meters per second.
-    walk_speed: f32,
-    run_speed: f32,
-    /// This frame's speed, for matching the walk and run clips' rate to it.
-    speed: f32 = 0.0,
-    /// Plays walk and run at the rate that matches `speed`, so the feet don't slide at
+    /// Speed and the ground movement tuning; its speed sets the walk and run clips' rate.
+    motor: character_control.Motor,
+    /// Plays walk and run at the rate that matches the speed, so the feet don't slide at
     /// any speed. Off: as authored, for finding the speed where they don't.
     match_rate: bool = true,
+    /// Seconds in the air so far, during Jump_Idle.
+    air_time: f32 = 0.0,
     state_machine: ToonStateMachine,
     current_weapon: Weapon = .ShortCannon,
 
@@ -122,8 +123,7 @@ pub const ToonSoldier = struct {
             .model = model,
             .shader = shader,
             .scale = scale,
-            .walk_speed = WALK_CLIP_SPEED * scale,
-            .run_speed = RUN_CLIP_SPEED * scale,
+            .motor = .{ .walk_speed = WALK_CLIP_SPEED * scale, .run_speed = RUN_CLIP_SPEED * scale },
             .state_machine = fsm,
         };
 
@@ -145,25 +145,39 @@ pub const ToonSoldier = struct {
     }
 
     pub fn update(self: *Self, input: *Input) !void {
+        self.landAfterAirTime(input.delta_time);
         self.matchClipRate();
         try self.state_machine.update(self.model, input.delta_time);
     }
 
-    /// The tuning panel: speeds in meters per second and the clips' rates.
-    pub fn drawGui(self: *Self) void {
+    /// The tuning panel: control style, speeds in meters per second, the Wind Waker
+    /// style's turning and skid, and the clips' rates.
+    pub fn drawGui(self: *Self, style: *character_control.Style) void {
+        const motor = &self.motor;
         zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
-        zgui.setNextWindowSize(.{ .w = 320, .h = 200, .cond = .first_use_ever });
+        zgui.setNextWindowSize(.{ .w = 360, .h = 380, .cond = .first_use_ever });
         if (zgui.begin("soldier", .{})) {
+            _ = zgui.comboFromEnum("control (K)", style);
+
             const state = self.state_machine.getCurrentState();
-            zgui.text("state: {s}", .{@tagName(state)});
-            zgui.text("speed: {d:.2} m/s ({d:.2} heights/s)", .{ self.speed, self.speed / HEIGHT });
+            zgui.text("state: {s}{s}", .{ @tagName(state), if (motor.skidding) "  (skid)" else "" });
+            zgui.text("speed: {d:.2} m/s ({d:.2} heights/s)", .{ motor.speed, motor.speed / HEIGHT });
             if (clipSpeed(state)) |clip_speed| {
                 zgui.text("clip foot speed: {d:.2} m/s", .{clip_speed * self.scale});
             }
             zgui.text("height: {d:.2} m, scale {d:.3}", .{ HEIGHT, self.scale });
-            _ = zgui.sliderFloat("walk (m/s)", .{ .v = &self.walk_speed, .min = 0.5, .max = 5.0 });
-            _ = zgui.sliderFloat("run (m/s)", .{ .v = &self.run_speed, .min = 1.0, .max = 10.0 });
+            _ = zgui.sliderFloat("walk (m/s)", .{ .v = &motor.walk_speed, .min = 0.5, .max = 5.0 });
+            _ = zgui.sliderFloat("run (m/s)", .{ .v = &motor.run_speed, .min = 1.0, .max = 10.0 });
             _ = zgui.checkbox("match clip rate to speed", .{ .v = &self.match_rate });
+
+            zgui.separatorText("wind waker");
+            _ = zgui.sliderFloat("accel (s to run)", .{ .v = &motor.accel_time, .min = 0.02, .max = 1.0 });
+            _ = zgui.sliderFloat("decel (s to stop)", .{ .v = &motor.decel_time, .min = 0.02, .max = 1.0 });
+            _ = zgui.sliderFloat("turn standing (deg/s)", .{ .v = &motor.turn_rate_standing, .min = 90.0, .max = 1440.0 });
+            _ = zgui.sliderFloat("turn running (deg/s)", .{ .v = &motor.turn_rate_running, .min = 90.0, .max = 1440.0 });
+            _ = zgui.sliderFloat("skid angle (deg)", .{ .v = &motor.skid_angle, .min = 90.0, .max = 180.0 });
+            _ = zgui.sliderFloat("skid above (x run)", .{ .v = &motor.skid_min_speed, .min = 0.0, .max = 1.0 });
+            _ = zgui.sliderFloat("skid (s to stop)", .{ .v = &motor.skid_time, .min = 0.02, .max = 1.0 });
         }
         zgui.end();
     }
@@ -178,9 +192,9 @@ pub const ToonSoldier = struct {
 
         // One-shot actions first, so they claim their keys before the scene's global keys
         self.processOneShotKeys(input);
-        // A kick or roll plays in place: no moving or turning until it's done
-        self.speed = 0.0;
+        // A punch plays in place, a jump carries on: no steering until it's done
         if (!self.state_machine.isInterruptible()) {
+            self.moveDuringAction(dt);
             return;
         }
 
@@ -194,10 +208,11 @@ pub const ToonSoldier = struct {
 
         // Locomotion, along the way the model faces (glTF models face +Z)
         const facing = self.transform.rotation.rotateVec(Vec3.Z);
+        const motor = &self.motor;
         if (input.isDown(.w)) {
             const is_running = input.key_shift;
-            self.speed = if (is_running) self.run_speed else self.walk_speed;
-            self.transform.translation = self.transform.translation.add(facing.mulScalar(self.speed * dt));
+            motor.speed = if (is_running) motor.run_speed else motor.walk_speed;
+            self.transform.translation = self.transform.translation.add(facing.mulScalar(motor.speed * dt));
 
             if (is_running) {
                 _ = self.state_machine.requestState(.run_shoot);
@@ -205,28 +220,24 @@ pub const ToonSoldier = struct {
                 _ = self.state_machine.requestState(.walk);
             }
         } else if (input.isDown(.s)) {
-            self.speed = self.walk_speed;
-            self.transform.translation = self.transform.translation.sub(facing.mulScalar(self.speed * dt));
+            motor.speed = motor.walk_speed;
+            self.transform.translation = self.transform.translation.sub(facing.mulScalar(motor.speed * dt));
             _ = self.state_machine.requestState(.walk);
         } else {
+            motor.stop();
             _ = self.state_machine.requestState(.idle);
         }
     }
 
     /// Analog control: walks or runs along `move` (a direction on the ground from the
-    /// move stick, length 0 to 1), facing where it goes; actions as `processInput`.
-    pub fn drive(self: *Self, move: Vec3, input: *core.Input) void {
+    /// move stick, length 0 to 1) in the given style; actions as `processInput`.
+    pub fn drive(self: *Self, move: Vec3, style: character_control.Style, input: *core.Input) void {
         self.processOneShotKeys(input);
-        self.speed = 0.0;
         if (!self.state_machine.isInterruptible()) {
+            self.moveDuringAction(input.delta_time);
             return;
         }
-        const gait = character_control.drive(&self.transform, move, self.walk_speed, self.run_speed, input.delta_time);
-        self.speed = switch (gait) {
-            .idle => 0.0,
-            .walk => self.walk_speed,
-            .run => self.run_speed,
-        };
+        const gait = self.motor.update(style, &self.transform, move, input.delta_time);
         _ = self.state_machine.requestState(switch (gait) {
             .idle => .idle,
             .walk => .walk,
@@ -266,10 +277,33 @@ pub const ToonSoldier = struct {
         }
     }
 
-    /// A walk or run plays at the rate that carries the feet at `speed`.
+    /// A jump carries on the way it was going at its speed; anything else stands still.
+    fn moveDuringAction(self: *Self, dt: f32) void {
+        switch (self.state_machine.getCurrentState()) {
+            .jump, .jump_idle, .jump_land => self.motor.coast(&self.transform, dt),
+            else => self.motor.stop(),
+        }
+    }
+
+    /// The jump is three clips: Jump (takeoff) returns to Jump_Idle (in the air), which
+    /// lands after `AIR_TIME`; Jump_Land returns to idle. Animation only, on a flat
+    /// floor: the clips carry the lift.
+    fn landAfterAirTime(self: *Self, dt: f32) void {
+        if (self.state_machine.getCurrentState() != .jump_idle) {
+            self.air_time = 0.0;
+            return;
+        }
+        self.air_time += dt;
+        if (self.air_time >= AIR_TIME) {
+            self.state_machine.forceState(.jump_land);
+        }
+    }
+
+    /// A walk or run plays at the rate that carries the feet at the motor's speed.
     fn matchClipRate(self: *Self) void {
         const clip_speed = clipSpeed(self.state_machine.getCurrentState()) orelse return;
-        const rate = if (self.match_rate and self.speed > 0.0) self.speed / (clip_speed * self.scale) else 1.0;
+        const speed = self.motor.speed;
+        const rate = if (self.match_rate and speed > 0.0) speed / (clip_speed * self.scale) else 1.0;
         self.state_machine.setPlaybackRate(rate);
     }
 };
@@ -297,13 +331,13 @@ fn buildStateConfigs() [ToonStateMachine.count]ToonStateMachine.StateConfig {
     configs[@intFromEnum(ToonAnimation.run_shoot)] = .{ .animation_id = 12, .repeat = Forever, .crossfade_in = 0.15, .interruptible = true, .return_state = null };
     configs[@intFromEnum(ToonAnimation.walk_shoot)] = .{ .animation_id = 14, .repeat = Forever, .crossfade_in = 0.15, .interruptible = true, .return_state = null };
 
-    // Idle variants (looping, interruptible)
+    // Idle variants (looping); Jump_Idle is the jump in the air, landed by `landAfterAirTime`
     configs[@intFromEnum(ToonAnimation.idle_shoot)] = .{ .animation_id = 4, .repeat = Forever, .crossfade_in = 0.15, .interruptible = true, .return_state = null };
-    configs[@intFromEnum(ToonAnimation.jump_idle)] = .{ .animation_id = 6, .repeat = Forever, .crossfade_in = 0.15, .interruptible = true, .return_state = null };
+    configs[@intFromEnum(ToonAnimation.jump_idle)] = .{ .animation_id = 6, .repeat = Forever, .crossfade_in = 0.05, .interruptible = false, .return_state = null };
 
     // One-shot actions (play once, return to idle, not interruptible)
     configs[@intFromEnum(ToonAnimation.punch)] = .{ .animation_id = 9, .repeat = Once, .crossfade_in = 0.10, .interruptible = false, .return_state = .idle };
-    configs[@intFromEnum(ToonAnimation.jump)] = .{ .animation_id = 5, .repeat = Once, .crossfade_in = 0.10, .interruptible = false, .return_state = .idle };
+    configs[@intFromEnum(ToonAnimation.jump)] = .{ .animation_id = 5, .repeat = Once, .crossfade_in = 0.10, .interruptible = false, .return_state = .jump_idle };
     configs[@intFromEnum(ToonAnimation.jump_land)] = .{ .animation_id = 7, .repeat = Once, .crossfade_in = 0.10, .interruptible = false, .return_state = .idle };
     configs[@intFromEnum(ToonAnimation.duck)] = .{ .animation_id = 1, .repeat = Once, .crossfade_in = 0.10, .interruptible = false, .return_state = .idle };
     configs[@intFromEnum(ToonAnimation.wave)] = .{ .animation_id = 15, .repeat = Once, .crossfade_in = 0.15, .interruptible = true, .return_state = .idle };
