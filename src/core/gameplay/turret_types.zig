@@ -3,12 +3,11 @@
 //! panel starts from these values.
 
 const std = @import("std");
-const core = @import("core");
 const math = @import("math");
 
 const turret_module = @import("turret.zig");
 
-const motion = core.motion;
+const motion = @import("../motion.zig");
 const Step = turret_module.Step;
 const TurretType = turret_module.TurretType;
 const vec4 = math.vec4;

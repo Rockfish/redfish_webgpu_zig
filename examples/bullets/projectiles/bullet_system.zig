@@ -220,7 +220,7 @@ pub const BulletSystem = struct {
 
         for (0..self.bullet_positions.items().len) |i| {
             const velocity = &self.bullet_velocities.items()[i];
-            core.ballistics.step(&self.bullet_positions.items()[i], velocity, gravity_vec, delta_time);
+            core.gameplay.ballistics.step(&self.bullet_positions.items()[i], velocity, gravity_vec, delta_time);
 
             const forward = velocity.toNormalized();
 
@@ -243,7 +243,7 @@ pub const BulletSystem = struct {
             var previous = self.aim_origin;
             for (1..PREDICTION_SEGMENTS + 1) |step| {
                 const time = PREDICTION_TIME * @as(f32, @floatFromInt(step)) / PREDICTION_SEGMENTS;
-                const point = core.ballistics.positionAt(self.aim_origin, launch_velocity, gravity_vec, time);
+                const point = core.gameplay.ballistics.positionAt(self.aim_origin, launch_velocity, gravity_vec, time);
                 segments[count] = .{ .start = previous, .end = point, .color = Color.yellow };
                 count += 1;
                 previous = point;

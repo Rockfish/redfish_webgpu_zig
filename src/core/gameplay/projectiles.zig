@@ -10,16 +10,18 @@
 //! body, a nose, and fins), each drawn once for the whole pool with the same instance data.
 
 const std = @import("std");
-const core = @import("core");
 const math = @import("math");
 
 const Explosions = @import("explosions.zig").Explosions;
+const bindings = @import("../bindings.zig");
+const gpu_context = @import("../gpu_context.zig");
+const shapes_module = @import("../shapes/root.zig");
 
-const DrawUniforms = core.DrawUniforms;
-const Frame = core.Frame;
-const Shader = core.Shader;
-const Shape = core.shapes.Shape;
-const ballistics = core.ballistics;
+const DrawUniforms = bindings.DrawUniforms;
+const Frame = gpu_context.Frame;
+const Shader = @import("../shader.zig").Shader;
+const Shape = shapes_module.Shape;
+const ballistics = @import("ballistics.zig");
 const Mat4 = math.Mat4;
 const Quat = math.Quat;
 const Vec3 = math.Vec3;
@@ -29,7 +31,7 @@ const Vec4 = math.Vec4;
 const MAX_PROJECTILES = 256;
 
 /// Instance attributes: rotation quaternion at location 8, position at 9 (projectiles.wgsl).
-pub const InstanceLayouts = core.shapes.InstancedLayouts(&.{
+pub const InstanceLayouts = shapes_module.InstancedLayouts(&.{
     .{ .format = .float32x4, .location = 8 },
     .{ .format = .float32x3, .location = 9 },
 });

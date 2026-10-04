@@ -30,9 +30,9 @@ the regression check. Since then:
   `moveToward`, `PathFollow`, `Shake`); `CameraGimbal` revived in `examples/camera_rig`
 - Plan 017 shadows: `examples/shadows`, `DepthBias`, `ShadowMap` filter, `ShadowMapArray`
 - Plan 018 anti-aliasing: 4x MSAA (`-Dmsaa`, default on), alpha-to-coverage for glTF MASK
-- Plan 008 turrets: `core.motion` (`YawPitchAim`, `Sweep`), `core.FireControl`,
-  `core.ballistics`; `examples/turrets` (track, sweep, mortar, programs, turret types)
-- Plan 009 gravity bullets: `examples/bullets` steps with `core.ballistics` (G gravity, P paths)
+- Plan 008 turrets: `core.motion` (`YawPitchAim`, `Sweep`), `core.gameplay.FireControl`,
+  `core.gameplay.ballistics`; `examples/turrets` (track, sweep, mortar, programs, turret types)
+- Plan 009 gravity bullets: `examples/bullets` steps with `core.gameplay.ballistics` (G gravity, P paths)
 - Plan 010 input: `core.Input` (`isDown`, `pressedOnce`, ImGui-aware, gamepad);
   `motion.FollowCamera`; bullets characters on a game controller
 
@@ -44,6 +44,7 @@ space). See `docs/plans/active-plans.md`.
 ```
 src/
 ├── core/         # Engine: gpu_context, shader, mesh, model, texture, animation, shapes, ...
+│   ├── gameplay/ # Game building blocks: ballistics, fire control, explosions (uses core, not used by it)
 │   └── wgpu/     # webgpu.h translated by the build, string-view helpers, Metal layer
 ├── math/         # Vec/Mat/Quat, column-major
 └── containers/

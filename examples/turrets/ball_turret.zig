@@ -7,12 +7,12 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const Explosions = @import("explosions.zig").Explosions;
-const projectiles = @import("projectiles.zig");
-const turret_module = @import("turret.zig");
+const Explosions = core.gameplay.Explosions;
+const projectiles = core.gameplay.projectiles;
+const turret_module = core.gameplay.turret;
 
 const DrawUniforms = core.DrawUniforms;
-const FireControl = core.FireControl;
+const FireControl = core.gameplay.FireControl;
 const Frame = core.Frame;
 const Random = core.Random;
 const Shader = core.Shader;
@@ -55,7 +55,7 @@ pub const BallTurret = struct {
     pub fn update(self: *Self, dt: f32, target: TargetState, trigger: bool, random: *Random, explosions: *Explosions) void {
         const ball_center = self.center();
         self.aim_point = if (self.lead)
-            core.ballistics.leadPoint(ball_center, target.position, target.velocity, self.weapon.speed)
+            core.gameplay.ballistics.leadPoint(ball_center, target.position, target.velocity, self.weapon.speed)
         else
             target.position;
         self.rotation = motion.dampLookAt(self.rotation, ball_center, self.aim_point, Vec3.Y, self.turn_rate, dt);

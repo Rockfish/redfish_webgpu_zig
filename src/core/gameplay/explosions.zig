@@ -1,15 +1,19 @@
 //! Shell explosions: a fireball that swells to the blast radius and burns out, and, for
 //! bursts at or near the ground, a burn mark on the floor that fades over several seconds.
+//! Drawn with `src/core/shaders/basic_shape.wgsl` (the fireballs with `UNLIT`).
 
 const std = @import("std");
-const core = @import("core");
 const math = @import("math");
+const bindings = @import("../bindings.zig");
+const gpu_context = @import("../gpu_context.zig");
+const shapes_module = @import("../shapes/root.zig");
+const Context = @import("../context.zig").Context;
+const Shader = @import("../shader.zig").Shader;
 
-const DrawUniforms = core.DrawUniforms;
-const Frame = core.Frame;
-const GpuContext = core.GpuContext;
-const Shader = core.Shader;
-const Shape = core.shapes.Shape;
+const DrawUniforms = bindings.DrawUniforms;
+const Frame = gpu_context.Frame;
+const GpuContext = gpu_context.GpuContext;
+const Shape = shapes_module.Shape;
 const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -51,10 +55,10 @@ pub const ExplosionShapes = struct {
     sphere: *Shape,
     disk: *Shape,
 
-    pub fn init(context: core.Context, gpu: *const GpuContext) !ExplosionShapes {
+    pub fn init(context: Context, gpu: *const GpuContext) !ExplosionShapes {
         return .{
-            .sphere = try core.shapes.createSphere(context.alloc, gpu, 1.0, 20, 20),
-            .disk = try core.shapes.createCylinder(context.alloc, gpu, 1.0, MARK_THICKNESS, 24),
+            .sphere = try shapes_module.createSphere(context.alloc, gpu, 1.0, 20, 20),
+            .disk = try shapes_module.createCylinder(context.alloc, gpu, 1.0, MARK_THICKNESS, 24),
         };
     }
 

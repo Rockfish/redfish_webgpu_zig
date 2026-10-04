@@ -7,7 +7,7 @@
 //! - Pattern: what to aim at. `track` aims at the target, optionally leading it; `sweep`
 //!   swings across an arc around the target's bearing or a fixed heading; `mortar` lobs a
 //!   shell that gets to the target in a fixed flight time.
-//! - Fire control: `core.FireControl` says when a shot goes out; the weapon's
+//! - Fire control: `core.gameplay.FireControl` says when a shot goes out; the weapon's
 //!   `ShotJitter` spreads the shots.
 //!
 //! Track and sweep fire tracers; the mortar fires finned rockets that explode. A `Program`
@@ -15,25 +15,28 @@
 //! each step with its own fire settings if it needs them.
 
 const std = @import("std");
-const core = @import("core");
 const math = @import("math");
 
 const Explosions = @import("explosions.zig").Explosions;
+const bindings = @import("../bindings.zig");
+const gpu_context = @import("../gpu_context.zig");
+const shapes_module = @import("../shapes/root.zig");
+const Context = @import("../context.zig").Context;
 const projectiles = @import("projectiles.zig");
 
-const DrawUniforms = core.DrawUniforms;
+const DrawUniforms = bindings.DrawUniforms;
 const Projectiles = projectiles.Projectiles;
 const ProjectilePart = projectiles.Part;
-const FireControl = core.FireControl;
-const Frame = core.Frame;
-const GpuContext = core.GpuContext;
-const Random = core.Random;
-const Shader = core.Shader;
-const Shape = core.shapes.Shape;
-const ShotJitter = core.fire_control.ShotJitter;
-const Transform = core.Transform;
-const ballistics = core.ballistics;
-const motion = core.motion;
+const FireControl = @import("fire_control.zig").FireControl;
+const Frame = gpu_context.Frame;
+const GpuContext = gpu_context.GpuContext;
+const Random = @import("../random.zig").Random;
+const Shader = @import("../shader.zig").Shader;
+const Shape = shapes_module.Shape;
+const ShotJitter = @import("fire_control.zig").ShotJitter;
+const Transform = @import("../transform.zig").Transform;
+const ballistics = @import("ballistics.zig");
+const motion = @import("../motion.zig");
 const Mat4 = math.Mat4;
 const Quat = math.Quat;
 const Vec3 = math.Vec3;
@@ -210,20 +213,20 @@ pub const TurretShapes = struct {
     rocket_fin: *Shape,
     pedestal: *Shape,
 
-    pub fn init(context: core.Context, gpu: *const GpuContext) !TurretShapes {
+    pub fn init(context: Context, gpu: *const GpuContext) !TurretShapes {
         const alloc = context.alloc;
         var parts: [Part.count]*Shape = undefined;
-        parts[@intFromEnum(Part.base)] = try core.shapes.createCube(alloc, gpu, .{ .width = BASE_SIZE.x, .height = BASE_SIZE.y, .depth = BASE_SIZE.z });
-        parts[@intFromEnum(Part.body)] = try core.shapes.createCylinder(alloc, gpu, BODY_RADIUS, BODY_HEIGHT, 24);
-        parts[@intFromEnum(Part.head)] = try core.shapes.createSphere(alloc, gpu, HEAD_RADIUS, 16, 16);
-        parts[@intFromEnum(Part.barrel)] = try core.shapes.createCylinder(alloc, gpu, BARREL_RADIUS, BARREL_LENGTH, 12);
+        parts[@intFromEnum(Part.base)] = try shapes_module.createCube(alloc, gpu, .{ .width = BASE_SIZE.x, .height = BASE_SIZE.y, .depth = BASE_SIZE.z });
+        parts[@intFromEnum(Part.body)] = try shapes_module.createCylinder(alloc, gpu, BODY_RADIUS, BODY_HEIGHT, 24);
+        parts[@intFromEnum(Part.head)] = try shapes_module.createSphere(alloc, gpu, HEAD_RADIUS, 16, 16);
+        parts[@intFromEnum(Part.barrel)] = try shapes_module.createCylinder(alloc, gpu, BARREL_RADIUS, BARREL_LENGTH, 12);
         return .{
             .parts = parts,
-            .tracer = try core.shapes.createCube(alloc, gpu, .{ .width = TRACER_SIZE.x, .height = TRACER_SIZE.y, .depth = TRACER_SIZE.z }),
-            .rocket_body = try core.shapes.createCylinder(alloc, gpu, ROCKET_RADIUS, ROCKET_LENGTH, 12),
-            .rocket_nose = try core.shapes.createSphere(alloc, gpu, ROCKET_RADIUS, 12, 12),
-            .rocket_fin = try core.shapes.createCube(alloc, gpu, .{ .width = FIN_SIZE.x, .height = FIN_SIZE.y, .depth = FIN_SIZE.z }),
-            .pedestal = try core.shapes.createCylinder(alloc, gpu, PEDESTAL_RADIUS, PEDESTAL_HEIGHT, 16),
+            .tracer = try shapes_module.createCube(alloc, gpu, .{ .width = TRACER_SIZE.x, .height = TRACER_SIZE.y, .depth = TRACER_SIZE.z }),
+            .rocket_body = try shapes_module.createCylinder(alloc, gpu, ROCKET_RADIUS, ROCKET_LENGTH, 12),
+            .rocket_nose = try shapes_module.createSphere(alloc, gpu, ROCKET_RADIUS, 12, 12),
+            .rocket_fin = try shapes_module.createCube(alloc, gpu, .{ .width = FIN_SIZE.x, .height = FIN_SIZE.y, .depth = FIN_SIZE.z }),
+            .pedestal = try shapes_module.createCylinder(alloc, gpu, PEDESTAL_RADIUS, PEDESTAL_HEIGHT, 16),
         };
     }
 
@@ -265,6 +268,8 @@ pub const Turret = struct {
     /// Where the base sits on the ground. Turrets aren't rotated: the turret's own space is
     /// world space moved to the pivot.
     position: Vec3,
+    /// Scale of the whole turret (1: a 1.6 m wide base); its shots keep their speed.
+    size: f32,
     aim: motion.YawPitchAim,
     fire_control: FireControl,
     weapon: Weapon,
@@ -286,11 +291,12 @@ pub const Turret = struct {
 
     const Self = @This();
 
-    /// A turret of `turret_type` standing at `position`; it starts its program if the type
-    /// has one.
-    pub fn init(turret_type: TurretType, position: Vec3) Self {
+    /// A turret of `turret_type` and `size` standing at `position`; it starts its program
+    /// if the type has one.
+    pub fn init(turret_type: TurretType, position: Vec3, size: f32) Self {
         var self: Self = .{
             .position = position,
+            .size = size,
             .aim = turret_type.aim,
             .fire_control = .{ .policy = turret_type.fire.policy, .cadence = turret_type.fire.cadence },
             .weapon = turret_type.weapon,
@@ -360,6 +366,11 @@ pub const Turret = struct {
             .when_aligned => |when_aligned| when_aligned,
         };
         return self.aim.isAligned(tolerance);
+    }
+
+    /// Recolors a part, e.g. the base to show health.
+    pub fn setPartColor(self: *Self, part: Part, color: Vec4) void {
+        self.nodes[@intFromEnum(part)].color = color;
     }
 
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: *const TurretShapes) void {
@@ -467,9 +478,13 @@ pub const Turret = struct {
         self.updateWorldTransforms();
     }
 
-    /// One parent-first pass; the base composes with the turret's position.
+    /// One parent-first pass; the base composes with the turret's position and size.
     fn updateWorldTransforms(self: *Self) void {
-        const placement = Transform.fromTranslation(self.position);
+        const placement: Transform = .{
+            .translation = self.position,
+            .rotation = Quat.Identity,
+            .scale = vec3(self.size, self.size, self.size),
+        };
         for (&self.nodes) |*node| {
             const parent_transform = if (node.parent) |parent| self.nodes[@intFromEnum(parent)].world_transform else placement;
             node.world_transform = parent_transform.composeTransforms(node.local_transform);

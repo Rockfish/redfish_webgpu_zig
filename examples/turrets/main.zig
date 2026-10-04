@@ -29,17 +29,16 @@ const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
 const BallTurret = @import("ball_turret.zig").BallTurret;
-const explosions_module = @import("explosions.zig");
-const projectiles = @import("projectiles.zig");
-const turret_module = @import("turret.zig");
-const turret_types = @import("turret_types.zig");
+const projectiles = core.gameplay.projectiles;
+const turret_module = core.gameplay.turret;
+const turret_types = core.gameplay.turret_types;
 
 const Arenas = core.Arenas;
 const Input = core.Input;
 const Camera = core.Camera;
 const DrawUniforms = core.DrawUniforms;
-const ExplosionShapes = explosions_module.ExplosionShapes;
-const Explosions = explosions_module.Explosions;
+const ExplosionShapes = core.gameplay.ExplosionShapes;
+const Explosions = core.gameplay.Explosions;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
 const Lines = core.shapes.Lines;
@@ -363,24 +362,24 @@ pub fn main(init: std.process.Init) !void {
 
 /// `allocator` is for ImGui, which frees in any order (an arena wouldn't reclaim it).
 fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
-    const shape_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/basic_shape.wgsl", .{
+    const shape_shader = try Shader.init(context.io, context.alloc, gpu, "src/core/shaders/basic_shape.wgsl", .{
         .vertex_buffers = &Shape.vertex_buffer_layouts,
     });
     defer shape_shader.releaseGpuObjects();
 
-    const projectile_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/projectiles.wgsl", .{
+    const projectile_shader = try Shader.init(context.io, context.alloc, gpu, "src/core/shaders/projectiles.wgsl", .{
         .vertex_buffers = &projectiles.InstanceLayouts.layouts,
     });
     defer projectile_shader.releaseGpuObjects();
 
     // The same shaders with their override constants set: lit rockets, unlit fireballs
-    const rocket_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/projectiles.wgsl", .{
+    const rocket_shader = try Shader.init(context.io, context.alloc, gpu, "src/core/shaders/projectiles.wgsl", .{
         .vertex_buffers = &projectiles.InstanceLayouts.layouts,
         .constants = &.{.{ .key = "LIT", .value = 1.0 }},
     });
     defer rocket_shader.releaseGpuObjects();
 
-    const flash_shader = try Shader.init(context.io, context.alloc, gpu, "examples/turrets/shaders/basic_shape.wgsl", .{
+    const flash_shader = try Shader.init(context.io, context.alloc, gpu, "src/core/shaders/basic_shape.wgsl", .{
         .vertex_buffers = &Shape.vertex_buffer_layouts,
         .constants = &.{.{ .key = "UNLIT", .value = 1.0 }},
     });
@@ -414,7 +413,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     var settings: Settings = .{ .turrets = undefined };
     var turrets: [TURRET_COUNT]Turret = undefined;
     for (placements, &turrets, &settings.turrets) |placement, *turret, *turret_settings| {
-        turret.* = .init(placement.turret_type.*, placement.position);
+        turret.* = .init(placement.turret_type.*, placement.position, 1.0);
         turret_settings.* = .fromType(placement.turret_type.*);
     }
     var ball = createBallTurret();
@@ -657,7 +656,7 @@ fn drawArcs(frame: *const Frame, lines: *Lines, turrets: []const Turret) void {
         var previous = muzzle;
         for (1..ARC_LINE_SEGMENTS + 1) |i| {
             const time = flight_time * @as(f32, @floatFromInt(i)) / ARC_LINE_SEGMENTS;
-            const point = core.ballistics.positionAt(muzzle, launch_velocity, turret_module.GRAVITY, time);
+            const point = core.gameplay.ballistics.positionAt(muzzle, launch_velocity, turret_module.GRAVITY, time);
             segments[count] = .{ .start = previous, .end = point, .color = .orange };
             count += 1;
             previous = point;
