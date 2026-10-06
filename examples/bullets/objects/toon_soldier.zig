@@ -282,6 +282,11 @@ pub const ToonSoldier = struct {
     /// Driven by code (a squad member), not the keys or gamepad: walks or runs along
     /// `move` (a direction on the ground, length 0 to 1) in the Wind Waker style.
     pub fn steer(self: *Self, move: Vec3, dt: f32) void {
+        // A flinch plays on, but doesn't stop it: frozen, it would stay in a stream of fire
+        if (self.isFlinching()) {
+            _ = self.motor.update(.wind_waker, &self.transform, move, dt);
+            return;
+        }
         if (!self.state_machine.isInterruptible()) {
             self.moveDuringAction(dt);
             return;
@@ -297,6 +302,10 @@ pub const ToonSoldier = struct {
     /// Driven by code while shooting: moves along `move` while facing `heading`, gun up
     /// (Idle_Shoot while `firing` and still, Walk_Shoot / Run_Shoot moving).
     pub fn steerAiming(self: *Self, move: Vec3, heading: f32, firing: bool, dt: f32) void {
+        if (self.isFlinching()) {
+            _ = self.motor.strafe(&self.transform, move, heading, dt);
+            return;
+        }
         if (!self.state_machine.isInterruptible()) {
             self.moveDuringAction(dt);
             return;
@@ -309,8 +318,9 @@ pub const ToonSoldier = struct {
         });
     }
 
-    /// Hit: a flinch (HitReact) whatever it's doing, standing still until it's over. A
-    /// hit during a flinch doesn't restart it.
+    /// Hit: a flinch (HitReact) whatever it's doing. Driven by code (`steer`,
+    /// `steerAiming`) it keeps moving through it; a hit during a flinch doesn't restart
+    /// it.
     pub fn flinch(self: *Self) void {
         self.state_machine.forceState(.hit_react);
     }

@@ -25,7 +25,8 @@
 //! hasn't fired at the point for a while or the target is gone.
 //!
 //! Hit by a turret's tracer or caught in a shell's blast (phase G1), a member flinches,
-//! standing and holding fire until it's over.
+//! holding fire until it's over; it keeps moving through it (phase I), so a flinch can't
+//! hold it in a stream of fire.
 //!
 //! Fear (phase G2): each member has a fear (0 to 1) and a mood. Blasts nearby, hits, tracers
 //! striking close, and shells coming down near it (their warning rings) raise its fear;
@@ -39,6 +40,13 @@
 //! | **follow**  | arrive at its spot, separation, cohesion, wander; engages the focus | fear above its courage: scatter |
 //! | **scatter** | away from the threat at a run, separation | fear below half its courage: regroup |
 //! | **regroup** | arrive at its spot at a run, separation   | at its spot: follow            |
+//!
+//! The line of fire (phase I): the captain's tracers hit members (friendly fire: a flinch,
+//! and a few careful seconds), so while he aims, members step out of a corridor from his
+//! gun to the aim point, and move their spots out of it. Not perfectly: each member has a
+//! fire awareness (0 to 1, a future skill level) that sets how late it notices it's in
+//! the way, and how often it has a lapse (ignores the corridor for a second or two), so
+//! members mostly keep out of the way but now and then wander in.
 
 const std = @import("std");
 const zgui = @import("zgui");
@@ -178,6 +186,31 @@ pub const Tuning = struct {
     /// Regrouping ends within this many meters of its spot.
     regroup_radius: f32 = 2.0,
 
+    /// The captain's line of fire: meters either side of it, each member's own width
+    /// within `±corridor_jitter` of it (picked at start).
+    corridor_width: f32 = 1.0,
+    corridor_jitter: f32 = 0.25,
+    /// Each member's fire awareness, picked at start within this range.
+    awareness_min: f32 = 0.8,
+    awareness_max: f32 = 0.95,
+    /// Seconds before a member notices it's in the line of fire: `reaction_best` at
+    /// awareness 1, `reaction_worst` at 0.
+    reaction_best: f32 = 0.2,
+    reaction_worst: f32 = 0.8,
+    /// Every `lapse_interval` seconds (give or take half) a member has a lapse with
+    /// chance 1 - awareness: it ignores the line of fire for `lapse_min` to `lapse_max`
+    /// seconds.
+    lapse_interval: f32 = 2.0,
+    lapse_min: f32 = 1.0,
+    lapse_max: f32 = 2.0,
+    /// After the captain hits a member, seconds it's careful: no lapses, the best
+    /// reaction.
+    careful_time: f32 = 3.0,
+    /// The push out of the line of fire, times the running speed.
+    step_aside_weight: f32 = 1.0,
+    /// How far past the corridor's edge a member's spot is moved, meters.
+    spot_clearance: f32 = 0.5,
+
     /// A random spot angle (radians from straight behind) on `side` (+1 or -1), outside
     /// the gap and within the spread.
     fn spotAngle(self: Tuning, random: *Random, side: f32) f32 {
@@ -227,6 +260,17 @@ const Member = struct {
     threat_weight: f32 = 0.0,
     /// Seconds until a hit can make it flinch again.
     flinch_timer: f32 = 0.0,
+    /// Line of fire: its awareness (0 to 1) and corridor width (meters either side);
+    /// seconds it has been in the corridor unnoticed; seconds left of a lapse, until the
+    /// next lapse roll, and of being careful after a hit.
+    awareness: f32,
+    corridor_width: f32,
+    in_line_time: f32 = 0.0,
+    lapse_timer: f32 = 0.0,
+    lapse_check_timer: f32 = 0.0,
+    careful_timer: f32 = 0.0,
+    /// In the corridor this frame, and stepping out of it (for the debug lines).
+    in_line: bool = false,
     /// Its turn away from straight away from the threat while scattering, radians.
     scatter_turn: f32 = 0.0,
 };
@@ -240,6 +284,38 @@ const Focus = struct {
     shots: u32 = 0,
     /// Seconds since his last shot at it.
     age: f32 = std.math.inf(f32),
+};
+
+/// The captain's line of fire while he aims: from his gun to what the aim is on.
+pub const LineOfFire = struct {
+    start: Vec3,
+    end: Vec3,
+
+    /// The point on the line nearest `point`, on the ground; null when `point` is level
+    /// with the gun or behind it (beside the captain is not in the way).
+    fn closestOnGround(self: LineOfFire, point: Vec3) ?Vec3 {
+        const along = flat(self.end.sub(self.start));
+        const length_squared = along.lengthSquared();
+        if (length_squared == 0.0) {
+            return null;
+        }
+        const t = flat(point.sub(self.start)).dot(along) / length_squared;
+        if (t <= 0.0) {
+            return null;
+        }
+        return flat(self.start).add(along.mulScalar(@min(t, 1.0)));
+    }
+
+    /// The unit direction on the ground from the line at `closest` to `point`: the
+    /// nearer side; the gun's right when it's right on the line.
+    fn sideAway(self: LineOfFire, point: Vec3, closest: Vec3) Vec3 {
+        const away = flat(point).sub(closest);
+        const length = away.length();
+        if (length > 1e-3) {
+            return away.mulScalar(1.0 / length);
+        }
+        return flat(self.end.sub(self.start)).toNormalized().cross(Vec3.Y);
+    }
 };
 
 /// Members' tracers: meters per second, seconds before they're dropped; where on a
@@ -256,8 +332,11 @@ pub const Squad = struct {
     tuning: Tuning = .{},
     show_debug: bool = false,
     lines: Lines,
-    debug_segments: [SIZE * 4]LineSegment = undefined,
+    debug_segments: [SIZE * 5 + 2]LineSegment = undefined,
     focus: Focus = .{},
+    /// The captain's line of fire this frame, while he aims (for the debug lines).
+    line_of_fire: ?LineOfFire = null,
+    friendly_hits: u32 = 0,
     /// Every member's shots in flight; the scene moves them against the turrets.
     tracers: Projectiles = .{},
     shots_fired: u32 = 0,
@@ -272,7 +351,7 @@ pub const Squad = struct {
         });
         var self: Self = .{
             .members = undefined,
-            .lines = try Lines.init(rm.context.alloc, lines_shader, 1.0, 1.0, SIZE * 4),
+            .lines = try Lines.init(rm.context.alloc, lines_shader, 1.0, 1.0, SIZE * 5 + 2),
         };
 
         const tuning = self.tuning;
@@ -292,6 +371,8 @@ pub const Squad = struct {
                 .spot_distance_goal = distance,
                 .wander = .{ .heading = random.randClamped() * std.math.pi, .interval = 1.5, .spread = 1.2, .rate = 2.0 },
                 .courage = random.randFloatInRange(tuning.courage_min, tuning.courage_max),
+                .awareness = random.randFloatInRange(tuning.awareness_min, tuning.awareness_max),
+                .corridor_width = tuning.corridor_width + tuning.corridor_jitter * random.randClamped(),
                 .fire_control = .{ .cadence = .{ .bursts = .{
                     .count = 2 + @as(u32, @intFromFloat(random.randFloat() * 4.0)),
                     .interval = random.randFloatInRange(0.07, 0.14),
@@ -304,9 +385,9 @@ pub const Squad = struct {
         return self;
     }
 
-    /// Steers every member toward its spot near the captain (moving at `captain_speed`)
-    /// and moves it on.
-    pub fn update(self: *Self, captain: Transform, captain_speed: f32, random: *Random, dt: f32) !void {
+    /// Steers every member toward its spot near the captain (moving at `captain_speed`),
+    /// out of his `line_of_fire` while he aims, and moves it on.
+    pub fn update(self: *Self, captain: Transform, captain_speed: f32, line_of_fire: ?LineOfFire, random: *Random, dt: f32) !void {
         // Everyone's position before anyone moves, by rank: the captain first
         var positions: [SIZE + 1]Vec3 = undefined;
         positions[0] = captain.translation;
@@ -318,6 +399,7 @@ pub const Squad = struct {
         const captain_moving = captain_speed > self.tuning.captain_moving_speed;
         self.focus.age += dt;
         const engaging = self.isEngaging();
+        self.line_of_fire = line_of_fire;
         self.spreadFear(dt);
         for (&self.members, 1..) |*member, rank| {
             if (captain_moving) {
@@ -326,8 +408,8 @@ pub const Squad = struct {
             member.seen_captain = motion.dampVec3(member.seen_captain, captain.translation, member.notice_rate, dt);
             member.spot = spotPosition(member.seen_captain, captain_heading, member.spot_angle, member.spot_distance);
 
-            // Those it keeps apart from: everyone above it by rank, or everyone
             self.updateMood(member, captain.translation, random, dt);
+            const step_aside = self.keepOutOfLine(member, line_of_fire, random, dt);
 
             // Those it keeps apart from: everyone above it by rank, or everyone
             const others = if (self.tuning.rank_yields) positions[0..rank] else positions[0..];
@@ -335,7 +417,7 @@ pub const Squad = struct {
                 .follow => self.steeringSum(member, others, positions[1..], random, dt),
                 .scatter => self.scatterSteering(member, &positions),
                 .regroup => self.regroupSteering(member, &positions),
-            };
+            }.add(step_aside);
             member.desired = motion.dampVec3(member.desired, goal, self.tuning.smoothing, dt);
             self.moveAndShoot(member, engaging and member.mood == .follow, random, dt);
             try member.soldier.update(dt);
@@ -374,6 +456,20 @@ pub const Squad = struct {
             member.flinch_timer = self.tuning.flinch_interval;
         }
         frighten(member, self.tuning.hit_fear, source, source_range);
+    }
+
+    /// The captain's tracer struck member `index`: it flinches (unless it flinched just
+    /// now), and is careful of his line of fire for a while. No fear: running from the
+    /// captain would fight regrouping.
+    pub fn friendlyHit(self: *Self, index: usize) void {
+        const member = &self.members[index];
+        if (member.flinch_timer <= 0.0) {
+            member.soldier.flinch();
+            member.flinch_timer = self.tuning.flinch_interval;
+        }
+        member.careful_timer = self.tuning.careful_time;
+        member.lapse_timer = 0.0;
+        self.friendly_hits += 1;
     }
 
     /// A blast of `radius` at `point`: fear for everyone near it, more nearer.
@@ -478,6 +574,18 @@ pub const Squad = struct {
             _ = zgui.sliderFloat("flinch at most every (s)", .{ .v = &tuning.flinch_interval, .min = 0.0, .max = 5.0 });
             _ = zgui.sliderFloat("regrouped within (m)", .{ .v = &tuning.regroup_radius, .min = 0.5, .max = 6.0 });
             zgui.text("courage is picked at start ({d:.2} to {d:.2})", .{ tuning.courage_min, tuning.courage_max });
+            zgui.separatorText("line of fire");
+            zgui.text("friendly hits: {d}", .{self.friendly_hits});
+            self.drawLineOfFireStatus();
+            _ = zgui.sliderFloat("corridor (m either side)", .{ .v = &tuning.corridor_width, .min = 0.3, .max = 3.0 });
+            _ = zgui.sliderFloat("reaction best (s)", .{ .v = &tuning.reaction_best, .min = 0.0, .max = 1.0 });
+            _ = zgui.sliderFloat("reaction worst (s)", .{ .v = &tuning.reaction_worst, .min = 0.0, .max = 2.0 });
+            _ = zgui.sliderFloat("lapse roll every (s)", .{ .v = &tuning.lapse_interval, .min = 0.2, .max = 10.0 });
+            _ = zgui.sliderFloat("lapse min (s)", .{ .v = &tuning.lapse_min, .min = 0.0, .max = 5.0 });
+            _ = zgui.sliderFloat("lapse max (s)", .{ .v = &tuning.lapse_max, .min = 0.0, .max = 5.0 });
+            _ = zgui.sliderFloat("careful after a hit (s)", .{ .v = &tuning.careful_time, .min = 0.0, .max = 10.0 });
+            _ = zgui.sliderFloat("step aside", .{ .v = &tuning.step_aside_weight, .min = 0.0, .max = 3.0 });
+            _ = zgui.sliderFloat("spot clearance (m)", .{ .v = &tuning.spot_clearance, .min = 0.0, .max = 3.0 });
             zgui.separatorText("settling");
             _ = zgui.checkbox("yield by rank", .{ .v = &tuning.rank_yields });
             _ = zgui.sliderFloat("settle below (m/s)", .{ .v = &tuning.settle_speed, .min = 0.0, .max = 2.0 });
@@ -578,6 +686,70 @@ pub const Squad = struct {
         return steering.seek(position, member.spot, motor.run_speed).add(separation);
     }
 
+    /// While the captain aims, a member in his line of fire (and not lapsing) notices it
+    /// after its reaction time, then gets a push sideways out of the corridor toward the
+    /// nearer side, and its spot moves out of it too, so arriving doesn't walk it back in.
+    /// Scattering members ignore it. Returns the push (meters per second).
+    fn keepOutOfLine(self: *const Self, member: *Member, line_of_fire: ?LineOfFire, random: *Random, dt: f32) Vec3 {
+        const tuning = self.tuning;
+        self.rollLapse(member, random, dt);
+        member.in_line = false;
+        const line = line_of_fire orelse {
+            member.in_line_time = 0.0;
+            return Vec3.Zero;
+        };
+        if (member.mood == .scatter) {
+            member.in_line_time = 0.0;
+            return Vec3.Zero;
+        }
+
+        const position = member.soldier.transform.translation;
+        const closest = line.closestOnGround(position) orelse {
+            member.in_line_time = 0.0;
+            return Vec3.Zero;
+        };
+        // In a lapse it ignores the line of fire: the spot can take it right in
+        if (member.lapse_timer > 0.0) {
+            member.in_line_time = 0.0;
+            return Vec3.Zero;
+        }
+        const is_inside = groundDistance(position, closest) < member.corridor_width;
+        if (!is_inside) {
+            member.in_line_time = 0.0;
+            moveSpotOutOfLine(member, line, tuning.spot_clearance);
+            return Vec3.Zero;
+        }
+
+        member.in_line = true;
+        member.in_line_time += dt;
+        const is_careful = member.careful_timer > 0.0;
+        const reaction = if (is_careful) tuning.reaction_best else std.math.lerp(tuning.reaction_worst, tuning.reaction_best, member.awareness);
+        if (member.in_line_time < reaction) {
+            return Vec3.Zero;
+        }
+
+        member.settled = false;
+        moveSpotOutOfLine(member, line, tuning.spot_clearance);
+        const away = line.sideAway(position, closest);
+        return away.mulScalar(tuning.step_aside_weight * member.soldier.motor.run_speed);
+    }
+
+    /// Now and then a roll against its awareness: a miss is a lapse. Careful members
+    /// (just hit by the captain) don't lapse.
+    fn rollLapse(self: *const Self, member: *Member, random: *Random, dt: f32) void {
+        const tuning = self.tuning;
+        member.lapse_timer = @max(member.lapse_timer - dt, 0.0);
+        member.careful_timer = @max(member.careful_timer - dt, 0.0);
+        member.lapse_check_timer -= dt;
+        if (member.lapse_check_timer > 0.0) {
+            return;
+        }
+        member.lapse_check_timer = tuning.lapse_interval * (0.5 + random.randFloat());
+        if (member.careful_timer == 0.0 and random.randFloat() > member.awareness) {
+            member.lapse_timer = random.randFloatInRange(tuning.lapse_min, tuning.lapse_max);
+        }
+    }
+
     /// Steers the member by its smoothed sum. Engaged, it faces the focus point while it
     /// moves (gun up) and, once its delay is over and it faces the point, fires its bursts.
     fn moveAndShoot(self: *Self, member: *Member, engaging: bool, random: *Random, dt: f32) void {
@@ -617,6 +789,32 @@ pub const Squad = struct {
             self.tracers.spawn(muzzle, shot.direction.mulScalar(shot.speed), TRACER_LIFETIME, age);
             self.shots_fired += 1;
         }
+    }
+
+    /// Each member's fire awareness (a slider, to try skill levels), and whether it's in
+    /// the line of fire, in a lapse, or careful.
+    fn drawLineOfFireStatus(self: *Self) void {
+        for (&self.members, 1..) |*member, number| {
+            const state = if (member.lapse_timer > 0.0) "lapse" else if (member.careful_timer > 0.0) "careful" else if (member.in_line) "in line" else "";
+            var label_buffer: [32]u8 = undefined;
+            const label = std.fmt.bufPrintZ(&label_buffer, "{d} awareness {s}", .{ number, state }) catch "awareness";
+            _ = zgui.sliderFloat(label, .{ .v = &member.awareness, .min = 0.0, .max = 1.0 });
+        }
+    }
+
+    /// The captain's line of fire's two edges, at `corridor_width`, into `segments`;
+    /// returns how many.
+    fn corridorEdges(self: *const Self, line: LineOfFire, segments: *[2]LineSegment) usize {
+        const along = flat(line.end.sub(line.start));
+        if (along.lengthSquared() == 0.0) {
+            return 0;
+        }
+        const side = along.toNormalized().cross(Vec3.Y).mulScalar(self.tuning.corridor_width);
+        const start = flat(line.start).add(vec3(0.0, 0.05, 0.0));
+        const end = flat(line.end).add(vec3(0.0, 0.05, 0.0));
+        segments[0] = .{ .start = start.add(side), .end = end.add(side), .color = .orange };
+        segments[1] = .{ .start = start.sub(side), .end = end.sub(side), .color = .orange };
+        return 2;
     }
 
     /// Each member's fear and mood (F follow, S scatter, R regroup), and its courage.
@@ -726,6 +924,16 @@ pub const Squad = struct {
             };
             self.debug_segments[count] = .{ .start = head, .end = head.add(vec3(0.0, member.fear, 0.0)), .color = mood_color };
             count += 1;
+            // Across its head: red in the line of fire, white in a lapse
+            if (member.in_line or member.lapse_timer > 0.0) {
+                const across = vec3(0.3, 0.0, 0.0);
+                const color: core.colors.Color = if (member.lapse_timer > 0.0) .white else .red;
+                self.debug_segments[count] = .{ .start = head.sub(across), .end = head.add(across), .color = color };
+                count += 1;
+            }
+        }
+        if (self.line_of_fire) |line| {
+            count += self.corridorEdges(line, self.debug_segments[count..][0..2]);
         }
         self.lines.draw(frame, self.debug_segments[0..count]);
     }
@@ -740,6 +948,21 @@ fn frighten(member: *Member, amount: f32, source: Vec3, reach: f32) void {
         member.threat_reach = reach;
         member.threat_weight = amount;
     }
+}
+
+/// Moves the member's spot to beside the line of fire, `clearance` past its corridor,
+/// when it's inside it.
+fn moveSpotOutOfLine(member: *Member, line: LineOfFire, clearance: f32) void {
+    const closest = line.closestOnGround(member.spot) orelse return;
+    if (groundDistance(member.spot, closest) >= member.corridor_width) {
+        return;
+    }
+    const away = line.sideAway(member.spot, closest);
+    member.spot = closest.add(away.mulScalar(member.corridor_width + clearance));
+}
+
+fn flat(v: Vec3) Vec3 {
+    return vec3(v.x, 0.0, v.z);
 }
 
 fn groundDistance(a: Vec3, b: Vec3) f32 {

@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-H done, I next)
+## Status: Active (started 2026-10-04; phases A-I done)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -347,6 +347,29 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
 - Panel: corridor width, reaction range, lapse interval and length, each member's
   awareness; debug lines: the corridor's edges, and a mark on members in a lapse.
 
+### As built (2026-10-06)
+
+- `squad.zig`: `LineOfFire` (from the captain's gun to the aim point, last frame's: the
+  aim is found when firing, after the squad moves), `Squad.update` takes it,
+  `keepOutOfLine` per member (not while scattering), `rollLapse`, `friendlyHit`. Members
+  beside or behind the gun aren't in the line. A spot inside the corridor moves to
+  0.5 m past its edge; a settled member in the line unsettles.
+- Defaults: corridor 1 m either side (±0.25 per member), awareness 0.8-0.95, reaction
+  0.2 s (awareness 1) to 0.8 s (0), a lapse roll every 2 s (give or take half), lapses
+  1-2 s, careful 3 s after a hit, step-aside push at the running speed.
+- Range scene: the captain's tracers are tested against the members after the turrets;
+  a hit puffs, and `friendlyHit` (flinch within the flinch interval, careful, no fear).
+- **A flinch no longer stops a member** (`ToonSoldier.steer` / `steerAiming` keep
+  moving through HitReact). Found in testing: a member hit in the line froze for the
+  0.43 s clip plus its reaction, in a stream of 6 shots per second, and took 4-5 hits in
+  a row; moving, a hit sends it out. Applies to turret hits too. Measured with fast
+  half-turns while firing (80 s): 16 entries into the line, 6 hits, about 0.65 s in the
+  line each time.
+- Panels: the squad's "line of fire" section (friendly hits, each member's awareness as
+  a slider with lapse / careful / in line, every setting); debug lines add the
+  corridor's edges (orange) and a bar across the head (red in the line, white in a
+  lapse). The range panel counts the captain's hits on the squad.
+
 ## Phases
 
 Each phase ends with a CHANGELOG entry and a commit.
@@ -363,7 +386,7 @@ Each phase ends with a CHANGELOG entry and a commit.
 | G1 | Turrets fire back (slow traverse, slow mortars with warning rings); hits on people (shake, flinch); detection ranges | ✅ 2026-10-04 |
 | G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
 | H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | ✅ 2026-10-06 |
-| I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | Next |
+| I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | ✅ 2026-10-06 |
 
 ## Notes
 

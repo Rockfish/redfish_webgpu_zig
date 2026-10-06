@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-06 - Friendly fire and the line of fire; tower attack phase I
+- **bullets range**: the captain's tracers hit squad members (the squad's still pass through everyone): a puff, a flinch, and a few careful seconds, no fear
+- **bullets squad**: while the captain aims, members step out of his line of fire (a corridor from his gun to the aim point, 1 m either side, each its own width) toward the nearer side, and their spots move out of it; each member's fire awareness (0.8-0.95 for now, a future skill level) sets how late it notices (0.2-0.8 s) and how often it has a lapse (a roll every 2 s; 1-2 s ignoring the line), so members mostly keep clear and now and then get in the way; careful after a hit (no lapses, quickest reaction); a "line of fire" panel section (each member's awareness as a slider, every setting, friendly hits) and debug lines (corridor edges, in-line and lapse marks)
+- **bullets**: a squad member keeps moving while it flinches (`ToonSoldier.steer` / `steerAiming`), so a hit can't hold it in a stream of fire
+
 ### 2026-10-06 - Third-person aim over the shoulder; tower attack phase H
 - **bullets range**: LT (or F) aims over the captain's right shoulder (`objects/shoulder_aim.zig`): the camera eases low behind him, the right stick moves the aim and he faces it, the left stick strafes relative to the camera, RT fires from his gun; the camera keeps its heading and pitch while the aim stays inside a zone (±15°, ±10°) and follows with lag past it; letting go swings back to where the follow camera was around him, at its height and distance. The swing goes around the captain, the heading easing in and out on its own swing; camera 6 m behind, 2 m up, centered, swings 0.9 s. A dashed aim line, a ring on a turret the aim is on, and a crosshair at the aim point's screen position. First person stays as an option; an aim panel picks LT's mode and has every camera, zone, aim, and indicator setting
 - **bullets**: `ToonSoldier.strafe` takes `firing`: standing still while firing plays Idle_Shoot (it played Idle)

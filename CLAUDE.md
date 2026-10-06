@@ -36,14 +36,15 @@ the regression check. Since then:
 - Plan 010 input: `core.Input` (`isDown`, `pressedOnce`, ImGui-aware, gamepad);
   `motion.FollowCamera`; bullets characters on a game controller
 - Plan 012 animation FSM: fading tracks with their own clocks (no pops), `setPlaybackRate`
-- Plan 019 tower attack (phases A-H): 1 unit = 1 m; bullets range scene (`-s range`):
+- Plan 019 tower attack (phases A-I): 1 unit = 1 m; bullets range scene (`-s range`):
   Wind Waker-style captain (`character_control.Motor`), LT / F aims over the shoulder
   (`ShoulderAim`; first person kept as an option) with tracers, a squad of six (`core.gameplay.steering`, settling, focus fire), destroyable
   turrets that fire back within detection ranges (mortar warning rings, camera shake,
-  flinches), squad fear, scatter, and regroup; `src/core/gameplay/` (ballistics, fire
+  flinches), squad fear, scatter, and regroup, friendly fire with the squad stepping
+  out of the captain's line of fire; `src/core/gameplay/` (ballistics, fire
   control, explosions, projectiles, turrets, steering)
 
-Active plan: 019 tower attack (phases A-H done; next: I, friendly fire and the line of fire). See
+Active plan: 019 tower attack (phases A-I done; next step to be decided). See
 `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

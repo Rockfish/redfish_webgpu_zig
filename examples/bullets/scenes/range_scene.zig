@@ -271,7 +271,7 @@ pub const RangeScene = struct {
         try self.captain.update(input.delta_time);
 
         try self.controlCaptain(input);
-        try self.squad.update(self.captain.transform, self.captain.motor.speed, &self.random, dt);
+        try self.squad.update(self.captain.transform, self.captain.motor.speed, self.lineOfFire(), &self.random, dt);
         self.processKeys(input);
         self.placeCamera(input);
         self.fire(input);
@@ -377,6 +377,13 @@ pub const RangeScene = struct {
         self.scene_camera.getCamera().movement.reset(view.position, view.focus);
     }
 
+    /// While aiming, from the captain's gun to what the aim is on (last frame's: the aim
+    /// is found when firing, after the squad moves).
+    fn lineOfFire(self: *const Self) ?squad_module.LineOfFire {
+        const aim = self.aim orelse return null;
+        return .{ .start = self.muzzlePosition(), .end = aim.point };
+    }
+
     fn isAiming(self: *const Self) bool {
         return switch (self.aim_mode) {
             .over_shoulder => self.shoulder.active,
@@ -477,10 +484,12 @@ pub const RangeScene = struct {
     }
 
     /// The captain's and the squad's tracers fly on; one that strikes a turret hurts it,
-    /// one that hits the floor puffs. A destroyed focus turret ends the squad's fire.
+    /// one that hits the floor puffs. The captain's also hit squad members (friendly
+    /// fire); the squad's pass through them. A destroyed focus turret ends the squad's
+    /// fire.
     fn moveTracers(self: *Self, dt: f32) void {
-        self.hits += self.moveTracerPool(&self.tracers, dt);
-        self.squad_hits += self.moveTracerPool(&self.squad.tracers, dt);
+        self.hits += self.moveTracerPool(&self.tracers, true, dt);
+        self.squad_hits += self.moveTracerPool(&self.squad.tracers, false, dt);
         if (self.squad.focus.target) |index| {
             if (self.turrets[index].destroyed) {
                 self.squad.clearFocus();
@@ -488,9 +497,10 @@ pub const RangeScene = struct {
         }
     }
 
-    /// Returns how many struck a turret.
-    fn moveTracerPool(self: *Self, tracers: *Projectiles, dt: f32) u32 {
-        var targets: [placements.len]projectiles.Target = undefined;
+    /// Against the live turrets, and the squad members when `hits_squad`. Returns how
+    /// many struck a turret.
+    fn moveTracerPool(self: *Self, tracers: *Projectiles, hits_squad: bool, dt: f32) u32 {
+        var targets: [placements.len + squad_module.SIZE]projectiles.Target = undefined;
         var owners: [placements.len]*TargetTurret = undefined;
         var count: usize = 0;
         for (&self.turrets) |*turret| {
@@ -502,13 +512,27 @@ pub const RangeScene = struct {
             owners[count] = turret;
             count += 1;
         }
+        // Members after the turrets: target `turret_count + i` is member i
+        const turret_count = count;
+        if (hits_squad) {
+            for (0..squad_module.SIZE) |member| {
+                const feet = self.squad.memberPosition(member);
+                targets[count] = .{ .position = feet.add(vec3(0.0, PERSON_HIT_HEIGHT, 0.0)), .radius = PERSON_HIT_RADIUS };
+                count += 1;
+            }
+        }
 
         var endings: [projectiles.MAX_PROJECTILES]projectiles.Ending = undefined;
         var hits: u32 = 0;
         for (tracers.updateTargets(dt, targets[0..count], &self.explosions, &endings)) |ending| {
             if (ending.target) |index| {
-                owners[index].hit(ending.position, TRACER_DAMAGE, &self.explosions);
-                hits += 1;
+                if (index < turret_count) {
+                    owners[index].hit(ending.position, TRACER_DAMAGE, &self.explosions);
+                    hits += 1;
+                } else {
+                    self.explosions.add(ending.position, FLOOR_PUFF_RADIUS);
+                    self.squad.friendlyHit(index - turret_count);
+                }
             } else if (ending.grounded) {
                 self.explosions.add(ending.position, FLOOR_PUFF_RADIUS);
             }
@@ -635,6 +659,7 @@ pub const RangeScene = struct {
             _ = zgui.checkbox("show detection ranges", .{ .v = &self.show_ranges });
             _ = zgui.sliderFloat("detection (x range)", .{ .v = &self.fire_back.detection_scale, .min = 0.2, .max = 3.0 });
             zgui.text("turret hits on the captain: {d}   on the squad: {d}", .{ self.captain_hits, self.member_hits });
+            zgui.text("captain's hits on the squad: {d}", .{self.squad.friendly_hits});
             for (self.turrets, placements) |turret, placement| {
                 if (turret.destroyed) {
                     zgui.text("{s} {d:.1}: destroyed", .{ placement.turret_type.name, placement.size });
