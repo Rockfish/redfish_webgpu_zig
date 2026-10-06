@@ -262,9 +262,10 @@ pub const ToonSoldier = struct {
         });
     }
 
-    /// First person: moves along `move` (the move stick turned to the view) while facing
-    /// `heading`, the view's; gun raised (Walk_Shoot / Run_Shoot); actions as `drive`.
-    pub fn strafe(self: *Self, move: Vec3, heading: f32, input: *core.Input) void {
+    /// Aiming: moves along `move` (the move stick turned to the view) while facing
+    /// `heading`, the aim's; gun raised (Idle_Shoot while `firing` and still, Walk_Shoot /
+    /// Run_Shoot moving); actions as `drive`.
+    pub fn strafe(self: *Self, move: Vec3, heading: f32, firing: bool, input: *core.Input) void {
         self.processOneShotKeys(input);
         if (!self.state_machine.isInterruptible()) {
             self.moveDuringAction(input.delta_time);
@@ -272,7 +273,7 @@ pub const ToonSoldier = struct {
         }
         const gait = self.motor.strafe(&self.transform, move, heading, input.delta_time);
         _ = self.state_machine.requestState(switch (gait) {
-            .idle => .idle,
+            .idle => if (firing) .idle_shoot else .idle,
             .walk => .walk_shoot,
             .run => .run_shoot,
         });

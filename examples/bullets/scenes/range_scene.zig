@@ -1,7 +1,10 @@
 //! The turret range (docs/reviews/2026-10-04-link-style-controller-review.md sections 11
 //! and 5.5, phases C and D): a field with turrets of several sizes, the captain (the toon
-//! soldier) at one end with the follow camera. LT (or F) holds first person: the left
-//! stick moves, the right stick aims, RT (or the left mouse button) fires tracers. The
+//! soldier) at one end with the follow camera. LT (or F) holds the aim: the left stick
+//! moves, the right stick aims, RT (or the left mouse button) fires tracers. The aim is
+//! over the captain's right shoulder (plan 019 phase H: the camera swings low behind him,
+//! a faint line, a ring on what the aim is on, and a crosshair show it), or first person
+//! (phase D), picked in the aim panel. The
 //! squad (phases E and F) follows the captain and, after a couple of his shots at one
 //! spot, fires at it too.
 //!
@@ -30,6 +33,7 @@ const TargetTurret = target_turret.TargetTurret;
 const range_turret_types = @import("../objects/range_turret_types.zig");
 const ShellWarnings = @import("../objects/shell_warnings.zig").ShellWarnings;
 const FirstPerson = @import("../objects/first_person.zig").FirstPerson;
+const ShoulderAim = @import("../objects/shoulder_aim.zig").ShoulderAim;
 const squad_module = @import("../objects/squad.zig");
 const Squad = squad_module.Squad;
 const character_control = @import("../objects/character_control.zig");
@@ -45,6 +49,8 @@ const TurretShapes = gameplay.TurretShapes;
 const TurretType = gameplay.turret.TurretType;
 const TargetState = gameplay.turret.TargetState;
 const Frame = core.Frame;
+const Lines = core.shapes.Lines;
+const LineSegment = core.shapes.LineSegment;
 const GpuContext = core.GpuContext;
 const Random = core.Random;
 const ResourceManager = core.ResourceManager;
@@ -98,6 +104,24 @@ const SKY_AIM_DISTANCE: f32 = 100.0;
 /// A tracer's puff on the floor.
 const FLOOR_PUFF_RADIUS: f32 = 0.1;
 
+/// What LT does.
+const AimMode = enum { over_shoulder, first_person };
+
+/// Over the shoulder, where the captain's gun is: above his feet, to his right, and ahead
+/// along the aim, meters.
+const GUN_HEIGHT: f32 = 1.2;
+const GUN_SIDE: f32 = 0.25;
+const GUN_AHEAD: f32 = 0.5;
+/// The aim line's dashes and gaps, meters, and the most dashes drawn.
+const AIM_DASH: f32 = 0.35;
+const AIM_GAP: f32 = 0.35;
+const MAX_AIM_DASHES = 80;
+/// The aim decal on a turret: a ring this wide plus this much per meter from the camera,
+/// so it reads at any distance.
+const DECAL_RADIUS: f32 = 0.2;
+const DECAL_GROWTH: f32 = 0.012;
+const DECAL_COLOR = vec4(1.0, 0.9, 0.35, 1.0);
+
 /// What the crosshair is on.
 const CrosshairAim = struct {
     point: Vec3,
@@ -132,6 +156,18 @@ pub const RangeScene = struct {
     squad: Squad,
     follow: motion.FollowCamera,
     first_person: FirstPerson = .{},
+    shoulder: ShoulderAim = .{},
+    aim_mode: AimMode = .over_shoulder,
+    /// Aiming last frame: letting go puts the follow camera back.
+    was_aiming: bool = false,
+    /// What the aim is on this frame, while aiming.
+    aim: ?CrosshairAim = null,
+    show_aim_line: bool = true,
+    show_aim_decal: bool = true,
+    show_aim_crosshair: bool = true,
+    aim_lines: Lines,
+    aim_segments: [MAX_AIM_DASHES]LineSegment = undefined,
+    aim_ring: *Shape,
     /// How the captain moves (K switches, or the soldier panel).
     control_style: character_control.Style = .wind_waker,
     shape_shader: *Shader,
@@ -209,6 +245,11 @@ pub const RangeScene = struct {
             .turrets = turrets,
             .shell_warnings = try .init(context, gpu),
             .range_ring = try core.shapes.createRing(context.alloc, gpu, 1.0 - RANGE_RING_WIDTH, 1.0, 96),
+            .aim_ring = try core.shapes.createRing(context.alloc, gpu, 0.7, 1.0, 32),
+            .aim_lines = try Lines.init(context.alloc, try rm.createShader("examples/bullets/shaders/lines.wgsl", .{
+                .vertex_buffers = &Lines.vertex_buffer_layouts,
+                .topology = .line_list,
+            }), 1.0, 1.0, MAX_AIM_DASHES),
             .random = random,
         };
         return try Scene.init(context.alloc, "Range", scene, input);
@@ -219,6 +260,7 @@ pub const RangeScene = struct {
         self.explosion_shapes.releaseGpuObjects();
         self.shell_warnings.releaseGpuObjects();
         self.range_ring.releaseGpuObjects();
+        self.aim_ring.releaseGpuObjects();
         self.floor.cleanUp();
         self.resource_manager.cleanUp();
     }
@@ -258,6 +300,7 @@ pub const RangeScene = struct {
         }
         self.captain.draw(frame);
         self.squad.draw(frame);
+        self.drawAimIndicator(frame, render_context.view_position);
         const tracer_parts = [_]projectiles.Part{.{ .shape = self.turret_shapes.tracer, .model = Mat4.Identity, .color = TRACER_COLOR }};
         self.tracers.draw(frame, self.tracer_shader, &tracer_parts);
         const squad_tracer_parts = [_]projectiles.Part{.{ .shape = self.turret_shapes.tracer, .model = Mat4.Identity, .color = SQUAD_TRACER_COLOR }};
@@ -266,14 +309,24 @@ pub const RangeScene = struct {
         self.floor.draw(frame);
     }
 
-    /// The soldier's panel, the range's (each turret's health, shots, reset), and the
-    /// crosshair in first person.
+    /// The soldier's panel, the squad's, the range's (each turret's health, shots,
+    /// reset), the aim's, and the crosshair: the screen's center in first person, on the
+    /// aim point over the shoulder.
     pub fn drawGui(self: *Self) void {
         self.captain.drawGui(&self.control_style);
         self.squad.drawGui();
         self.drawRangePanel();
-        if (self.first_person.hidesModel()) {
-            drawCrosshair();
+        self.drawAimPanel();
+        switch (self.aim_mode) {
+            .first_person => if (self.first_person.hidesModel()) {
+                const size = zgui.io.getDisplaySize();
+                drawCrosshair(.{ size[0] * 0.5, size[1] * 0.5 });
+            },
+            .over_shoulder => if (self.show_aim_crosshair) {
+                if (self.aimScreenPoint()) |point| {
+                    drawCrosshair(point);
+                }
+            },
         }
     }
 
@@ -281,46 +334,103 @@ pub const RangeScene = struct {
         return self.scene_camera;
     }
 
-    /// In first person the captain strafes, facing the view; otherwise the follow-camera
-    /// control.
+    /// Aiming (LT), the captain strafes, facing the aim, moving relative to the camera;
+    /// otherwise the follow-camera control. The mode not picked eases out.
     fn controlCaptain(self: *Self, input: *core.Input) !void {
+        const dt = input.delta_time;
         const held = input.gamepad.left_trigger > 0.5 or input.isDown(.f);
         const turn = character_control.cameraTurn(input);
-        self.first_person.update(held, turn, character_control.facingYaw(self.captain.transform), input.delta_time);
-        self.captain.visible = !self.first_person.hidesModel();
+        const facing_yaw = character_control.facingYaw(self.captain.transform);
+        self.shoulder.update(held and self.aim_mode == .over_shoulder, turn, facing_yaw, self.follow.yaw, dt);
+        self.first_person.update(held and self.aim_mode == .first_person, turn, facing_yaw, dt);
+        self.captain.visible = !(self.aim_mode == .first_person and self.first_person.hidesModel());
 
-        if (self.first_person.active) {
-            const yaw = self.first_person.yaw;
-            const move = motion.cameraRelativeMove(character_control.moveStick(input), yaw);
-            self.captain.strafe(move, character_control.headingOfYaw(yaw), input);
+        if (self.isAiming()) {
+            const move = motion.cameraRelativeMove(character_control.moveStick(input), self.cameraYaw());
+            self.captain.strafe(move, character_control.headingOfYaw(self.aimYaw()), isTriggerHeld(input), input);
         } else {
             try character_control.control(self.captain, self.control_style, self.follow.yaw, input);
         }
     }
 
-    /// The follow camera (behind the captain, along the aim, while in first person, so
-    /// leaving it eases back to behind the captain), eased toward the eye.
+    /// The follow camera, eased toward the aim's view. Over the shoulder, it keeps its
+    /// heading while aiming and is put back where it was around the captain when aiming
+    /// ends, so the camera swings back; in first person it's kept behind the captain
+    /// along the aim, so leaving eases back to behind him.
     fn placeCamera(self: *Self, input: *core.Input) void {
         const position = self.captain.transform.translation;
-        if (self.first_person.active) {
-            self.follow.reset(position, self.first_person.yaw);
+        const was_aiming = self.was_aiming;
+        self.was_aiming = self.isAiming();
+        if (self.isAiming()) {
+            const yaw = if (self.aim_mode == .over_shoulder) self.follow.yaw else self.cameraYaw();
+            self.follow.reset(position, yaw);
         } else {
+            if (was_aiming and self.aim_mode == .over_shoulder) {
+                self.follow.reset(position, self.shoulder.returnYaw());
+            }
             character_control.followCharacter(&self.follow, self.captain.transform, input.isDown(.q), input);
         }
-        const view = self.first_person.view(self.follow.position, self.follow.focus, position);
+        const view = switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.view(&self.follow, position),
+            .first_person => self.first_person.view(self.follow.position, self.follow.focus, position),
+        };
         self.scene_camera.getCamera().movement.reset(view.position, view.focus);
     }
 
-    /// RT or the left mouse button fires in first person, at the fire control's rate;
-    /// each shot jittered a little.
+    fn isAiming(self: *const Self) bool {
+        return switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.active,
+            .first_person => self.first_person.active,
+        };
+    }
+
+    fn aimYaw(self: *const Self) f32 {
+        return switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.yaw,
+            .first_person => self.first_person.yaw,
+        };
+    }
+
+    fn aimDirection(self: *const Self) Vec3 {
+        return switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.direction(),
+            .first_person => self.first_person.direction(),
+        };
+    }
+
+    /// The camera's heading while aiming: over the shoulder it trails the aim.
+    fn cameraYaw(self: *const Self) f32 {
+        return switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.camera_yaw,
+            .first_person => self.first_person.yaw,
+        };
+    }
+
+    /// Where shots leave from: below right of the eye in first person; the captain's gun
+    /// over the shoulder.
+    fn muzzlePosition(self: *const Self) Vec3 {
+        const position = self.captain.transform.translation;
+        return switch (self.aim_mode) {
+            .first_person => FirstPerson.eye(position).add(self.viewOffset(MUZZLE_OFFSET)),
+            .over_shoulder => blk: {
+                const forward = motion.yawPitchDirection(self.aimYaw(), 0.0);
+                const right = forward.cross(Vec3.Y);
+                break :blk position.add(vec3(0.0, GUN_HEIGHT, 0.0)).add(right.mulScalar(GUN_SIDE)).add(forward.mulScalar(GUN_AHEAD));
+            },
+        };
+    }
+
+    /// RT or the left mouse button fires while aiming, at the fire control's rate; each
+    /// shot jittered a little. Also finds what the aim is on, for the indicator.
     fn fire(self: *Self, input: *core.Input) void {
-        const trigger = self.first_person.active and (input.gamepad.right_trigger > 0.5 or input.isMouseDown(.left));
+        const trigger = self.isAiming() and isTriggerHeld(input);
         self.fire_control.update(input.delta_time, trigger, 0.0);
 
         const eye = FirstPerson.eye(self.captain.transform.translation);
-        const direction = self.first_person.direction();
-        const muzzle = eye.add(self.viewOffset(MUZZLE_OFFSET));
+        const direction = self.aimDirection();
+        const muzzle = self.muzzlePosition();
         const aim = self.crosshairAim(eye, direction);
+        self.aim = if (self.isAiming()) aim else null;
         const toward = aim.point.sub(muzzle).toNormalized();
         while (self.fire_control.nextShot()) |age| {
             const shot = self.jitter.apply(&self.random, toward, TRACER_SPEED);
@@ -360,7 +470,7 @@ pub const RangeScene = struct {
 
     /// `offset` (right, up, forward) in the view's frame.
     fn viewOffset(self: *const Self, offset: Vec3) Vec3 {
-        const forward = self.first_person.direction();
+        const forward = self.aimDirection();
         const right = forward.cross(Vec3.Y).toNormalized();
         const up = right.cross(forward);
         return right.mulScalar(offset.x).add(up.mulScalar(offset.y)).add(forward.mulScalar(offset.z));
@@ -519,7 +629,7 @@ pub const RangeScene = struct {
         zgui.setNextWindowPos(.{ .x = 20, .y = 420, .cond = .first_use_ever });
         zgui.setNextWindowSize(.{ .w = 360, .h = 260, .cond = .first_use_ever });
         if (zgui.begin("range", .{})) {
-            zgui.text("LT / F: first person   RT / mouse: fire   R: reset", .{});
+            zgui.text("LT / F: aim   RT / mouse: fire   R: reset", .{});
             zgui.text("shots: {d}   hits: {d}   squad hits: {d}", .{ self.shots_fired, self.hits, self.squad_hits });
             _ = zgui.checkbox("turrets fire back (T)", .{ .v = &self.fire_back.enabled });
             _ = zgui.checkbox("show detection ranges", .{ .v = &self.show_ranges });
@@ -535,12 +645,107 @@ pub const RangeScene = struct {
             if (zgui.button("reset (R)", .{})) {
                 self.resetTurrets();
             }
-            _ = zgui.sliderFloat("aim yaw (rad/s)", .{ .v = &self.first_person.yaw_speed, .min = 0.5, .max = 6.0 });
-            _ = zgui.sliderFloat("aim pitch (rad/s)", .{ .v = &self.first_person.pitch_speed, .min = 0.5, .max = 6.0 });
         }
         zgui.end();
     }
+
+    /// What LT does, the indicator, the aim camera's placement and follow zone, and the
+    /// aim speeds.
+    fn drawAimPanel(self: *Self) void {
+        zgui.setNextWindowPos(.{ .x = 780, .y = 20, .cond = .first_use_ever });
+        zgui.setNextWindowSize(.{ .w = 360, .h = 420, .cond = .first_use_ever });
+        if (zgui.begin("aim", .{})) {
+            _ = zgui.comboFromEnum("LT aims", &self.aim_mode);
+            switch (self.aim_mode) {
+                .over_shoulder => self.drawShoulderSettings(),
+                .first_person => {
+                    _ = zgui.sliderFloat("aim yaw (rad/s)", .{ .v = &self.first_person.yaw_speed, .min = 0.5, .max = 6.0 });
+                    _ = zgui.sliderFloat("aim pitch (rad/s)", .{ .v = &self.first_person.pitch_speed, .min = 0.5, .max = 6.0 });
+                },
+            }
+        }
+        zgui.end();
+    }
+
+    fn drawShoulderSettings(self: *Self) void {
+        const shoulder = &self.shoulder;
+        _ = zgui.checkbox("aim line", .{ .v = &self.show_aim_line });
+        _ = zgui.checkbox("ring on a turret", .{ .v = &self.show_aim_decal });
+        _ = zgui.checkbox("crosshair", .{ .v = &self.show_aim_crosshair });
+        zgui.separatorText("camera");
+        _ = zgui.sliderFloat("side (m, right +)", .{ .v = &shoulder.side, .min = -1.5, .max = 1.5 });
+        _ = zgui.sliderFloat("height (m)", .{ .v = &shoulder.height, .min = 0.8, .max = 4.0 });
+        _ = zgui.sliderFloat("distance (m)", .{ .v = &shoulder.distance, .min = 0.5, .max = 12.0 });
+        _ = zgui.sliderFloat("swing (s)", .{ .v = &shoulder.swing_time, .min = 0.05, .max = 1.5 });
+        _ = zgui.sliderFloat("turn swing (s)", .{ .v = &shoulder.turn_swing_time, .min = 0.05, .max = 2.0 });
+        zgui.separatorText("follow zone");
+        _ = zgui.sliderFloat("across (deg)", .{ .v = &shoulder.zone_yaw, .min = 0.0, .max = 45.0 });
+        _ = zgui.sliderFloat("up / down (deg)", .{ .v = &shoulder.zone_pitch, .min = 0.0, .max = 30.0 });
+        _ = zgui.sliderFloat("follow (rate)", .{ .v = &shoulder.follow_rate, .min = 0.5, .max = 20.0 });
+        _ = zgui.sliderFloat("camera tilt limit (deg)", .{ .v = &shoulder.camera_pitch_limit, .min = 0.0, .max = 60.0 });
+        zgui.separatorText("aim");
+        _ = zgui.sliderFloat("aim yaw (rad/s)", .{ .v = &shoulder.yaw_speed, .min = 0.5, .max = 6.0 });
+        _ = zgui.sliderFloat("aim pitch (rad/s)", .{ .v = &shoulder.pitch_speed, .min = 0.5, .max = 6.0 });
+        _ = zgui.sliderFloat("aim limit (deg)", .{ .v = &shoulder.pitch_limit, .min = 10.0, .max = 85.0 });
+    }
+
+    /// Over the shoulder: a faint dashed line from the gun to the aim point, and a ring
+    /// facing the camera at `camera_position` where the aim is on a turret (not the
+    /// floor).
+    fn drawAimIndicator(self: *Self, frame: *const Frame, camera_position: Vec3) void {
+        if (self.aim_mode != .over_shoulder) {
+            return;
+        }
+        const aim = self.aim orelse return;
+        if (self.show_aim_line) {
+            self.drawAimLine(frame, self.muzzlePosition(), aim.point);
+        }
+        if (self.show_aim_decal and aim.target != null) {
+            const radius = DECAL_RADIUS + DECAL_GROWTH * aim.point.sub(camera_position).length();
+            // The ring is flat, facing +Y: turned to face +Z, then +Z to the camera
+            const to_camera = camera_position.sub(aim.point).toNormalized();
+            const facing = Mat4.fromQuat(Quat.fromDirection(to_camera.mulScalar(-1.0)));
+            const model = Mat4.fromTranslation(aim.point).mulMat4(&facing).mulMat4(&Mat4.fromRotationX(std.math.pi / 2.0)).mulMat4(&Mat4.fromScale(vec3(radius, 1.0, radius)));
+            self.aim_ring.draw(frame, self.flash_shader, core.DrawUniforms.init(model, DECAL_COLOR));
+        }
+    }
+
+    /// Dashes from `start` to `end`: faint, since the lines have no blending.
+    fn drawAimLine(self: *Self, frame: *const Frame, start: Vec3, end: Vec3) void {
+        const length = end.sub(start).length();
+        if (length <= 0.0) {
+            return;
+        }
+        const along = end.sub(start).mulScalar(1.0 / length);
+        var count: usize = 0;
+        var distance: f32 = 0.0;
+        while (distance < length and count < MAX_AIM_DASHES) {
+            const dash_end = @min(distance + AIM_DASH, length);
+            self.aim_segments[count] = .{ .start = start.add(along.mulScalar(distance)), .end = start.add(along.mulScalar(dash_end)), .color = .khaki };
+            count += 1;
+            distance += AIM_DASH + AIM_GAP;
+        }
+        self.aim_lines.draw(frame, self.aim_segments[0..count]);
+    }
+
+    /// The aim point's place on screen, in ImGui's display coordinates; null when not
+    /// aiming or behind the camera.
+    fn aimScreenPoint(self: *Self) ?[2]f32 {
+        const aim = self.aim orelse return null;
+        const context = self.shake_offset.apply(self.scene_camera.getCamera().getRenderContext(0.0));
+        const clip = context.projection_view.mulVec4(vec4(aim.point.x, aim.point.y, aim.point.z, 1.0));
+        if (clip.w <= 0.0) {
+            return null;
+        }
+        const size = zgui.io.getDisplaySize();
+        return .{ (clip.x / clip.w * 0.5 + 0.5) * size[0], (0.5 - clip.y / clip.w * 0.5) * size[1] };
+    }
 };
+
+/// RT or the left mouse button: fire.
+fn isTriggerHeld(input: *const core.Input) bool {
+    return input.gamepad.right_trigger > 0.5 or input.isMouseDown(.left);
+}
 
 /// How far along the ray from `origin` along `direction` (a unit vector) it first meets the
 /// sphere; null when it misses or the sphere is behind.
@@ -561,10 +766,8 @@ fn raySphere(origin: Vec3, direction: Vec3, center: Vec3, radius: f32) ?f32 {
     return if (far >= 0.0) 0.0 else null;
 }
 
-/// A small cross with a gap at the screen's center.
-fn drawCrosshair() void {
-    const size = zgui.io.getDisplaySize();
-    const center = [2]f32{ size[0] * 0.5, size[1] * 0.5 };
+/// A small cross with a gap at `center` (display coordinates).
+fn drawCrosshair(center: [2]f32) void {
     const color = zgui.colorConvertFloat4ToU32(.{ 1.0, 1.0, 1.0, 0.85 });
     const draw_list = zgui.getForegroundDrawList();
     const gap: f32 = 4.0;

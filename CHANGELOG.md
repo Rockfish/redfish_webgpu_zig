@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-06 - Third-person aim over the shoulder; tower attack phase H
+- **bullets range**: LT (or F) aims over the captain's right shoulder (`objects/shoulder_aim.zig`): the camera eases low behind him, the right stick moves the aim and he faces it, the left stick strafes relative to the camera, RT fires from his gun; the camera keeps its heading and pitch while the aim stays inside a zone (±15°, ±10°) and follows with lag past it; letting go swings back to where the follow camera was around him, at its height and distance. The swing goes around the captain, the heading easing in and out on its own swing; camera 6 m behind, 2 m up, centered, swings 0.9 s. A dashed aim line, a ring on a turret the aim is on, and a crosshair at the aim point's screen position. First person stays as an option; an aim panel picks LT's mode and has every camera, zone, aim, and indicator setting
+- **bullets**: `ToonSoldier.strafe` takes `firing`: standing still while firing plays Idle_Shoot (it played Idle)
+
 ### 2026-10-04 - Fear, scatter, regroup; detection ranges; tower attack phase G2
 - **core.shapes**: `createCylinder` builds the radius it's given (it halved it, as in redfish_gl_zig); callers pass half their old values, so nothing changes size (turret parts, the bullets cannon, explosions' burn marks, shadows, camera_rig, draw_test, scene_tree, level_01)
 - **bullets range**: each turret has a detection range (14-24 m; the captain starts outside them all) and fires only at people inside it, picking among them, keeping on its person until they're 10% past the edge; thin rings on the floor show the ranges, brighter while a turret has someone; panel: show ranges, a scale for all of them; strikes now report tracers into the floor and the turret that fired

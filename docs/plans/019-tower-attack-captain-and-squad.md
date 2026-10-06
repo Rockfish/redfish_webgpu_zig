@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-G done, H next)
+## Status: Active (started 2026-10-04; phases A-H done, I next)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -54,7 +54,11 @@ range`): the captain (the toon Soldier), his squad of six, and turrets of severa
   on a target for now), the roll (no clip), the root-motion lock for jumps (until there's
   something to jump onto), blend spaces and phase sync in the animation state machine.
   Added 2026-10-06: **squad skill levels** (fire awareness first; others such as aim,
-  courage, and reaction time could follow).
+  courage, and reaction time could follow); **animation tuning** (below).
+- **Gameplay first, animation good enough** (John, 2026-10-06): animation tuning comes
+  later. Wanted then: an aim-only animation (gun raised while aiming without firing;
+  standing aimers play Idle now, Idle_Shoot only while firing), and better aiming poses:
+  how well the firing clips line up with the aim varies by weapon, from fine to poor.
 - All the numbers are tuned later, live in the ImGui panels.
 
 ## Decisions (John, 2026-10-06)
@@ -69,6 +73,8 @@ range`): the captain (the toon Soldier), his squad of six, and turrets of severa
   sliders, to find what feels best in play.
 - **Letting go of LT**: the camera stays behind the captain's new facing and eases back
   up to the follow camera's height and distance (no swing back to its old heading).
+  Changed in testing (2026-10-06): it swings back to where it was around the captain
+  before aiming, reversing the swing in, at the follow camera's height and distance.
 - **Aiming up and down tilts the camera too**, within its own zone and with lag, less
   than across.
 - **Friendly fire from the captain only**: his tracers hit squad members; the squad's
@@ -258,8 +264,7 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
   screen and bigger turns bring the camera around. Pitch follows like yaw, with its own,
   smaller zone and range.
 - **LT released**: the camera eases back up to the follow camera's distance and pitch,
-  behind the captain's new facing (the follow camera's yaw is set to the camera's
-  current heading, so there is no swing).
+  and swings back to where it was around the captain (see the as-built notes).
 
 ### Aim and movement
 
@@ -285,6 +290,28 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
 
 - A panel setting picks what LT does: **over the shoulder** (default) or **first
   person** (as built in phase D, unchanged).
+
+### As built (2026-10-06)
+
+- `objects/shoulder_aim.zig` (`ShoulderAim`, the same shape as `FirstPerson`: `update`,
+  `direction`, `view`). Defaults (John's picks in testing): side 0 (centered), height
+  2.0 m, distance 6.0 m, swing and turn swing 0.9 s; zone ±15° across and ±10° up and
+  down, follow rate 6, camera tilt within ±30°, aim within ±60°.
+- The swing goes around the captain: heading, pitch, distance, and pivot are eased
+  separately, the heading on its own swing (`turn_swing_time`), easing in and out.
+  While aiming, the follow camera keeps its heading; on letting go it's put at
+  `returnYaw` (where it was around the captain, turned as he turned while aiming), and
+  the same swings run backward. (First built as a straight blend between the two camera
+  positions, with the follow camera put behind the captain on the first aiming frame,
+  so the horizontal swing snapped; then letting go only rose back, behind his facing.)
+- The range scene runs both modes; the one not picked eases out. Shots leave the
+  captain's gun (1.2 m up, 0.25 m right, 0.5 m ahead along the aim) for what the aim is
+  on, found from his eye along the aim as before.
+- Indicator: khaki dashes (0.35 m on, 0.35 m off; the line shader has no blending, so
+  dashes make it faint), a yellow ring (0.2 m plus 1.2 cm per meter from the camera)
+  facing the camera on a turret (not on the floor), and the crosshair at the aim point's
+  screen position. The aim panel: LT's mode, the three indicator checkboxes, the camera,
+  zone, and aim sliders.
 
 ## Phase I Spec: Friendly Fire and the Line of Fire
 
@@ -335,8 +362,8 @@ Each phase ends with a CHANGELOG entry and a commit.
 | F | Squad focus fire | ✅ 2026-10-04 |
 | G1 | Turrets fire back (slow traverse, slow mortars with warning rings); hits on people (shake, flinch); detection ranges | ✅ 2026-10-04 |
 | G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
-| H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | Next |
-| I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | Planned |
+| H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | ✅ 2026-10-06 |
+| I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | Next |
 
 ## Notes
 

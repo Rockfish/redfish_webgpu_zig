@@ -9,8 +9,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
   and shoot, a squad of six that follows and focus-fires, a turret range in bullets
   (`-s range`), `src/core/gameplay/`. Phases A-G done: G1 (turrets fire back within
   detection ranges, mortar warning rings, hits on people) and G2 (fear, scatter,
-  regroup) tested 2026-10-04. Next: H (third-person aim over the right shoulder,
-  first person kept as an option), then I (friendly fire, the squad stepping out of the
+  regroup) tested 2026-10-04. H (third-person aim over the right shoulder, first
+  person kept as an option) done 2026-10-06. Next: I (friendly fire, the squad stepping out of the
   line of fire).
 
 ## ⏸️ Parked
