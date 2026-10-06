@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-G done)
+## Status: Active (started 2026-10-04; phases A-G done, H next)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -46,13 +46,36 @@ range`): the captain (the toon Soldier), his squad of six, and turrets of severa
   warning**, and explosions near the squad make it scatter.
 - **Hits on people**: the captain's is a camera shake (`motion.Shake`); a squad member's
   is a flinch (HitReact). No health or death for people yet.
-- **Tracers pass through** squad members (no friendly fire).
+- **Tracers pass through** squad members (no friendly fire). Changed 2026-10-06: the
+  captain's tracers hit members (phase I).
 - **`src/core/gameplay/`**: a folder in core for game building blocks (below). No
   `aim.zig`: `YawPitchAim` and `Sweep` stay in `motion.zig`.
 - **Deferred**: lock-on (Z-targeting; the squad's focus fire is the way to concentrate
   on a target for now), the roll (no clip), the root-motion lock for jumps (until there's
   something to jump onto), blend spaces and phase sync in the animation state machine.
+  Added 2026-10-06: **squad skill levels** (fire awareness first; others such as aim,
+  courage, and reaction time could follow).
 - All the numbers are tuned later, live in the ImGui panels.
+
+## Decisions (John, 2026-10-06)
+
+- **Third-person aim replaces first person as the shooting mode.** In testing, first
+  person felt like a different game: little of the squad is in view. LT now swings the
+  camera low behind the captain's right shoulder; the left stick moves, the right stick
+  aims, RT fires, all in third person. **First person stays as an option** (a panel
+  setting picks what LT does), for later use.
+- **Right shoulder**, with the side offset on a slider (0 is centered). The aim camera's
+  placement (side, height, distance, pitch, swing time, follow zone, lag) is all on
+  sliders, to find what feels best in play.
+- **Letting go of LT**: the camera stays behind the captain's new facing and eases back
+  up to the follow camera's height and distance (no swing back to its old heading).
+- **Aiming up and down tilts the camera too**, within its own zone and with lag, less
+  than across.
+- **Friendly fire from the captain only**: his tracers hit squad members; the squad's
+  pass through each other and him. The squad tries to step out of his line of fire, with
+  jitter: mostly out of the way, now and then in it.
+- **Squad skill levels later**: keeping out of the captain's line of fire will be one of
+  the skills (as a per-member value now, set at random).
 
 ## Design As Built
 
@@ -219,9 +242,83 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
 
 ### Not yet built from the squad spec
 
-- **Stay out of the line of fire**: in first person, members step out of a corridor in
-  front of the captain's aim. With tracers passing through people it's cosmetic; worth
-  adding if members standing in the stream looks wrong.
+- **Stay out of the line of fire**: now phase I, with friendly fire.
+
+## Phase H Spec: Third-Person Aim (Over the Shoulder)
+
+### Camera
+
+- **LT held** (or F): the camera eases (about 0.3 s, smooth step) from the follow camera
+  to the **aim camera**: low behind the captain, offset to his right shoulder, looking
+  along his forward. Settings, all sliders: side offset (about 0.5 m right; 0 centered),
+  height above the feet (about 1.7 m), distance behind (about 2.5 m), and swing time.
+- **Follow zone**: the camera keeps its heading and pitch while the aim stays within a
+  zone around them (about ±15° across, ±10° up and down; sliders). Past the zone's edge
+  it follows the aim with lag (`dampAngle`), so small corrections move the aim on
+  screen and bigger turns bring the camera around. Pitch follows like yaw, with its own,
+  smaller zone and range.
+- **LT released**: the camera eases back up to the follow camera's distance and pitch,
+  behind the captain's new facing (the follow camera's yaw is set to the camera's
+  current heading, so there is no swing).
+
+### Aim and movement
+
+- The **right stick** (or arrows) moves the aim (yaw, pitch within limits) at set
+  speeds, as first person's; the captain **faces the aim** and raises his gun
+  (`ToonSoldier.strafe`: Idle / Walk_Shoot / Run_Shoot); the **left stick** moves
+  relative to the aim (strafing, as in first person).
+- **What the aim is on**: the ray from the captain's eye along the aim, cast against the
+  turrets' hit spheres and the floor (`crosshairAim`, as now). Shots leave the captain's gun and fly to that point, so
+  they land on it at any distance; focus fire works as now (`Squad.reportShot`).
+- **RT** (or the left mouse button) fires only while LT is held.
+
+### Indicator
+
+- A **faint line** from the captain's gun to the aim point.
+- A **decal** where the aim is on something: a small ring on the floor, or a ring facing
+  the camera on a turret's hit sphere.
+- A **screen crosshair** at the aim point's projected screen position (not the screen
+  center, since the aim moves within the zone). Each of the three can be turned off in
+  the panel, to see which ones are needed.
+
+### Modes
+
+- A panel setting picks what LT does: **over the shoulder** (default) or **first
+  person** (as built in phase D, unchanged).
+
+## Phase I Spec: Friendly Fire and the Line of Fire
+
+### Friendly fire
+
+- The captain's tracers are tested against the squad members' hit spheres (0.45 m,
+  1 m up, as the turrets use); a tracer that strikes a member ends there. The squad's
+  tracers still pass through members and the captain.
+- A member hit by the captain **flinches** (`ToonSoldier.flinch`, with the flinch
+  interval). No health or death. **No fear**: fear points a member away from the threat,
+  and running from the captain would fight regrouping. Instead the hit makes it **extra
+  careful** of the line of fire for a few seconds (no lapses, quickest reaction).
+- The range panel counts friendly hits.
+
+### Stepping out of the line of fire
+
+- While the captain aims (either mode), his **line of fire** is a corridor from his gun
+  to the aim point, about 1 m either side (each member its own width, jittered).
+- A member inside it gets a **sideways push** out of it, toward the nearer side, and its
+  **spot** near the captain is moved out of it too, so arriving there doesn't walk it
+  back in. Scattering members ignore the corridor.
+
+### Jitter (the skill, later)
+
+- Each member has a **fire awareness** (0 to 1), picked at random in a high range (about
+  0.8-0.95) for now; squad skill levels will set it later.
+- **Late reaction**: awareness sets how soon a member notices it's in the corridor
+  (about 0.2 s for the best, 0.8 s for the worst).
+- **Lapses**: every couple of seconds each member rolls against its awareness; a miss
+  means it ignores the corridor for 1-2 s. Rolls happen on a timer, not per frame, so the
+  odds are the same at any frame rate. This gives "mostly out of the way, occasionally
+  in it".
+- Panel: corridor width, reaction range, lapse interval and length, each member's
+  awareness; debug lines: the corridor's edges, and a mark on members in a lapse.
 
 ## Phases
 
@@ -238,6 +335,8 @@ Each phase ends with a CHANGELOG entry and a commit.
 | F | Squad focus fire | ✅ 2026-10-04 |
 | G1 | Turrets fire back (slow traverse, slow mortars with warning rings); hits on people (shake, flinch); detection ranges | ✅ 2026-10-04 |
 | G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
+| H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | Next |
+| I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | Planned |
 
 ## Notes
 

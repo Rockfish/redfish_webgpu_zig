@@ -43,7 +43,7 @@ the regression check. Since then:
   flinches), squad fear, scatter, and regroup; `src/core/gameplay/` (ballistics, fire
   control, explosions, projectiles, turrets, steering)
 
-Active plan: 019 tower attack (phases A-G done; next step to be decided). See
+Active plan: 019 tower attack (phases A-G done; next: H, third-person aim). See
 `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
