@@ -14,6 +14,12 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## ⏸️ Parked
 
+- **[020-zig-0.17-upgrade.md](020-zig-0.17-upgrade.md)**: written 2026-10-07, waiting
+  for ZLS 0.17 and 0.17 versions of zglfw, zgui, zstbi, zaudio. The changes for us:
+  `**` → `@splat` (13), `allocPrint` (2), `build.zig` (passthru args, `dependencyLazy`,
+  `std.lang.Optimize`, translate-c), `@intFromEnum` renames via `zig fmt`; likely drop
+  the `float.h` patch. Next: check the dependencies.
+
 - **[012-animation-fsm.md](012-animation-fsm.md)**: parked 2026-10-04 after review items
   1 (fading tracks, no pops) and 5 (no sliding), and playback rates; the tower attack
   work moved to plan 019. Next if resumed: blend space, phase sync, roll travel, root

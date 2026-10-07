@@ -158,6 +158,18 @@ This file tracks future features organized by development layers. Features are g
   - Memory leak detection
   - Performance bottleneck analysis
 
+- [ ] **Shaders in Zig (SPIR-V) experiment** (added 2026-10-07, from the Zig 0.17 notes)
+  - Zig's SPIR-V backend compiles Zig to shaders; wgpu-native takes SPIR-V
+    (`WGPUShaderSourceSPIRV`, `wgpuDeviceCreateShaderModuleSpirV`) and naga translates
+    it to Metal
+  - Appeal: uniform structs and shared constants as the same Zig types on CPU and GPU
+    (today: `extern struct` + size checks + matching names in `common.wgsl`)
+  - Experiment: one trivial Zig fragment shader (e.g. `basic_shape`'s unlit path) to
+    SPIR-V, loaded in `draw_test`, to see whether Zig → SPIR-V → naga → Metal works
+  - Against it for now: the backend is experimental (0.17 lists SPIR-V regressions),
+    naga may not accept Zig's output, WGSL `override` constants and readable shader files
+    would go, and browsers take only WGSL; 28 WGSL files to port
+
 ### Advanced Features
 - [ ] **Networking Support**
   - Multi-player scene synchronization
