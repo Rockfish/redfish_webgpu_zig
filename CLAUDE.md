@@ -44,7 +44,7 @@ the regression check. Since then:
   out of the captain's line of fire; `src/core/gameplay/` (ballistics, fire
   control, explosions, projectiles, turrets, steering)
 
-Active plan: 019 tower attack (phases A-I done; next step to be decided). See
+Active plan: 019 tower attack (phases A-I done; next: J, isometric view). See
 `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

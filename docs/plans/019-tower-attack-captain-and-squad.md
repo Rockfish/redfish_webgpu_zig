@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-I done)
+## Status: Active (started 2026-10-04; phases A-I done, J next)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -82,6 +82,18 @@ range`): the captain (the toon Soldier), his squad of six, and turrets of severa
   jitter: mostly out of the way, now and then in it.
 - **Squad skill levels later**: keeping out of the captain's line of fire will be one of
   the skills (as a per-member value now, set at random).
+
+## Decisions (John, 2026-10-07)
+
+- **Try an isometric view** of the range, switched with the number keys: **1** the
+  current perspective follow camera, **2** isometric. In the range scene the number
+  keys are view keys; the captain's test actions on 1-7 (punch, duck, wave, yes, no,
+  Walk_Shoot, Run_Shoot) go there (the gamepad face buttons still do jump, punch, duck,
+  wave).
+- **Aiming in isometric: both ways, as an option** to compare in play: twin-stick (the
+  right stick points the aim on the ground, RT fires, the view stays isometric) or LT
+  swinging into the over-the-shoulder view while held and back on release.
+- **The isometric view is fixed** at one 45° angle (no rotating it).
 
 ## Design As Built
 
@@ -370,6 +382,51 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
   corridor's edges (orange) and a bar across the head (red in the line, white in a
   lapse). The range panel counts the captain's hits on the squad.
 
+## Phase J Spec: Isometric View
+
+### Views
+
+- **1**: the follow camera, as now (LT aims over the shoulder or first person, per the
+  aim panel). **2**: isometric. Switching eases between the two views (as the aim
+  camera's swing) rather than cutting; the view in use shows in the range panel.
+- The view keys replace the captain's number-key test actions in the range scene only.
+
+### Isometric camera
+
+- **Orthographic** (`core.Camera`'s `ProjectionType.Orthographic`, `ortho_scale`):
+  looking 45° around and about 35° down (true isometric is 35.26°, the 2:1 pixel-art
+  look 30°). Fixed heading; no rotation.
+- **Perspective from a high angle** as an alternative setting (a narrow field of view),
+  to compare with orthographic.
+- **Follows the captain** with a little lag (`motion` damping), the view centered on
+  him or shifted a little ahead of where he's going.
+- Sliders: pitch, view size (`ortho_scale`; zoom), projection (orthographic /
+  perspective), field of view for perspective, follow lag, look-ahead. Zoom maybe also
+  on the d-pad or mouse wheel.
+- Check: near / far planes with a camera far above the floor, the floor plane's edges
+  in view, the detection rings and warnings reading from above, the squad debug lines.
+
+### Moving
+
+- The left stick moves relative to the screen (stick up moves up the screen, diagonally
+  in the world): the existing camera-relative movement with the isometric camera's fixed
+  heading. The Wind Waker motor as now.
+
+### Aiming: two modes, picked in the aim panel
+
+- **Twin-stick** (default to try first): the right stick points the aim on the ground
+  around the captain (a direction; its length is not used, a dead zone keeps the last
+  aim), the captain faces it and strafes (`ToonSoldier.strafe`), RT fires. Holding
+  LT is not needed: the right stick past its dead zone aims; RT fires along the last
+  aim. What the aim is on comes from the captain's eye along the aim direction, level
+  (the turrets' hit spheres and the floor, as `crosshairAim`); keyboard: the arrows
+  turn the aim, the mouse could point it later. The aim line, the ring on a turret, and
+  the crosshair (at the aim point's screen position) work as now; the squad's focus fire
+  and line of fire need nothing new.
+- **Over the shoulder**: LT swings from the isometric view into the aim camera (as
+  from the follow camera), and back on release.
+- First person stays available through the aim panel, as now.
+
 ## Phases
 
 Each phase ends with a CHANGELOG entry and a commit.
@@ -387,6 +444,7 @@ Each phase ends with a CHANGELOG entry and a commit.
 | G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
 | H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | ✅ 2026-10-06 |
 | I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | ✅ 2026-10-06 |
+| J | Isometric view (keys 1 / 2): orthographic follow camera at a fixed 45°, screen-relative movement; aiming twin-stick or over the shoulder, as an option | Next |
 
 ## Notes
 
