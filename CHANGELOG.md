@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-07 - Isometric view; tower attack phase J
+- **core.Camera**: `setFov`, `setOrthoScale`
+- **bullets range**: 1 / 2 switch between the follow camera and an isometric view (`objects/iso_view.zig`): a fixed 45° heading, 35.26° down, orthographic (or a narrow perspective, as a setting), following the captain with a little lag and look-ahead; the switch eases each term of the camera's orbit, narrowing the lens to frame the captain at the orthographic size before the cut to orthographic; the left stick moves relative to the screen. Aiming in the isometric view is by cursor (the right stick moves the crosshair across the screen, the captain faces what's under it; while aiming it stays on a spot in the world or travels with him, not aiming it waits ahead of him at the last aim's distance, and it stays on screen), twin-stick (the right stick turns the aim from the captain's forward and moves where it lands nearer or farther at a steady speed, or tilts it, as an option), RT fires or LT as in the follow view (the aim camera swings in from the isometric view), picked in the aim panel with every isometric setting
+- **bullets**: `ToonSoldier.number_key_actions` (the range's captain has the number keys off: they switch views)
+
 ### 2026-10-06 - Friendly fire and the line of fire; tower attack phase I
 - **bullets range**: the captain's tracers hit squad members (the squad's still pass through everyone): a puff, a flinch, and a few careful seconds, no fear
 - **bullets squad**: while the captain aims, members step out of his line of fire (a corridor from his gun to the aim point, 1 m either side, each its own width) toward the nearer side, and their spots move out of it; each member's fire awareness (0.8-0.95 for now, a future skill level) sets how late it notices (0.2-0.8 s) and how often it has a lapse (a roll every 2 s; 1-2 s ignoring the line), so members mostly keep clear and now and then get in the way; careful after a hit (no lapses, quickest reaction); a "line of fire" panel section (each member's awareness as a slider, every setting, friendly hits) and debug lines (corridor edges, in-line and lapse marks)

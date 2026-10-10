@@ -14,7 +14,7 @@ const vec3 = math.vec3;
 
 /// The eye above the captain's feet, meters (the toon soldier's head is large: its eyes
 /// sit at about 1.5 m of its 1.8).
-const EYE_HEIGHT: f32 = 1.5;
+pub const EYE_HEIGHT: f32 = 1.5;
 /// Past this much of the way to the eye the model is hidden, so the camera never sees
 /// the inside of the head.
 const HIDE_MODEL_FROM: f32 = 0.6;

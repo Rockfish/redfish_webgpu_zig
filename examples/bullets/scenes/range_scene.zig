@@ -4,9 +4,15 @@
 //! moves, the right stick aims, RT (or the left mouse button) fires tracers. The aim is
 //! over the captain's right shoulder (plan 019 phase H: the camera swings low behind him,
 //! a faint line, a ring on what the aim is on, and a crosshair show it), or first person
-//! (phase D), picked in the aim panel. The
-//! squad (phases E and F) follows the captain and, after a couple of his shots at one
-//! spot, fires at it too.
+//! (phase D), picked in the aim panel. The squad (phases E and F) follows the captain
+//! and, after a couple of his shots at one spot, fires at it too.
+//!
+//! Views (phase J): 1 is the follow camera, 2 an isometric view (`IsoView`: fixed 45°,
+//! orthographic, following the captain). In the isometric view the captain aims with the
+//! right stick alone, as a cursor (the stick moves the crosshair across the screen; he
+//! faces what's under it) or turning (left / right turns the aim from his forward, up /
+//! down moves where it lands), RT fires; or with LT as in the follow view, picked in the
+//! aim panel.
 //!
 //! The turrets fire back (plan 019 phase G1, T toggles): slowly, so the player can react.
 //! Each watches the ground within its detection range (a faint ring, brighter while it
@@ -33,7 +39,11 @@ const TargetTurret = target_turret.TargetTurret;
 const range_turret_types = @import("../objects/range_turret_types.zig");
 const ShellWarnings = @import("../objects/shell_warnings.zig").ShellWarnings;
 const FirstPerson = @import("../objects/first_person.zig").FirstPerson;
+const EYE_HEIGHT = @import("../objects/first_person.zig").EYE_HEIGHT;
 const ShoulderAim = @import("../objects/shoulder_aim.zig").ShoulderAim;
+const iso_view = @import("../objects/iso_view.zig");
+const IsoView = iso_view.IsoView;
+const Orbit = iso_view.Orbit;
 const squad_module = @import("../objects/squad.zig");
 const Squad = squad_module.Squad;
 const character_control = @import("../objects/character_control.zig");
@@ -106,6 +116,25 @@ const FLOOR_PUFF_RADIUS: f32 = 0.1;
 
 /// What LT does.
 const AimMode = enum { over_shoulder, first_person };
+/// The view: 1 and 2.
+const ViewKind = enum { follow, isometric };
+/// How the captain aims in the isometric view: the right stick moving a cursor on the
+/// screen, or turning the aim from his forward; or LT, as in the follow view.
+const IsoAim = enum { cursor, twin_stick, lt_aims };
+/// What twin-stick up / down moves: where the aim lands on the floor, at a steady speed
+/// (in the orthographic view, steady on screen too), or the aim's angle (which moves the
+/// landing point slowly up close and very fast far out).
+const TwinRaise = enum { distance, angle };
+
+/// Twin-stick: below this much stick travel the aim doesn't move.
+const TWIN_STICK_DEAD_ZONE: f32 = 0.15;
+/// Twin-stick: what the aim is on when it meets nothing, meters out (past the farthest
+/// landing distance).
+const TWIN_AIM_RANGE: f32 = 50.0;
+/// Cursor: what's under it is found along the line of sight from this far back from it;
+/// it stays this far (meters) in from the view's edges.
+const CURSOR_SIGHT_DISTANCE: f32 = 100.0;
+const CURSOR_MARGIN: f32 = 1.0;
 
 /// Over the shoulder, where the captain's gun is: above his feet, to his right, and ahead
 /// along the aim, meters.
@@ -158,6 +187,45 @@ pub const RangeScene = struct {
     first_person: FirstPerson = .{},
     shoulder: ShoulderAim = .{},
     aim_mode: AimMode = .over_shoulder,
+    view: ViewKind = .follow,
+    iso: IsoView = .{},
+    iso_aim: IsoAim = .cursor,
+    /// Cursor: a spot on the floor the stick moves across the screen; what's under it
+    /// (`cursor_aim`, a turret or the floor) is the target. While aiming it stays put in
+    /// the world, or travels with the captain (`cursor_follows`), within
+    /// `cursor_max_distance` of him; not aiming, it waits straight ahead of him at
+    /// `cursor_distance` (the last aim's), so the next aim starts from his forward.
+    cursor: Vec3 = Vec3.Zero,
+    cursor_distance: f32 = 10.0,
+    cursor_aim: CrosshairAim = .{ .point = Vec3.Zero, .target = null, .is_on_something = false },
+    cursor_follows: bool = false,
+    cursor_last_captain: Vec3 = Vec3.Zero,
+    /// Meters per second on screen at full stick (in the view's terms: up the screen is
+    /// scaled so both directions move the same on screen).
+    cursor_speed: f32 = 15.0,
+    cursor_max_distance: f32 = 40.0,
+    /// Twin-stick: the aim (a camera yaw and pitch), and whether the captain is aiming
+    /// (the stick pushed, or RT held). The pitch is kept between aims; the yaw starts
+    /// from his facing.
+    twin_yaw: f32 = 0.0,
+    twin_pitch: f32 = deg(-6.0),
+    twin_active: bool = false,
+    twin_raise: TwinRaise = .distance,
+    /// Radians per second at full stick.
+    twin_yaw_speed: f32 = 2.0,
+    /// `distance`: where the aim lands on the floor, meters from the captain, moved at
+    /// meters per second at full stick within the range.
+    twin_distance: f32 = 15.0,
+    twin_distance_speed: f32 = 12.0,
+    twin_distance_min: f32 = 2.0,
+    twin_distance_max: f32 = 40.0,
+    /// `angle`: radians per second at full stick, within the range in degrees.
+    twin_pitch_speed: f32 = 0.6,
+    twin_pitch_min: f32 = -35.0,
+    twin_pitch_max: f32 = 15.0,
+    /// The follow camera's field of view (the scroll wheel changes it), kept while
+    /// another view sets the camera's.
+    follow_fov: f32 = 75.0,
     /// Aiming last frame: letting go puts the follow camera back.
     was_aiming: bool = false,
     /// What the aim is on this frame, while aiming.
@@ -204,6 +272,7 @@ pub const RangeScene = struct {
         const camera = try FreeCamera.init(context.alloc, input.framebuffer_width, input.framebuffer_height);
 
         const captain = try ToonSoldier.init(rm, .soldier, .ShortCannon, true);
+        captain.number_key_actions = false;
         captain.transform.translation = CAPTAIN_START;
         captain.transform.rotation = Quat.fromAxisAngle(Vec3.Y, std.math.pi);
 
@@ -317,16 +386,15 @@ pub const RangeScene = struct {
         self.squad.drawGui();
         self.drawRangePanel();
         self.drawAimPanel();
-        switch (self.aim_mode) {
-            .first_person => if (self.first_person.hidesModel()) {
-                const size = zgui.io.getDisplaySize();
-                drawCrosshair(.{ size[0] * 0.5, size[1] * 0.5 });
-            },
-            .over_shoulder => if (self.show_aim_crosshair) {
-                if (self.aimScreenPoint()) |point| {
+        if (self.aim_mode == .first_person and self.first_person.hidesModel()) {
+            const size = zgui.io.getDisplaySize();
+            drawCrosshair(.{ size[0] * 0.5, size[1] * 0.5 });
+        } else if (self.show_aim_crosshair) {
+            if (self.indicatorAim()) |aim| {
+                if (self.screenPoint(aim.point)) |point| {
                     drawCrosshair(point);
                 }
-            },
+            }
         }
     }
 
@@ -338,43 +406,209 @@ pub const RangeScene = struct {
     /// otherwise the follow-camera control. The mode not picked eases out.
     fn controlCaptain(self: *Self, input: *core.Input) !void {
         const dt = input.delta_time;
-        const held = input.gamepad.left_trigger > 0.5 or input.isDown(.f);
+        const is_twin_stick = self.isStickAim();
+        const held = !is_twin_stick and (input.gamepad.left_trigger > 0.5 or input.isDown(.f));
         const turn = character_control.cameraTurn(input);
         const facing_yaw = character_control.facingYaw(self.captain.transform);
-        self.shoulder.update(held and self.aim_mode == .over_shoulder, turn, facing_yaw, self.follow.yaw, dt);
+        const base_yaw = self.baseOrbit().yaw;
+        self.shoulder.update(held and self.aim_mode == .over_shoulder, turn, facing_yaw, base_yaw, dt);
         self.first_person.update(held and self.aim_mode == .first_person, turn, facing_yaw, dt);
+        self.updateTwinStick(is_twin_stick, turn, isTriggerHeld(input), facing_yaw, dt);
         self.captain.visible = !(self.aim_mode == .first_person and self.first_person.hidesModel());
 
         if (self.isAiming()) {
             const move = motion.cameraRelativeMove(character_control.moveStick(input), self.cameraYaw());
             self.captain.strafe(move, character_control.headingOfYaw(self.aimYaw()), isTriggerHeld(input), input);
         } else {
-            try character_control.control(self.captain, self.control_style, self.follow.yaw, input);
+            try character_control.control(self.captain, self.control_style, base_yaw, input);
         }
+    }
+
+    /// Twin-stick, in the isometric view: the right stick turns the aim from the
+    /// captain's forward (left / right) and moves where it lands nearer or farther (or
+    /// tilts it; `twin_raise`) (up / down), at set rates, so it stays put when the stick
+    /// is let go. He aims while the stick is pushed or RT is held; a new aim starts from
+    /// his facing.
+    fn updateTwinStick(self: *Self, enabled: bool, stick: math.Vec2, firing: bool, facing_yaw: f32, dt: f32) void {
+        if (!enabled) {
+            self.twin_active = false;
+            return;
+        }
+        if (self.iso_aim == .cursor) {
+            self.updateCursor(stick, firing, facing_yaw, dt);
+            return;
+        }
+        if (!self.twin_active) {
+            self.twin_yaw = facing_yaw;
+        }
+        const is_turning = stick.x * stick.x + stick.y * stick.y > TWIN_STICK_DEAD_ZONE * TWIN_STICK_DEAD_ZONE;
+        if (is_turning) {
+            self.twin_yaw = motion.wrapAngle(self.twin_yaw - stick.x * self.twin_yaw_speed * dt);
+        }
+        switch (self.twin_raise) {
+            .distance => {
+                if (is_turning) {
+                    const distance = self.twin_distance + stick.y * self.twin_distance_speed * dt;
+                    self.twin_distance = std.math.clamp(distance, self.twin_distance_min, self.twin_distance_max);
+                }
+                // Down from the eye to the floor that far out
+                self.twin_pitch = -std.math.atan(EYE_HEIGHT / self.twin_distance);
+            },
+            .angle => if (is_turning) {
+                const pitch = self.twin_pitch + stick.y * self.twin_pitch_speed * dt;
+                self.twin_pitch = std.math.clamp(pitch, deg(self.twin_pitch_min), deg(self.twin_pitch_max));
+            },
+        }
+        self.twin_active = is_turning or firing;
+    }
+
+    /// Cursor, in the isometric view: the right stick moves the cursor across the
+    /// screen (up the screen, right on it); the captain aims at what's under it while the
+    /// stick is pushed or RT is held. Not aiming, the cursor waits straight ahead of him
+    /// at the last aim's distance, so starting to aim doesn't turn him.
+    fn updateCursor(self: *Self, stick: math.Vec2, firing: bool, facing_yaw: f32, dt: f32) void {
+        const captain = self.captain.transform.translation;
+        if (!self.twin_active) {
+            const ahead = motion.yawPitchDirection(facing_yaw, 0.0).mulScalar(self.cursor_distance);
+            self.cursor = vec3(captain.x + ahead.x, 0.0, captain.z + ahead.z);
+        } else if (self.cursor_follows) {
+            self.cursor = self.cursor.add(captain.sub(self.cursor_last_captain));
+        }
+        self.cursor_last_captain = captain;
+
+        const is_moving = stick.x * stick.x + stick.y * stick.y > TWIN_STICK_DEAD_ZONE * TWIN_STICK_DEAD_ZONE;
+        if (is_moving) {
+            // Up the screen is along the floor away from the camera, foreshortened by the
+            // pitch: moving that way faster by 1 / sin(pitch) looks the same on screen
+            const yaw = self.iso.yaw();
+            const right = vec3(@cos(yaw), 0.0, -@sin(yaw));
+            const away = vec3(-@sin(yaw), 0.0, -@cos(yaw));
+            const foreshortening = @sin(deg(self.iso.pitch));
+            const step = right.mulScalar(stick.x).add(away.mulScalar(stick.y / foreshortening)).mulScalar(self.cursor_speed * dt);
+            self.cursor = self.cursor.add(step);
+        }
+        const offset = vec3(self.cursor.x - captain.x, 0.0, self.cursor.z - captain.z);
+        if (offset.length() > self.cursor_max_distance) {
+            self.cursor = captain.add(offset.toNormalized().mulScalar(self.cursor_max_distance));
+        }
+        self.keepCursorInView();
+
+        // He faces the cursor's spot on the floor, not the point on a turret it's over:
+        // seen from him that point lies to one side, and letting go puts the cursor
+        // straight ahead of him, so facing it would make the cursor jump
+        self.cursor_aim = self.underCursor();
+        self.twin_yaw = motion.yawPitchOf(self.cursor.sub(captain)).yaw;
+        self.twin_pitch = motion.yawPitchOf(self.cursor_aim.point.sub(FirstPerson.eye(captain))).pitch;
+        self.twin_active = is_moving or firing;
+        if (self.twin_active) {
+            const out = vec3(self.cursor.x - captain.x, 0.0, self.cursor.z - captain.z);
+            self.cursor_distance = @max(out.length(), 1.0);
+        }
+    }
+
+    /// Keeps the cursor on screen, `CURSOR_MARGIN` in from the edges of the isometric
+    /// view: a cursor left behind is pushed along by the edge as the view moves on.
+    fn keepCursorInView(self: *Self) void {
+        const yaw = self.iso.yaw();
+        const right = vec3(@cos(yaw), 0.0, -@sin(yaw));
+        const away = vec3(-@sin(yaw), 0.0, -@cos(yaw));
+        const foreshortening = @sin(deg(self.iso.pitch));
+
+        // The floor point at the screen's center: the view's focus, followed down its
+        // line of sight to the floor
+        const view_direction = motion.yawPitchDirection(yaw, -deg(self.iso.pitch));
+        const center = self.iso.focus.add(view_direction.mulScalar(self.iso.focus.y / -view_direction.y));
+
+        const half_height = @max(self.iso.size - CURSOR_MARGIN, 0.0);
+        const half_width = @max(self.iso.size * self.scene_camera.getCamera().aspect - CURSOR_MARGIN, 0.0);
+        const from_center = self.cursor.sub(center);
+        const across = std.math.clamp(from_center.dot(right), -half_width, half_width);
+        const up_screen = std.math.clamp(from_center.dot(away) * foreshortening, -half_height, half_height);
+        self.cursor = center.add(right.mulScalar(across)).add(away.mulScalar(up_screen / foreshortening));
+        self.cursor.y = 0.0;
+    }
+
+    /// What's under the cursor: the line of sight from the camera through it, against
+    /// the turrets and the floor (it meets the floor at the cursor).
+    fn underCursor(self: *const Self) CrosshairAim {
+        const view_direction = motion.yawPitchDirection(self.iso.yaw(), -deg(self.iso.pitch));
+        const above = self.cursor.sub(view_direction.mulScalar(CURSOR_SIGHT_DISTANCE));
+        return self.crosshairAim(above, view_direction, 2.0 * CURSOR_SIGHT_DISTANCE);
+    }
+
+    /// The right stick aims (cursor or turning) in the isometric view, not LT.
+    fn isStickAim(self: *const Self) bool {
+        return self.view == .isometric and self.iso_aim != .lt_aims;
+    }
+
+    fn isCursorAim(self: *const Self) bool {
+        return self.view == .isometric and self.iso_aim == .cursor;
+    }
+
+    /// The view the aim cameras swing in from: the follow camera eased toward the
+    /// isometric view.
+    fn baseOrbit(self: *const Self) Orbit {
+        const t = smoothStep(self.iso.blend);
+        return Orbit.lerp(Orbit.fromFollow(&self.follow, self.follow_fov), self.iso.orbit(), t);
     }
 
     /// The follow camera, eased toward the aim's view. Over the shoulder, it keeps its
     /// heading while aiming and is put back where it was around the captain when aiming
     /// ends, so the camera swings back; in first person it's kept behind the captain
     /// along the aim, so leaving eases back to behind him.
+    /// The isometric view eases in over the follow camera (`baseOrbit`), and the aim
+    /// views swing in from that; orthographic once fully isometric and not aiming with
+    /// LT.
     fn placeCamera(self: *Self, input: *core.Input) void {
+        const dt = input.delta_time;
         const position = self.captain.transform.translation;
-        const was_aiming = self.was_aiming;
-        self.was_aiming = self.isAiming();
-        if (self.isAiming()) {
+        self.iso.update(self.view == .isometric, position, dt);
+        self.placeFollowCamera(input);
+
+        const camera = self.scene_camera.getCamera();
+        const aim_blend = smoothStep(@max(self.shoulder.blend, self.first_person.blend));
+        if (self.iso.blend == 0.0 and aim_blend == 0.0) {
+            self.follow_fov = camera.fov;
+        }
+        const base = self.baseOrbit();
+        const base_follow = base.toFollow(self.follow);
+        const view = switch (self.aim_mode) {
+            .over_shoulder => self.shoulder.view(&base_follow, position),
+            .first_person => self.first_person.view(base_follow.position, base_follow.focus, position),
+        };
+
+        camera.setFov(std.math.lerp(base.fov, self.follow_fov, aim_blend));
+        if (self.iso.isOrthographic() and aim_blend == 0.0) {
+            camera.setOrthoScale(self.iso.size);
+            camera.setOrthographic();
+        } else {
+            camera.setPerspective();
+        }
+        camera.movement.reset(view.position, view.focus);
+    }
+
+    /// The follow camera: over the shoulder, it keeps its heading while LT aims and is
+    /// put back where it was around the captain when aiming ends, so the camera swings
+    /// back; in first person it's kept behind the captain along the aim. In the
+    /// isometric view it follows without the stick turning it.
+    fn placeFollowCamera(self: *Self, input: *core.Input) void {
+        const position = self.captain.transform.translation;
+        const is_aim_camera = self.shoulder.active or self.first_person.active;
+        const was_aim_camera = self.was_aiming;
+        self.was_aiming = is_aim_camera;
+        if (is_aim_camera) {
             const yaw = if (self.aim_mode == .over_shoulder) self.follow.yaw else self.cameraYaw();
             self.follow.reset(position, yaw);
+            return;
+        }
+        if (was_aim_camera and self.aim_mode == .over_shoulder) {
+            self.follow.reset(position, self.shoulder.returnYaw());
+        }
+        if (self.view == .isometric) {
+            self.follow.update(position, math.vec2(0.0, 0.0), null, input.delta_time);
         } else {
-            if (was_aiming and self.aim_mode == .over_shoulder) {
-                self.follow.reset(position, self.shoulder.returnYaw());
-            }
             character_control.followCharacter(&self.follow, self.captain.transform, input.isDown(.q), input);
         }
-        const view = switch (self.aim_mode) {
-            .over_shoulder => self.shoulder.view(&self.follow, position),
-            .first_person => self.first_person.view(self.follow.position, self.follow.focus, position),
-        };
-        self.scene_camera.getCamera().movement.reset(view.position, view.focus);
     }
 
     /// While aiming, from the captain's gun to what the aim is on (last frame's: the aim
@@ -385,6 +619,9 @@ pub const RangeScene = struct {
     }
 
     fn isAiming(self: *const Self) bool {
+        if (self.isStickAim()) {
+            return self.twin_active;
+        }
         return switch (self.aim_mode) {
             .over_shoulder => self.shoulder.active,
             .first_person => self.first_person.active,
@@ -392,6 +629,9 @@ pub const RangeScene = struct {
     }
 
     fn aimYaw(self: *const Self) f32 {
+        if (self.isStickAim()) {
+            return self.twin_yaw;
+        }
         return switch (self.aim_mode) {
             .over_shoulder => self.shoulder.yaw,
             .first_person => self.first_person.yaw,
@@ -399,6 +639,9 @@ pub const RangeScene = struct {
     }
 
     fn aimDirection(self: *const Self) Vec3 {
+        if (self.isStickAim()) {
+            return motion.yawPitchDirection(self.twin_yaw, self.twin_pitch);
+        }
         return switch (self.aim_mode) {
             .over_shoulder => self.shoulder.direction(),
             .first_person => self.first_person.direction(),
@@ -407,6 +650,9 @@ pub const RangeScene = struct {
 
     /// The camera's heading while aiming: over the shoulder it trails the aim.
     fn cameraYaw(self: *const Self) f32 {
+        if (self.isStickAim()) {
+            return self.iso.yaw();
+        }
         return switch (self.aim_mode) {
             .over_shoulder => self.shoulder.camera_yaw,
             .first_person => self.first_person.yaw,
@@ -417,14 +663,12 @@ pub const RangeScene = struct {
     /// over the shoulder.
     fn muzzlePosition(self: *const Self) Vec3 {
         const position = self.captain.transform.translation;
-        return switch (self.aim_mode) {
-            .first_person => FirstPerson.eye(position).add(self.viewOffset(MUZZLE_OFFSET)),
-            .over_shoulder => blk: {
-                const forward = motion.yawPitchDirection(self.aimYaw(), 0.0);
-                const right = forward.cross(Vec3.Y);
-                break :blk position.add(vec3(0.0, GUN_HEIGHT, 0.0)).add(right.mulScalar(GUN_SIDE)).add(forward.mulScalar(GUN_AHEAD));
-            },
-        };
+        if (self.aim_mode == .first_person and !self.isStickAim()) {
+            return FirstPerson.eye(position).add(self.viewOffset(MUZZLE_OFFSET));
+        }
+        const forward = motion.yawPitchDirection(self.aimYaw(), 0.0);
+        const right = forward.cross(Vec3.Y);
+        return position.add(vec3(0.0, GUN_HEIGHT, 0.0)).add(right.mulScalar(GUN_SIDE)).add(forward.mulScalar(GUN_AHEAD));
     }
 
     /// RT or the left mouse button fires while aiming, at the fire control's rate; each
@@ -433,10 +677,11 @@ pub const RangeScene = struct {
         const trigger = self.isAiming() and isTriggerHeld(input);
         self.fire_control.update(input.delta_time, trigger, 0.0);
 
-        const eye = FirstPerson.eye(self.captain.transform.translation);
+        const origin = FirstPerson.eye(self.captain.transform.translation);
+        const reach = if (self.isStickAim()) TWIN_AIM_RANGE else SKY_AIM_DISTANCE;
         const direction = self.aimDirection();
         const muzzle = self.muzzlePosition();
-        const aim = self.crosshairAim(eye, direction);
+        const aim = if (self.isCursorAim()) self.cursor_aim else self.crosshairAim(origin, direction, reach);
         self.aim = if (self.isAiming()) aim else null;
         const toward = aim.point.sub(muzzle).toNormalized();
         while (self.fire_control.nextShot()) |age| {
@@ -451,8 +696,8 @@ pub const RangeScene = struct {
 
     /// What the crosshair is on: the nearest point where the view's ray from `eye` meets a
     /// live turret's hit sphere or the floor; far out along it when it meets neither.
-    fn crosshairAim(self: *const Self, eye: Vec3, direction: Vec3) CrosshairAim {
-        var nearest: f32 = SKY_AIM_DISTANCE;
+    fn crosshairAim(self: *const Self, eye: Vec3, direction: Vec3, reach: f32) CrosshairAim {
+        var nearest: f32 = reach;
         var target: ?usize = null;
         var is_on_something = false;
         if (direction.y < 0.0 and -eye.y / direction.y < nearest) {
@@ -641,6 +886,12 @@ pub const RangeScene = struct {
         if (input.pressedOnce(.r)) {
             self.resetTurrets();
         }
+        if (input.pressedOnce(.one)) {
+            self.view = .follow;
+        }
+        if (input.pressedOnce(.two)) {
+            self.view = .isometric;
+        }
     }
 
     fn resetTurrets(self: *Self) void {
@@ -653,7 +904,7 @@ pub const RangeScene = struct {
         zgui.setNextWindowPos(.{ .x = 20, .y = 420, .cond = .first_use_ever });
         zgui.setNextWindowSize(.{ .w = 360, .h = 260, .cond = .first_use_ever });
         if (zgui.begin("range", .{})) {
-            zgui.text("LT / F: aim   RT / mouse: fire   R: reset", .{});
+            zgui.text("1 / 2: view   LT / F: aim   RT / mouse: fire   R: reset", .{});
             zgui.text("shots: {d}   hits: {d}   squad hits: {d}", .{ self.shots_fired, self.hits, self.squad_hits });
             _ = zgui.checkbox("turrets fire back (T)", .{ .v = &self.fire_back.enabled });
             _ = zgui.checkbox("show detection ranges", .{ .v = &self.show_ranges });
@@ -680,6 +931,10 @@ pub const RangeScene = struct {
         zgui.setNextWindowPos(.{ .x = 780, .y = 20, .cond = .first_use_ever });
         zgui.setNextWindowSize(.{ .w = 360, .h = 420, .cond = .first_use_ever });
         if (zgui.begin("aim", .{})) {
+            _ = zgui.comboFromEnum("view (1 / 2)", &self.view);
+            if (self.view == .isometric) {
+                self.drawIsoSettings();
+            }
             _ = zgui.comboFromEnum("LT aims", &self.aim_mode);
             switch (self.aim_mode) {
                 .over_shoulder => self.drawShoulderSettings(),
@@ -690,6 +945,43 @@ pub const RangeScene = struct {
             }
         }
         zgui.end();
+    }
+
+    fn drawIsoSettings(self: *Self) void {
+        const iso = &self.iso;
+        _ = zgui.comboFromEnum("aim in isometric", &self.iso_aim);
+        if (self.iso_aim == .cursor) {
+            _ = zgui.sliderFloat("cursor speed (m/s)", .{ .v = &self.cursor_speed, .min = 2.0, .max = 50.0 });
+            _ = zgui.sliderFloat("cursor reach (m)", .{ .v = &self.cursor_max_distance, .min = 5.0, .max = 60.0 });
+            _ = zgui.checkbox("cursor travels with the captain", .{ .v = &self.cursor_follows });
+        }
+        if (self.iso_aim == .twin_stick) {
+            _ = zgui.sliderFloat("aim turn (rad/s)", .{ .v = &self.twin_yaw_speed, .min = 0.3, .max = 6.0 });
+            _ = zgui.comboFromEnum("up / down moves", &self.twin_raise);
+            switch (self.twin_raise) {
+                .distance => {
+                    _ = zgui.sliderFloat("aim reach speed (m/s)", .{ .v = &self.twin_distance_speed, .min = 1.0, .max = 40.0 });
+                    _ = zgui.sliderFloat("aim nearest (m)", .{ .v = &self.twin_distance_min, .min = 0.5, .max = 10.0 });
+                    _ = zgui.sliderFloat("aim farthest (m)", .{ .v = &self.twin_distance_max, .min = 10.0, .max = 45.0 });
+                },
+                .angle => {
+                    _ = zgui.sliderFloat("aim raise (rad/s)", .{ .v = &self.twin_pitch_speed, .min = 0.1, .max = 3.0 });
+                    _ = zgui.sliderFloat("aim lowest (deg)", .{ .v = &self.twin_pitch_min, .min = -80.0, .max = 0.0 });
+                    _ = zgui.sliderFloat("aim highest (deg)", .{ .v = &self.twin_pitch_max, .min = 0.0, .max = 60.0 });
+                },
+            }
+        }
+        _ = zgui.comboFromEnum("projection", &iso.projection);
+        _ = zgui.sliderFloat("view size (m)", .{ .v = &iso.size, .min = 3.0, .max = 50.0 });
+        _ = zgui.sliderFloat("pitch down (deg)", .{ .v = &iso.pitch, .min = 15.0, .max = 89.0 });
+        _ = zgui.sliderFloat("heading (deg)", .{ .v = &iso.heading, .min = -180.0, .max = 180.0 });
+        if (iso.projection == .perspective) {
+            _ = zgui.sliderFloat("lens (deg)", .{ .v = &iso.perspective_fov, .min = 5.0, .max = 75.0 });
+        }
+        _ = zgui.sliderFloat("follow (rate)", .{ .v = &iso.follow_rate, .min = 0.5, .max = 20.0 });
+        _ = zgui.sliderFloat("look ahead (s)", .{ .v = &iso.look_ahead, .min = 0.0, .max = 2.0 });
+        _ = zgui.sliderFloat("switch (s)", .{ .v = &iso.switch_time, .min = 0.05, .max = 2.0 });
+        zgui.separator();
     }
 
     fn drawShoulderSettings(self: *Self) void {
@@ -718,11 +1010,11 @@ pub const RangeScene = struct {
     /// facing the camera at `camera_position` where the aim is on a turret (not the
     /// floor).
     fn drawAimIndicator(self: *Self, frame: *const Frame, camera_position: Vec3) void {
-        if (self.aim_mode != .over_shoulder) {
+        if (self.aim_mode == .first_person and !self.isStickAim()) {
             return;
         }
-        const aim = self.aim orelse return;
-        if (self.show_aim_line) {
+        const aim = self.indicatorAim() orelse return;
+        if (self.show_aim_line and self.aim != null) {
             self.drawAimLine(frame, self.muzzlePosition(), aim.point);
         }
         if (self.show_aim_decal and aim.target != null) {
@@ -733,6 +1025,15 @@ pub const RangeScene = struct {
             const model = Mat4.fromTranslation(aim.point).mulMat4(&facing).mulMat4(&Mat4.fromRotationX(std.math.pi / 2.0)).mulMat4(&Mat4.fromScale(vec3(radius, 1.0, radius)));
             self.aim_ring.draw(frame, self.flash_shader, core.DrawUniforms.init(model, DECAL_COLOR));
         }
+    }
+
+    /// What the indicator shows: the aim while aiming; in cursor mode, what's under the
+    /// cursor, always.
+    fn indicatorAim(self: *const Self) ?CrosshairAim {
+        if (self.isCursorAim()) {
+            return self.cursor_aim;
+        }
+        return self.aim;
     }
 
     /// Dashes from `start` to `end`: faint, since the lines have no blending.
@@ -753,12 +1054,11 @@ pub const RangeScene = struct {
         self.aim_lines.draw(frame, self.aim_segments[0..count]);
     }
 
-    /// The aim point's place on screen, in ImGui's display coordinates; null when not
-    /// aiming or behind the camera.
-    fn aimScreenPoint(self: *Self) ?[2]f32 {
-        const aim = self.aim orelse return null;
+    /// `point`'s place on screen, in ImGui's display coordinates; null when it's behind
+    /// the camera.
+    fn screenPoint(self: *Self, point: Vec3) ?[2]f32 {
         const context = self.shake_offset.apply(self.scene_camera.getCamera().getRenderContext(0.0));
-        const clip = context.projection_view.mulVec4(vec4(aim.point.x, aim.point.y, aim.point.z, 1.0));
+        const clip = context.projection_view.mulVec4(vec4(point.x, point.y, point.z, 1.0));
         if (clip.w <= 0.0) {
             return null;
         }
@@ -766,6 +1066,11 @@ pub const RangeScene = struct {
         return .{ (clip.x / clip.w * 0.5 + 0.5) * size[0], (0.5 - clip.y / clip.w * 0.5) * size[1] };
     }
 };
+
+/// Eases in and out: 0 and 1 with zero slope at both ends.
+fn smoothStep(t: f32) f32 {
+    return t * t * (3.0 - 2.0 * t);
+}
 
 /// RT or the left mouse button: fire.
 fn isTriggerHeld(input: *const core.Input) bool {

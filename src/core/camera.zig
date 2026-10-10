@@ -223,6 +223,23 @@ pub const Camera = struct {
         self.projection_cache_valid = false;
     }
 
+    /// Set the vertical field of view in degrees (perspective) and invalidate the cached
+    /// projection. Not clamped: callers framing a view exactly (a narrow lens from far
+    /// away) go below `adjustFov`'s limits.
+    pub fn setFov(self: *Self, degrees: f32) void {
+        std.debug.assert(degrees > 0.0 and degrees < 180.0);
+        self.fov = degrees;
+        self.projection_cache_valid = false;
+    }
+
+    /// Set the orthographic view's half height in world units and invalidate the cached
+    /// projection.
+    pub fn setOrthoScale(self: *Self, half_height: f32) void {
+        std.debug.assert(half_height > 0.0);
+        self.ortho_scale = half_height;
+        self.projection_cache_valid = false;
+    }
+
     pub fn adjustFov(self: *Self, zoom_amount: f32) void {
         self.fov -= zoom_amount;
         self.fov = std.math.clamp(self.fov, MIN_FOV, MAX_FOV);

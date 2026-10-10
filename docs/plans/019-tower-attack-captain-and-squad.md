@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-I done, J next)
+## Status: Active (started 2026-10-04; phases A-J done)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -427,6 +427,63 @@ Each member has a **fear** value (0 to 1) and a mode; the mode sets the behavior
   from the follow camera), and back on release.
 - First person stays available through the aim panel, as now.
 
+### As built (2026-10-07)
+
+- `objects/iso_view.zig`: `Orbit` (heading, pitch, distance, focus, field of view; the
+  follow camera's terms) and `IsoView`. Defaults: heading 45°, pitch 35.26° down, view
+  half height 12 m, orthographic from 80 m back, follow rate 5, look ahead 0.4 s of the
+  captain's (smoothed) travel, switch 0.9 s; perspective option with a 30° lens.
+- The range scene eases the follow camera's orbit into the isometric one (`baseOrbit`),
+  each term on its own, and the aim views swing in from that (`Orbit.toFollow`), so LT
+  works from either view. The orthographic cut happens only when fully isometric and not
+  aiming with LT; during the swing the lens narrows (75° to about 17°) so the captain is
+  framed the same size as the orthographic view, and the cut doesn't jump. The follow
+  camera's field of view (the scroll wheel's) is kept for the follow view.
+- In the isometric view the follow camera keeps following without the stick turning
+  it. `core.Camera` gained `setFov` and `setOrthoScale`.
+- Twin-stick, changed in testing (2026-10-07): the right stick turns the aim relative
+  to the captain's forward instead of pointing it (pointing relative to the screen felt
+  unintuitive and jumped about with every wobble of the stick). Left / right turns it
+  (2 rad/s at full stick), up / down raises or lowers it (0.6 rad/s, within -35° to
+  +15°; starts at -6°, landing about 15 m ahead, and is kept between aims); it stays
+  put when the stick is let go. He aims while the stick is pushed (past 0.15) or RT is
+  held; a new aim starts from his facing. The aim ray runs from his eye, as in the other
+  modes, out to 35 m when it meets nothing; shots leave the gun as over the shoulder.
+  Sliders for the turn and raise rates and the pitch range.
+- Up / down, changed again in testing (2026-10-07): moving the angle at a steady rate
+  was very sensitive, slow up close and fast far out (the landing distance is eye height
+  / tan(angle), so near level each degree moves it many meters). Now up / down moves the
+  landing distance along the floor at a steady speed (12 m/s at full stick, 2-40 m,
+  starting at 15 m) and the angle follows from it; in the orthographic view the aim
+  point moves across the screen at a steady speed too. The angle control stays as an
+  option ("up / down moves": distance / angle).
+- **Cursor aim** (added in testing, 2026-10-07, now the default): turning the aim from
+  the captain's forward works but means watching both him and the target to coordinate.
+  With the cursor, the right stick moves the crosshair across the screen (up the screen,
+  right on it, the same on-screen speed both ways: along the floor away from the camera
+  is sped up by 1 / sin(pitch)); what's under it (the line of sight from the camera
+  through it, against the turrets and the floor) is the target, and the captain faces
+  it. The cursor is a spot on the floor that stays put in the world (holds on a turret
+  while he walks), or travels with him (a checkbox); within 40 m of him and 1 m inside
+  the view's edges, so a cursor left behind is pushed along by the edge. The crosshair
+  and the ring on a turret show it always; the aim line while he aims (stick pushed or
+  RT held). The modes: cursor, twin_stick (turning), lt_aims.
+- Cursor, changed in testing: aiming again snapped the captain back to face the old
+  cursor spot. Now, while he isn't aiming, the cursor waits straight ahead of him at the
+  last aim's distance (turning and moving with him), so a new aim starts from his
+  current forward; while aiming it stays put in the world as before.
+- Cursor, fixed in testing: over a turret, letting go of the stick made the cursor jump
+  a little to the side (not over the floor). The captain faced the point where the line
+  of sight meets the turret's hit sphere, which sits nearer the camera and higher than
+  the cursor's spot on the floor, so from him it lies at a slightly different bearing;
+  letting go put the cursor straight ahead along that facing. Now he faces the cursor's
+  floor spot; shots still go to the point on the turret.
+- `ToonSoldier.number_key_actions` (off for the captain in the range).
+- The aim panel: the view (1 / 2), and in the isometric view the aim mode, projection,
+  size, pitch, heading, lens, follow rate, look ahead, switch time.
+- Noticed: LT from the isometric view is a long swoop (from about 47 m up down to the
+  shoulder) in 0.9 s; the aim camera's swing sliders set it.
+
 ## Phases
 
 Each phase ends with a CHANGELOG entry and a commit.
@@ -444,7 +501,7 @@ Each phase ends with a CHANGELOG entry and a commit.
 | G2 | Fear, scatter, regroup | ✅ 2026-10-04 |
 | H | Third-person aim: LT swings the camera over the right shoulder; aim, move, shoot; follow zone with lag; aim line, decal, crosshair; first person kept as an option | ✅ 2026-10-06 |
 | I | Friendly fire from the captain; the squad steps out of his line of fire, with late reactions and lapses (awareness, a future skill) | ✅ 2026-10-06 |
-| J | Isometric view (keys 1 / 2): orthographic follow camera at a fixed 45°, screen-relative movement; aiming twin-stick or over the shoulder, as an option | Next |
+| J | Isometric view (keys 1 / 2): orthographic follow camera at a fixed 45°, screen-relative movement; aiming by cursor, twin-stick, or over the shoulder, as an option | ✅ 2026-10-10 |
 
 ## Notes
 

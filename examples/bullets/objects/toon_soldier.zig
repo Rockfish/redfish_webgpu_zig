@@ -106,6 +106,9 @@ pub const ToonSoldier = struct {
     air_time: f32 = 0.0,
     /// False hides the model (first person: the camera is inside the head).
     visible: bool = true,
+    /// The number keys play test actions (punch, duck, wave, ...); off where the scene
+    /// uses them (the range's views).
+    number_key_actions: bool = true,
     state_machine: ToonStateMachine,
     current_weapon: Weapon = .ShortCannon,
 
@@ -342,7 +345,8 @@ pub const ToonSoldier = struct {
         };
 
         inline for (one_shot_keys) |entry| {
-            if (input.pressedOnce(entry.key)) {
+            const is_number_key = entry.key != .space;
+            if ((!is_number_key or self.number_key_actions) and input.pressedOnce(entry.key)) {
                 _ = self.state_machine.requestState(entry.anim);
             }
         }

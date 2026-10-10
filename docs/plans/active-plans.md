@@ -10,7 +10,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
   Phases A-I done: G (turrets fire back within detection ranges, mortar warning rings,
   hits on people; fear, scatter, regroup), H (third-person aim over the right shoulder,
   first person kept as an option), I (friendly fire, the squad stepping out of the line
-  of fire). Next: J (isometric view on key 2, twin-stick or over-the-shoulder aim).
+  of fire), J (isometric view on key 2; aiming by cursor, twin-stick, or over the
+  shoulder). Next step to be decided.
 
 ## ⏸️ Parked
 
