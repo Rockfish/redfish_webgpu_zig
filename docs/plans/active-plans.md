@@ -7,7 +7,7 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
   started 2026-10-04. Wind Waker-style captain (the toon Soldier), a squad of six that
   follows and focus-fires, a turret range in bullets (`-s range`), `src/core/gameplay/`.
-  Phases A-I done: G (turrets fire back within detection ranges, mortar warning rings,
+  Phases A-J done: G (turrets fire back within detection ranges, mortar warning rings,
   hits on people; fear, scatter, regroup), H (third-person aim over the right shoulder,
   first person kept as an option), I (friendly fire, the squad stepping out of the line
   of fire), J (isometric view on key 2; aiming by cursor, twin-stick, or over the
@@ -116,3 +116,9 @@ plan finished. Plan 009 finished with `core.ballistics` in the bullets example.
 travel B1, blend space). Reviewed Grok's notes on Link's control in The Wind Waker
 (`docs/reviews/2026-10-04-link-style-controller-review.md`) for a tower attack game;
 phases A-F built the same day under plan 012, then moved to plan 019 (012 parked).
+
+**2026-10-04 to 10-10**: Plan 019 (tower attack) split out of the Wind Waker review and
+made active; phases A-J done (G 10-04, H and I 10-06, J 10-10). `createCylinder` fixed
+(it halved its radius). Plan 020 (Zig 0.17) written and parked; backlog: shaders in Zig
+(SPIR-V). Deferred in 019: squad skill levels, animation polish (aim-only clip, weapon
+aim poses).
