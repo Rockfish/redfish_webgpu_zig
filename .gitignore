@@ -6,3 +6,6 @@ zig-pkg/
 imgui.ini
 model_report.md
 temp/
+
+# The Station docs and art: its own repo (Dev_Zig/the-station), symlinked here
+/the-station

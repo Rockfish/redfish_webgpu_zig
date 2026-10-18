@@ -91,6 +91,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "turrets", .exe_name = "turrets", .source = "examples/turrets/main.zig" },
         .{ .name = "level_01", .exe_name = "level_01", .source = "games/level_01/main.zig" },
         .{ .name = "angrybot", .exe_name = "angrybot", .source = "games/angrybot/main.zig" },
+        .{ .name = "the_station", .exe_name = "the_station", .source = "games/the_station/main.zig" },
     }) |app| {
         const exe = b.addExecutable(.{
             .name = app.exe_name,

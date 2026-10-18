@@ -440,6 +440,24 @@ pub const Mat4 = extern struct {
         } };
     }
 
+    /// Right-handed perspective projection of an off-center frustum, with WebGPU's 0..1
+    /// clip depth. `left`, `right`, `bottom`, `top` are the frustum's edges on the near
+    /// plane, in view space. An off-center frustum is a shifted lens: the view direction
+    /// stays put while the picture slides, so vertical lines stay vertical. A centered
+    /// frustum gives the same matrix as `perspectiveRhZo`.
+    pub fn frustumRhZo(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) Self {
+        const width_inv = 1.0 / (right - left);
+        const height_inv = 1.0 / (top - bottom);
+        const range_inv = 1.0 / (near - far);
+
+        return Mat4{ .data = .{
+            .{ 2.0 * near * width_inv, 0.0, 0.0, 0.0 },
+            .{ 0.0, 2.0 * near * height_inv, 0.0, 0.0 },
+            .{ (right + left) * width_inv, (top + bottom) * height_inv, far * range_inv, -1.0 },
+            .{ 0.0, 0.0, near * far * range_inv, 0.0 },
+        } };
+    }
+
     /// Right-handed orthographic projection with WebGPU's 0..1 clip depth. Same matrix as
     /// glam's `Mat4::orthographic_rh`.
     pub fn orthographicRhZo(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) Self {
@@ -550,6 +568,26 @@ test "perspectiveRhZo matches a hand-computed matrix" {
         Vec4.init(0.0, 0.0, -1.5, 0.0),
     );
     try expectMat4ApproxEq(expected, Mat4.perspectiveRhZo(std.math.pi / 2.0, 2.0, 1.0, 3.0));
+}
+
+test "frustumRhZo centered matches perspectiveRhZo" {
+    // fov 90° and aspect 2 at near 1: half height 1, half width 2
+    const centered = Mat4.frustumRhZo(-2.0, 2.0, -1.0, 1.0, 1.0, 3.0);
+    try expectMat4ApproxEq(Mat4.perspectiveRhZo(std.math.pi / 2.0, 2.0, 1.0, 3.0), centered);
+}
+
+test "frustumRhZo maps its near-plane edges to the clip edges" {
+    const near = 0.5;
+    const projection = Mat4.frustumRhZo(-0.2, 0.6, -0.1, 0.3, near, 10.0);
+
+    const bottom_left = projection.mulVec4(Vec4.init(-0.2, -0.1, -near, 1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), bottom_left.x / bottom_left.w, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), bottom_left.y / bottom_left.w, 1e-6);
+
+    // Twice as far, twice the size: the same edge
+    const top_right = projection.mulVec4(Vec4.init(1.2, 0.6, -2.0 * near, 1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), top_right.x / top_right.w, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), top_right.y / top_right.w, 1e-6);
 }
 
 test "orthographicRhZo matches a hand-computed matrix" {

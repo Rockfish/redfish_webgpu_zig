@@ -4,6 +4,12 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
+- **[021-the-station-room-01.md](021-the-station-room-01.md)**: started 2026-10-18. A new
+  point-and-click game in `games/the_station` (docs and art in `the-station/`): a robot in
+  a one-point cutaway room, ink and hatching shader, hotspots with stand points. Phase A
+  done (greybox Room 01, the shifted-lens cutaway camera at 6 m, the alarm). Next: phase B
+  (placeholder robot, walking and clicking).
+
 - **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
   started 2026-10-04. Wind Waker-style captain (the toon Soldier), a squad of six that
   follows and focus-fires, a turret range in bullets (`-s range`), `src/core/gameplay/`.
