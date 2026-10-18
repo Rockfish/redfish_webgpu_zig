@@ -1,8 +1,10 @@
 //! The Station: a point-and-click game about a maintenance robot on a space station.
 //! Design notes: `the-station/docs/game_notes/the_station_design.md`; plan 021.
 //!
-//! Phase A: Room 01 as a greybox, seen through its open front by the cutaway camera
-//! (`room_camera.zig`), with a panel to tune the camera and a pulsing red alarm.
+//! Room 01 as a greybox, seen through its open front by the cutaway camera
+//! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
+//! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm and
+//! opens the door. A panel tunes the camera, room, and alarm.
 //!
 //! Keys: 1 / 2 / 3 pick the view (shifted, aimed, orthographic), Space toggles the
 //! alarm, Escape quits.
@@ -15,6 +17,8 @@ const zgui = @import("zgui");
 
 const room_camera = @import("room_camera.zig");
 const room = @import("room.zig");
+const interaction = @import("interaction.zig");
+const Game = @import("game.zig").Game;
 
 const Arenas = core.Arenas;
 const Frame = core.Frame;
@@ -22,6 +26,8 @@ const GpuContext = core.GpuContext;
 const Input = core.Input;
 const Lines = core.shapes.Lines;
 const LineSegment = core.shapes.LineSegment;
+const Ray = core.Ray;
+const RenderContext = core.RenderContext;
 const SceneLights = core.SceneLights;
 const Shader = core.Shader;
 const Shape = core.shapes.Shape;
@@ -34,11 +40,12 @@ const vec3 = math.vec3;
 const CLEAR_COLOR = [4]f64{ 0.01, 0.01, 0.012, 1.0 };
 /// One line per meter across and along the floor.
 const GRID_LINES = @as(usize, @intFromFloat(room.WIDTH + room.DEPTH)) + 2;
+/// The floor grid plus one hover outline.
+const MAX_LINES = GRID_LINES + 12;
 
-/// Everything the panel changes besides the camera.
+/// Everything the panel changes besides the camera and the game.
 const Settings = struct {
-    show_grid: bool = true,
-    is_alarm_on: bool = true,
+    show_grid: bool = false,
     /// Alarm pulses per second.
     alarm_rate: f32 = 0.8,
     /// The alarm light's brightness at the top of a pulse.
@@ -80,13 +87,15 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         .topology = .line_list,
     });
     defer lines_shader.releaseGpuObjects();
-    var grid_lines = try Lines.init(context.alloc, lines_shader, 1.0, 0.35, GRID_LINES);
+    var lines = try Lines.init(context.alloc, lines_shader, 1.0, 0.6, MAX_LINES);
 
     const control_room = try Room.init(context, gpu);
     defer control_room.releaseGpuObjects();
 
     var camera: RoomCamera = .{};
     var settings: Settings = .{};
+    var game: Game = .{};
+    var was_mouse_down = false;
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
@@ -96,33 +105,42 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     while (!window.shouldClose()) {
         zglfw.pollEvents();
         input.update();
-        processKeys(input, window, &camera, &settings);
+        processKeys(input, window, &camera, &game);
 
         const time = input.total_time;
-        const alarm_level = if (settings.is_alarm_on) alarmPulse(time, settings.alarm_rate) else 0.0;
+        const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
+        const render_context = camera.renderContext(Room.framing(), aspect, time);
+
+        // A click is the frame the button goes down; isMouseDown is false over a panel
+        const is_mouse_down = input.isMouseDown(.left);
+        const clicked = is_mouse_down and !was_mouse_down;
+        was_mouse_down = is_mouse_down;
+        game.update(mouseRay(input, render_context), clicked, input.delta_time);
+
+        const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm_rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
 
-        const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
-        var uniforms = camera.renderContext(Room.framing(), aspect, time).frameUniforms();
-        uniforms.lights = roomLights(settings, alarm_level).uniforms();
+        var uniforms = render_context.frameUniforms();
+        uniforms.lights = roomLights(settings, game.is_alarm_on, alarm_level).uniforms();
         gpu.writeFrameUniforms(uniforms);
 
         frame.beginSurfacePass(CLEAR_COLOR);
-        control_room.draw(&frame, room_shader, alarm_level);
-        if (settings.show_grid) {
-            drawFloorGrid(&frame, &grid_lines);
-        }
+        control_room.draw(&frame, room_shader, alarm_level, game.door_open);
+        game.robot.draw(&frame, room_shader, &control_room);
+        drawLines(&frame, &lines, settings.show_grid, game.hovered);
 
         gui.newFrame();
-        drawPanel(&camera, &settings, aspect);
+        drawLabel("remark", game.remark(), .{ zgui.io.getDisplaySize()[0] / 2.0, 24.0 }, 0.5);
+        drawLabel("hovered", game.hoveredName(), .{ input.mouse_x + 18.0, input.mouse_y + 8.0 }, 0.0);
+        drawPanel(&camera, &settings, &game, aspect);
         gui.draw(frame);
 
         gpu.endFrame(frame);
     }
 }
 
-fn processKeys(input: *Input, window: *zglfw.Window, camera: *RoomCamera, settings: *Settings) void {
+fn processKeys(input: *Input, window: *zglfw.Window, camera: *RoomCamera, game: *Game) void {
     if (input.isDown(.escape)) {
         window.setShouldClose(true);
     }
@@ -136,8 +154,25 @@ fn processKeys(input: *Input, window: *zglfw.Window, camera: *RoomCamera, settin
         camera.view = .orthographic;
     }
     if (input.pressedOnce(.space)) {
-        settings.is_alarm_on = !settings.is_alarm_on;
+        game.is_alarm_on = !game.is_alarm_on;
     }
+}
+
+/// The ray under the mouse, or null while the mouse is over a panel. Mouse positions are
+/// in window units, not framebuffer pixels.
+fn mouseRay(input: *const Input, render_context: RenderContext) ?Ray {
+    if (input.gui_has_mouse) {
+        return null;
+    }
+    const ray = math.getWorldRayFromMouse(
+        input.window_width,
+        input.window_height,
+        &render_context.projection,
+        &render_context.view,
+        input.mouse_x,
+        input.mouse_y,
+    );
+    return .{ .origin = ray.origin, .direction = ray.direction };
 }
 
 /// 0..1, a smooth rise and fall `rate` times a second.
@@ -146,8 +181,8 @@ fn alarmPulse(time: f32, rate: f32) f32 {
 }
 
 /// Dim light from above the opening, and the alarm's red point light.
-fn roomLights(settings: Settings, alarm_level: f32) SceneLights {
-    const room_light = if (settings.is_alarm_on) settings.emergency_light else settings.room_light;
+fn roomLights(settings: Settings, is_alarm_on: bool, alarm_level: f32) SceneLights {
+    const room_light = if (is_alarm_on) settings.emergency_light else settings.room_light;
 
     var lights = SceneLights.init();
     lights.ambient = vec3(1.0, 1.0, 1.0).mulScalar(0.06 + 0.1 * room_light);
@@ -158,16 +193,35 @@ fn roomLights(settings: Settings, alarm_level: f32) SceneLights {
         .constant = 1.0,
         .linear = 0.35,
         .quadratic = 0.15,
-        .enabled = settings.is_alarm_on,
+        .enabled = is_alarm_on,
     });
     return lights;
 }
 
-/// A 1 m grid on the floor, to see the perspective by.
-fn drawFloorGrid(frame: *const Frame, lines: *Lines) void {
+/// The floor grid, if on, and an outline around the hotspot under the mouse.
+fn drawLines(frame: *const Frame, lines: *Lines, show_grid: bool, hovered: interaction.Target) void {
+    var segments: [MAX_LINES]LineSegment = undefined;
+    var count: usize = 0;
+    if (show_grid) {
+        count += floorGrid(segments[0..GRID_LINES]);
+    }
+    switch (hovered) {
+        .hotspot => |index| {
+            const outline = interaction.outline(room.hotspots[index].bounds);
+            @memcpy(segments[count..][0..outline.len], &outline);
+            count += outline.len;
+        },
+        .floor, .nothing => {},
+    }
+    if (count > 0) {
+        lines.draw(frame, segments[0..count]);
+    }
+}
+
+/// A 1 m grid on the floor, to see the perspective by. Returns the number of segments.
+fn floorGrid(segments: []LineSegment) usize {
     const half_width = room.WIDTH / 2.0;
     const y = 0.002;
-    var segments: [GRID_LINES]LineSegment = undefined;
     var count: usize = 0;
 
     var x = -half_width;
@@ -180,12 +234,39 @@ fn drawFloorGrid(frame: *const Frame, lines: *Lines) void {
         segments[count] = .{ .start = vec3(-half_width, y, z), .end = vec3(half_width, y, z), .color = .black };
         count += 1;
     }
-    lines.draw(frame, segments[0..count]);
+    return count;
 }
 
-fn drawPanel(camera: *RoomCamera, settings: *Settings, aspect: f32) void {
+/// A line of text in a small window that ignores the mouse, at `position` (window units);
+/// `pivot_x` 0.5 centers it there. Nothing for empty text. `id` names the ImGui window.
+fn drawLabel(id: [:0]const u8, text: []const u8, position: [2]f32, pivot_x: f32) void {
+    if (text.len == 0) {
+        return;
+    }
+    zgui.setNextWindowPos(.{ .x = position[0], .y = position[1], .pivot_x = pivot_x });
+    zgui.setNextWindowBgAlpha(.{ .alpha = 0.6 });
+    const flags = zgui.WindowFlags{
+        .no_title_bar = true,
+        .no_resize = true,
+        .no_move = true,
+        .no_mouse_inputs = true,
+        .no_nav_inputs = true,
+        .no_nav_focus = true,
+        .no_focus_on_appearing = true,
+        .always_auto_resize = true,
+        .no_saved_settings = true,
+    };
+    if (zgui.begin(id, .{ .flags = flags })) {
+        zgui.text("{s}", .{text});
+    }
+    zgui.end();
+}
+
+fn drawPanel(camera: *RoomCamera, settings: *Settings, game: *Game, aspect: f32) void {
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = 340, .h = 0, .cond = .first_use_ever });
+    // Collapsed at first: open it covers the door
+    zgui.setNextWindowCollapsed(.{ .collapsed = true, .cond = .first_use_ever });
     if (zgui.begin("room 01", .{})) {
         zgui.text("1 / 2 / 3: view   Space: alarm", .{});
 
@@ -204,9 +285,12 @@ fn drawPanel(camera: *RoomCamera, settings: *Settings, aspect: f32) void {
         zgui.separatorText("Room");
         _ = zgui.checkbox("floor grid", .{ .v = &settings.show_grid });
         _ = zgui.sliderFloat("room light", .{ .v = &settings.room_light, .min = 0.0, .max = 1.5 });
+        if (zgui.button("reset room", .{})) {
+            game.* = .{};
+        }
 
         zgui.separatorText("Alarm");
-        _ = zgui.checkbox("on", .{ .v = &settings.is_alarm_on });
+        _ = zgui.checkbox("on", .{ .v = &game.is_alarm_on });
         _ = zgui.sliderFloat("pulses per second", .{ .v = &settings.alarm_rate, .min = 0.2, .max = 3.0 });
         _ = zgui.sliderFloat("intensity", .{ .v = &settings.alarm_intensity, .min = 0.0, .max = 12.0 });
         _ = zgui.sliderFloat("emergency light", .{ .v = &settings.emergency_light, .min = 0.0, .max = 1.0 });

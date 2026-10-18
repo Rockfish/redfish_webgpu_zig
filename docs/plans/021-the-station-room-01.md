@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phase A done)
+## Status: Active (started 2026-10-18; phases A-B done)
 
 ## Context
 
@@ -72,10 +72,10 @@ a door that opens. Multi-floor views and further rooms are later plans.
 - [x] Grey palette and a pulsing red alarm light
 
 ### B. Walking and clicking (placeholder robot)
-- [ ] Placeholder robot (stacked boxes) with a facing direction
-- [ ] Click the floor: walk to the nearest point in the walk area
-- [ ] Hotspots: hover highlight; click walks to the stand point, turns, runs the action
-- [ ] Right-wall panel: the action stops the alarm and opens the door
+- [x] Placeholder robot (stacked boxes) with a facing direction
+- [x] Click the floor: walk to the nearest point in the walk area
+- [x] Hotspots: hover highlight; click walks to the stand point, turns, runs the action
+- [x] Right-wall panel: the action stops the alarm and opens the door
 
 ### C. Robot model (Blender)
 - [ ] Turnaround sheet of the robot from `best_robot_example.png`
@@ -111,3 +111,23 @@ a door that opens. Multi-floor views and further rooms are later plans.
 - 2026-10-18, phase A: the shell's faces at the opening (floor, ceiling, side walls) are
   drawn at 35% of their color, the cut through the station filled in solid as in a
   section drawing (`room.wgsl`, `draw.params.y`).
+- 2026-10-18, phase B, as built:
+  - `interaction.zig`: `Hotspot(Kind)` (name, bounds, stand point, facing yaw, action
+    `push` or `look`), `WalkArea` (one rectangle; clicks clamp into it), `pick` (nearest
+    hotspot the mouse ray hits, else the floor point), `outline` (hover box).
+  - `robot.zig`: the placeholder robot after the drawing (box head with two round eyes,
+    body, thin arms and legs, flat feet), rigid parts turned at hips and shoulders. Tasks:
+    `walk` (turns toward travel, 1.2 m/s, legs and arms swing), `turn` (to the hotspot's
+    facing), `act` (the gesture: push raises the right arm, 1 s; look pauses, 0.6 s). The
+    effect fires at a set time in the gesture (push: 0.45 s, hand at the button), the
+    smallest version of animation events. Clicks during a gesture are ignored, so a use
+    isn't cut off before its effect.
+  - `game.zig`: the room's state and each hotspot's effect. The red button stops the alarm
+    and opens the door (slides into the wall, 1.2 s); the door, buttons, lever, gauges,
+    screen, and breakers give remarks. The left wall is three pieces around the doorway,
+    with a dark recess beyond.
+  - On screen: the hovered hotspot's outline and its name next to the cursor; the robot's
+    remark at the top for 4 s. The panel starts collapsed (it covered the door), and has
+    "reset room"; the floor grid is off by default.
+  - Checked with temporary edits: each hotspot's center, projected to the screen and cast
+    back as a mouse ray, picks that hotspot; a scripted run (button, then door) on screen.

@@ -1,6 +1,6 @@
 # Plan 019 - Tower Attack: Captain and Squad
 
-## Status: Active (started 2026-10-04; phases A-J done)
+## Status: Parked 2026-10-18 (started 2026-10-04; phases A-J done)
 
 Grew out of [the Wind Waker review](../reviews/2026-10-04-link-style-controller-review.md)
 (Grok's notes on Link's control in The Wind Waker, reviewed against the engine), which
@@ -527,3 +527,8 @@ two scattered members standing together kept each other afraid and never fell be
 half their courage. Fixed: fear spreads only from a member running away (above walking
 speed), and only to members not scattering. Checked with a run where the turrets stop
 after 15 s: all six back to following by 30 s.
+
+**2026-10-18 (parked)**: parked for plan 021 (The Station). Where it stands: phases A-J
+done and committed (`da2aca8`, isometric view with cursor aiming); nothing half-finished.
+Next step: not decided; candidates are the deferred items under Decisions (lock-on, roll,
+squad skill levels, animation tuning).

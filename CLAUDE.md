@@ -43,9 +43,12 @@ the regression check. Since then:
   flinches), squad fear, scatter, and regroup, friendly fire with the squad stepping
   out of the captain's line of fire, an isometric view (key 2, cursor aiming); `src/core/gameplay/` (ballistics, fire
   control, explosions, projectiles, turrets, steering)
+- Plan 021 The Station: `games/the_station`, a point-and-click game (docs and art in
+  `the-station/`, its own repo, symlinked and gitignored); Room 01 greybox, cutaway
+  camera with a shifted lens (`Mat4.frustumRhZo`)
 
-Active plan: 019 tower attack (phases A-J done; next step to be decided). See
-`docs/plans/active-plans.md`.
+Active plan: 021 The Station, Room 01 (phase A done). Plan 019 tower attack is parked
+(phases A-J done). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

@@ -7,19 +7,16 @@ How these files work, including parking and resuming plans: [README.md](README.m
 - **[021-the-station-room-01.md](021-the-station-room-01.md)**: started 2026-10-18. A new
   point-and-click game in `games/the_station` (docs and art in `the-station/`): a robot in
   a one-point cutaway room, ink and hatching shader, hotspots with stand points. Phase A
-  done (greybox Room 01, the shifted-lens cutaway camera at 6 m, the alarm). Next: phase B
-  (placeholder robot, walking and clicking).
-
-- **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
-  started 2026-10-04. Wind Waker-style captain (the toon Soldier), a squad of six that
-  follows and focus-fires, a turret range in bullets (`-s range`), `src/core/gameplay/`.
-  Phases A-J done: G (turrets fire back within detection ranges, mortar warning rings,
-  hits on people; fear, scatter, regroup), H (third-person aim over the right shoulder,
-  first person kept as an option), I (friendly fire, the squad stepping out of the line
-  of fire), J (isometric view on key 2; aiming by cursor, twin-stick, or over the
-  shoulder). Next step to be decided.
+  done (greybox Room 01, the shifted-lens cutaway camera at 6 m, the alarm); phase B
+  done (placeholder robot, walking and clicking, the red button opens the door). Next:
+  phase D (ink and hatching shader), then C (Blender robot).
 
 ## ⏸️ Parked
+
+- **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
+  parked 2026-10-18 for plan 021, phases A-J done (captain, squad, turrets firing back,
+  fear, aim over the shoulder, friendly fire, isometric view), nothing half-finished.
+  Next if resumed: to be decided (lock-on, roll, squad skill levels, animation tuning).
 
 - **[020-zig-0.17-upgrade.md](020-zig-0.17-upgrade.md)**: written 2026-10-07, waiting
   for ZLS 0.17 and 0.17 versions of zglfw, zgui, zstbi, zaudio. The changes for us:
