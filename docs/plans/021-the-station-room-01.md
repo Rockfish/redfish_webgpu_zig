@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-B done)
+## Status: Active (started 2026-10-18; phases A-B done, D built)
 
 ## Context
 
@@ -85,9 +85,10 @@ a door that opens. Multi-floor views and further rooms are later plans.
 - [ ] Decide live 3D or sprites
 
 ### D. Ink shader
-- [ ] Outlines
-- [ ] Hatching from lighting
-- [ ] Tune on the room and robot together
+- [x] Outlines
+- [x] Hatching from lighting
+- [ ] Tune on the room and robot together (panel "Ink" section; defaults set from
+      screenshots, John to tune)
 
 ### E. Room art
 - [ ] Room modeled in Blender with detail (pipes, vents, panel faces), glTF
@@ -131,3 +132,26 @@ a door that opens. Multi-floor views and further rooms are later plans.
     "reset room"; the floor grid is off by default.
   - Checked with temporary edits: each hotspot's center, projected to the screen and cast
     back as a mouse ray, picks that hotspot; a scripted run (button, then door) on screen.
+- 2026-10-18, phase D, as built (`ink.zig`, `shaders/room.wgsl`, `shaders/ink_edges.wgsl`):
+  - **Outlines from a normal-depth pass.** The engine's passes have one color attachment,
+    so the scene is drawn twice: first into an `rgba16float` target (view-space normal,
+    distance in front of the camera) by room.wgsl with the `NORMAL_DEPTH` override, single
+    sample with the single-sample depth; then lit in the window pass. A full-screen quad
+    (the engine's square, doubled) reads the target with `textureLoad` and draws ink
+    where a neighbor `line width` pixels away differs: a depth jump over 4% is a
+    silhouette, a normal turn over about 45° a crease. Edges come from geometry, so
+    anything added is outlined without textures. The target is recreated on resize.
+    Defaults: 2 px, ink at 90%.
+  - **Hatching in room.wgsl.** Up to three layers of lines (diagonal, crossed, horizontal)
+    that start at tones 0.8, 0.5, 0.25 and thicken below them. Lines are laid out on the
+    face's plane in the part's own space (position minus its model origin), so they move
+    with a part instead of sliding across it; turning parts (the robot's legs) still
+    shift under them. Spacing 0.14 m (0.06 read as a texture, not strokes).
+  - **Tone comes from the light, not the surface color**: the first version hatched every
+    mid-grey wall even in full light. As in an ink drawing, hatching shows shading: a
+    lit floor stays clear, walls facing away from the light are cross-hatched. The
+    light's brightest channel, so red alarm light counts as light.
+  - **Cut faces** get one set of diagonal lines whatever their light, as a section
+    drawing's poché.
+  - Panel "Ink": outlines on/off, line width, depth and crease thresholds, ink opacity,
+    hatching on/off, strength, spacing, reset.

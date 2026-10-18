@@ -4,7 +4,8 @@
 //! Room 01 as a greybox, seen through its open front by the cutaway camera
 //! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
 //! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm and
-//! opens the door. A panel tunes the camera, room, and alarm.
+//! opens the door. Drawn in ink: hatching and outlines (`ink.zig`). A panel tunes the
+//! camera, the ink, the room, and the alarm.
 //!
 //! Keys: 1 / 2 / 3 pick the view (shifted, aimed, orthographic), Space toggles the
 //! alarm, Escape quits.
@@ -18,7 +19,9 @@ const zgui = @import("zgui");
 const room_camera = @import("room_camera.zig");
 const room = @import("room.zig");
 const interaction = @import("interaction.zig");
+const ink = @import("ink.zig");
 const Game = @import("game.zig").Game;
+const Robot = @import("robot.zig").Robot;
 
 const Arenas = core.Arenas;
 const Frame = core.Frame;
@@ -43,7 +46,20 @@ const GRID_LINES = @as(usize, @intFromFloat(room.WIDTH + room.DEPTH)) + 2;
 /// The floor grid plus one hover outline.
 const MAX_LINES = GRID_LINES + 12;
 
-/// Everything the panel changes besides the camera and the game.
+/// What a frame draws, in each of its passes.
+const Scene = struct {
+    room: *const Room,
+    robot: *const Robot,
+    alarm_glow: f32,
+    door_open: f32,
+
+    fn draw(self: Scene, frame: *const Frame, shader: *const Shader, hatching: room.Hatching) void {
+        self.room.draw(frame, shader, hatching, self.alarm_glow, self.door_open);
+        self.robot.draw(frame, shader, self.room, hatching);
+    }
+};
+
+/// Everything the panel changes besides the camera, the ink, and the game.
 const Settings = struct {
     show_grid: bool = false,
     /// Alarm pulses per second.
@@ -92,8 +108,12 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     const control_room = try Room.init(context, gpu);
     defer control_room.releaseGpuObjects();
 
+    var ink_pass = try ink.Ink.init(context, gpu);
+    defer ink_pass.releaseGpuObjects();
+
     var camera: RoomCamera = .{};
     var settings: Settings = .{};
+    var style: ink.Style = .{};
     var game: Game = .{};
     var was_mouse_down = false;
 
@@ -120,20 +140,29 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm_rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
+        try ink_pass.update(gpu);
 
         var uniforms = render_context.frameUniforms();
         uniforms.lights = roomLights(settings, game.is_alarm_on, alarm_level).uniforms();
         gpu.writeFrameUniforms(uniforms);
 
+        // The scene twice: its normals and depth for the outlines, then in color
+        const scene: Scene = .{ .room = &control_room, .robot = &game.robot, .alarm_glow = alarm_level, .door_open = game.door_open };
+        if (style.show_outlines) {
+            ink_pass.beginNormalDepthPass(&frame);
+            scene.draw(&frame, ink_pass.normal_depth_shader, style.hatching());
+            frame.endPass();
+        }
+
         frame.beginSurfacePass(CLEAR_COLOR);
-        control_room.draw(&frame, room_shader, alarm_level, game.door_open);
-        game.robot.draw(&frame, room_shader, &control_room);
+        scene.draw(&frame, room_shader, style.hatching());
+        ink_pass.drawOutlines(&frame, style);
         drawLines(&frame, &lines, settings.show_grid, game.hovered);
 
         gui.newFrame();
         drawLabel("remark", game.remark(), .{ zgui.io.getDisplaySize()[0] / 2.0, 24.0 }, 0.5);
         drawLabel("hovered", game.hoveredName(), .{ input.mouse_x + 18.0, input.mouse_y + 8.0 }, 0.0);
-        drawPanel(&camera, &settings, &game, aspect);
+        drawPanel(&camera, &settings, &style, &game, aspect);
         gui.draw(frame);
 
         gpu.endFrame(frame);
@@ -262,7 +291,7 @@ fn drawLabel(id: [:0]const u8, text: []const u8, position: [2]f32, pivot_x: f32)
     zgui.end();
 }
 
-fn drawPanel(camera: *RoomCamera, settings: *Settings, game: *Game, aspect: f32) void {
+fn drawPanel(camera: *RoomCamera, settings: *Settings, style: *ink.Style, game: *Game, aspect: f32) void {
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = 340, .h = 0, .cond = .first_use_ever });
     // Collapsed at first: open it covers the door
@@ -281,6 +310,19 @@ fn drawPanel(camera: *RoomCamera, settings: *Settings, game: *Game, aspect: f32)
         const framing = RoomCamera.fitToAspect(Room.framing(), aspect);
         zgui.text("vertical field of view: {d:.1}°", .{camera.verticalFov(framing)});
         zgui.text("horizontal field of view: {d:.1}°", .{horizontalFov(camera.verticalFov(framing), aspect)});
+
+        zgui.separatorText("Ink");
+        _ = zgui.checkbox("outlines", .{ .v = &style.show_outlines });
+        _ = zgui.sliderFloat("line width", .{ .v = &style.line_width, .min = 1.0, .max = 4.0 });
+        _ = zgui.sliderFloat("depth threshold", .{ .v = &style.depth_threshold, .min = 0.005, .max = 0.2 });
+        _ = zgui.sliderFloat("crease threshold", .{ .v = &style.normal_threshold, .min = 0.05, .max = 1.0 });
+        _ = zgui.sliderFloat("ink opacity", .{ .v = &style.ink_opacity, .min = 0.0, .max = 1.0 });
+        _ = zgui.checkbox("hatching", .{ .v = &style.show_hatching });
+        _ = zgui.sliderFloat("hatch strength", .{ .v = &style.hatch_strength, .min = 0.0, .max = 1.0 });
+        _ = zgui.sliderFloat("hatch spacing", .{ .v = &style.hatch_spacing, .min = 0.02, .max = 0.2 });
+        if (zgui.button("reset ink", .{})) {
+            style.* = .{};
+        }
 
         zgui.separatorText("Room");
         _ = zgui.checkbox("floor grid", .{ .v = &settings.show_grid });

@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-18 - The Station: ink outlines and hatching; plan 021 phase D
+- **games/the_station**: the ink look of the robot drawing (`ink.zig`). Outlines: the scene is drawn first into a normal-depth target (`room.wgsl` with `NORMAL_DEPTH`), then a full-screen pass (`shaders/ink_edges.wgsl`) draws ink where depth jumps (silhouettes) or normals turn (creases), so anything added to a room is outlined. Hatching in `room.wgsl`: up to three layers of lines by how lit a surface is (from the light, not its color), laid out in each part's own space so they move with it; cut faces get a section drawing's diagonal lines. Panel "Ink" section with every setting
+
 ### 2026-10-18 - The Station: walking and clicking; plan 021 phase B
 - **games/the_station**: point and click. Hotspots (`interaction.zig`: bounds, stand point, facing, push or look) for the door, the red button, two grey buttons, the lever, gauges, screen, and breaker box; the one under the mouse is outlined and named next to the cursor. Clicking the floor walks the placeholder robot (`robot.zig`, stacked boxes after the drawing, legs and arms swinging) to the nearest point in the walk area; clicking a hotspot walks it to the stand point, turns it, and plays the gesture (push raises the right arm), with the effect at the moment of the push. The red button stops the alarm and opens the door, which slides into the left wall (now built around a doorway); everything else gives a remark at the top of the screen (`game.zig`). Panel starts collapsed, "reset room" button, floor grid off by default
 - **docs/plans**: plan 019 (tower attack) parked; plan 021 active

@@ -129,7 +129,7 @@ pub const Robot = struct {
         }
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: *const room.Room) void {
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: *const room.Room, hatching: room.Hatching) void {
         const root = Mat4.fromTranslation(self.position).mulMat4(&Mat4.fromRotationY(self.yaw));
         const leg_angle = @sin(self.walk_phase) * LEG_SWING;
         const bob = @abs(@sin(self.walk_phase)) * 0.03;
@@ -152,7 +152,7 @@ pub const Robot = struct {
             .{ .shape = shapes.cube, .model = limb(root, vec3(-0.3, 1.0 + bob, 0.0), leg_angle * 0.6 - arm_raise * std.math.pi / 2.0, vec3(0.07, 0.45, 0.07)), .color = limbs },
         };
         for (parts) |robot_part| {
-            room.drawPart(frame, shader, robot_part);
+            room.drawPart(frame, shader, robot_part, hatching);
         }
     }
 

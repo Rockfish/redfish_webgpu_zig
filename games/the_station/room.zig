@@ -133,6 +133,14 @@ pub const hotspots = [_]Hotspot(HotspotKind){
     },
 };
 
+/// Ink hatching for a draw (`room.wgsl` params z and w); see `ink.Style`.
+pub const Hatching = struct {
+    /// 0..1; 0 is none.
+    strength: f32,
+    /// Meters between lines.
+    spacing: f32,
+};
+
 /// One box or cylinder, drawn with `room.wgsl`.
 pub const Part = struct {
     shape: *Shape,
@@ -192,19 +200,19 @@ pub const Room = struct {
 
     /// `alarm_glow` 0..1: how lit the lamp is (0 is a dark red lamp). `door_open` 0..1:
     /// how far the door has slid into the wall.
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, alarm_glow: f32, door_open: f32) void {
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, hatching: Hatching, alarm_glow: f32, door_open: f32) void {
         for (self.parts) |part| {
-            drawPart(frame, shader, part);
+            drawPart(frame, shader, part, hatching);
         }
 
         var lamp = self.alarm_lamp;
         lamp.emissive = alarm_glow;
-        drawPart(frame, shader, lamp);
+        drawPart(frame, shader, lamp, hatching);
 
         var door = self.door;
         const door_z = DOOR_CENTER_Z - DOOR_WIDTH * door_open;
         door.model = box(vec3(LEFT_WALL_X, DOOR_HEIGHT / 2.0, door_z), vec3(0.08, DOOR_HEIGHT, DOOR_WIDTH));
-        drawPart(frame, shader, door);
+        drawPart(frame, shader, door, hatching);
     }
 
     pub fn releaseGpuObjects(self: *const Self) void {
@@ -218,9 +226,9 @@ pub fn alarmLightColor(intensity: f32) Vec3 {
     return ALARM_RED.mulScalar(intensity);
 }
 
-pub fn drawPart(frame: *const Frame, shader: *const Shader, part: Part) void {
+pub fn drawPart(frame: *const Frame, shader: *const Shader, part: Part, hatching: Hatching) void {
     var uniforms = DrawUniforms.init(part.model, part.color);
-    uniforms.params = vec4(part.emissive, if (part.is_cut) 1.0 else 0.0, 0.0, 0.0);
+    uniforms.params = vec4(part.emissive, if (part.is_cut) 1.0 else 0.0, hatching.strength, hatching.spacing);
     part.shape.draw(frame, shader, uniforms);
 }
 
