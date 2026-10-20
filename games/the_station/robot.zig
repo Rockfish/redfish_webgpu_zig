@@ -64,41 +64,78 @@ pub const Use = struct {
     action: Action,
 };
 
+/// What the robot does when a walk ends.
+pub const Arrival = union(enum) {
+    stand,
+    use: Use,
+    /// Wait out of view beyond the doorway (`Task.outside`).
+    step_out,
+};
+
 pub const Task = union(enum) {
     idle,
-    /// Walking to `target`, then using a hotspot if `then` is set.
-    walk: struct { target: Vec3, then: ?Use },
+    /// Walking to `target`, through `via` first if set (the doorway, coming back in).
+    walk: struct { via: ?Vec3, target: Vec3, then: Arrival },
     /// Turning to face the hotspot.
     turn: Use,
     /// The gesture, `time` seconds in.
     act: struct { use: Use, time: f32 },
+    /// Out of the room through the doorway, out of view, until sent somewhere in the room.
+    outside,
 };
+
+/// A walk asked for during a gesture (`Robot.pending`).
+const PendingWalk = struct {
+    target: Vec3,
+    then: Arrival,
+};
+
+/// The way out of the room: a point just inside the doorway and one beyond it, out of view
+/// (in the dark recess behind the wall).
+pub const Doorway = struct {
+    inside: Vec3,
+    outside: Vec3,
+
+    /// How far `position` is past the inside point, toward the outside one, in meters.
+    fn distancePast(self: Doorway, position: Vec3) f32 {
+        const way_out = self.outside.sub(self.inside).toNormalized();
+        return position.sub(self.inside).dot(way_out);
+    }
+};
+
+/// Past the inside point by more than this, the robot is in the doorway or beyond: a walk
+/// into the room goes back through the inside point first.
+const IN_DOORWAY_DISTANCE: f32 = 0.15;
 
 pub const Robot = struct {
     position: Vec3,
+    doorway: Doorway,
     /// 0 faces +z (toward the camera).
     yaw: f32 = 0.0,
     task: Task = .idle,
     /// Walk cycle phase, radians; legs swing with its sine.
     walk_phase: f32 = 0.0,
+    /// The last walk asked for during a gesture, started when the gesture ends.
+    pending: ?PendingWalk = null,
 
     const Self = @This();
 
-    /// Walk to a floor point. Ignored during a gesture, so a use isn't cut off before its
-    /// effect.
+    /// Walk to a floor point. During a gesture, after it, so a use isn't cut off before
+    /// its effect.
     pub fn walkTo(self: *Self, target: Vec3) void {
-        if (self.isActing()) {
-            return;
-        }
-        self.task = .{ .walk = .{ .target = target, .then = null } };
+        self.startWalk(target, .stand);
     }
 
-    /// Walk to `stand_point`, turn, and use the hotspot. Ignored during a gesture.
+    /// Walk to `stand_point`, turn, and use the hotspot. During a gesture, after it.
     pub fn useAt(self: *Self, stand_point: Vec3, use: Use) void {
-        if (self.isActing()) {
-            return;
-        }
-        self.task = .{ .walk = .{ .target = stand_point, .then = use } };
+        self.startWalk(stand_point, .{ .use = use });
+    }
+
+    /// Walk out through the doorway and wait out of view. Called from a hotspot's effect,
+    /// so it ends the gesture that triggered it.
+    pub fn leave(self: *Self) void {
+        self.pending = null;
+        self.task = .{ .walk = .{ .via = null, .target = self.doorway.outside, .then = .step_out } };
     }
 
     pub fn isActing(self: *const Self) bool {
@@ -108,12 +145,12 @@ pub const Robot = struct {
     /// Advances the task. Returns the hotspot whose effect happens this frame, if any.
     pub fn update(self: *Self, dt: f32) ?usize {
         switch (self.task) {
-            .idle => {
+            .idle, .outside => {
                 self.walk_phase = 0.0;
                 return null;
             },
             .walk => |walk| {
-                self.updateWalk(walk.target, walk.then, dt);
+                self.updateWalk(walk.via, walk.target, walk.then, dt);
                 return null;
             },
             .turn => |use| {
@@ -156,21 +193,45 @@ pub const Robot = struct {
         }
     }
 
-    /// Steps toward `target`, turning to face the way it goes; on arrival turns to the
-    /// hotspot, or stands.
-    fn updateWalk(self: *Self, target: Vec3, then: ?Use, dt: f32) void {
-        const to_target = target.sub(self.position);
-        if (to_target.length() > 0.01) {
-            const travel_yaw = std.math.atan2(to_target.x, to_target.z);
+    /// A walk to `target` that ends in `then`. From the doorway or beyond, it goes back
+    /// through the inside point first, instead of through the wall. During a gesture it
+    /// waits in `pending` (the last one asked for wins).
+    fn startWalk(self: *Self, target: Vec3, then: Arrival) void {
+        if (self.isActing()) {
+            self.pending = .{ .target = target, .then = then };
+            return;
+        }
+        const is_in_doorway = self.doorway.distancePast(self.position) > IN_DOORWAY_DISTANCE;
+        const via: ?Vec3 = if (is_in_doorway) self.doorway.inside else null;
+        self.task = .{ .walk = .{ .via = via, .target = target, .then = then } };
+    }
+
+    /// Steps toward `via`, then `target`, turning to face the way it goes; on arrival does
+    /// what `then` says.
+    fn updateWalk(self: *Self, via: ?Vec3, target: Vec3, then: Arrival, dt: f32) void {
+        const goal = via orelse target;
+        const to_goal = goal.sub(self.position);
+        if (to_goal.length() > 0.01) {
+            const travel_yaw = std.math.atan2(to_goal.x, to_goal.z);
             self.yaw = motion.dampAngle(self.yaw, travel_yaw, WALK_TURN_RATE, dt);
         }
-        self.position = motion.moveToward(self.position, target, WALK_SPEED, dt);
+        self.position = motion.moveToward(self.position, goal, WALK_SPEED, dt);
         self.walk_phase += STEP_RATE * std.math.pi * dt;
 
-        if (self.position.x == target.x and self.position.z == target.z) {
-            self.walk_phase = 0.0;
-            self.task = if (then) |use| .{ .turn = use } else .idle;
+        const has_arrived = self.position.x == goal.x and self.position.z == goal.z;
+        if (!has_arrived) {
+            return;
         }
+        if (via != null) {
+            self.task = .{ .walk = .{ .via = null, .target = target, .then = then } };
+            return;
+        }
+        self.walk_phase = 0.0;
+        self.task = switch (then) {
+            .stand => .idle,
+            .use => |use| .{ .turn = use },
+            .step_out => .outside,
+        };
     }
 
     /// Runs the gesture; returns the hotspot when the gesture passes its effect time.
@@ -179,6 +240,10 @@ pub const Robot = struct {
         const next_time = time + dt;
         if (next_time >= gesture.duration) {
             self.task = .idle;
+            if (self.pending) |pending| {
+                self.pending = null;
+                self.startWalk(pending.target, pending.then);
+            }
         } else {
             self.task = .{ .act = .{ .use = use, .time = next_time } };
         }
@@ -189,7 +254,7 @@ pub const Robot = struct {
     fn armRaise(self: *const Self) f32 {
         return switch (self.task) {
             .act => |act| gestureFor(act.use.action).armRaise(act.time),
-            .idle, .walk, .turn => 0.0,
+            .idle, .walk, .turn, .outside => 0.0,
         };
     }
 };

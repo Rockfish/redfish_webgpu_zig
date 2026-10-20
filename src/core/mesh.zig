@@ -96,6 +96,7 @@ pub const Mesh = struct {
     /// The one draw path `Model`, `ModelInstance`, and `BakedAnimator` share. Unskinned
     /// primitives draw at `model_transform * node_matrix`; skinned ones (with `skin`) at
     /// `model_transform` with their joints, as glTF says the node transform doesn't apply.
+    /// `params` goes to `DrawUniforms.params` (shader-specific; zero for PBR).
     pub fn drawAt(
         self: *const Self,
         frame: *const Frame,
@@ -103,12 +104,14 @@ pub const Mesh = struct {
         model_transform: Mat4,
         node_matrix: Mat4,
         skin: ?SkinBinding,
+        params: math.Vec4,
     ) void {
         if (!self.is_visible) {
             return;
         }
         const white = math.vec4(1.0, 1.0, 1.0, 1.0);
-        const unskinned = DrawUniforms.init(model_transform.mulMat4(&node_matrix), white);
+        var unskinned = DrawUniforms.init(model_transform.mulMat4(&node_matrix), white);
+        unskinned.params = params;
         const default_object = frame.gpu.bindings.object_bind_group;
 
         for (self.primitives.list.items) |primitive| {
@@ -116,6 +119,7 @@ pub const Mesh = struct {
                 if (skin) |binding| {
                     var skinned = DrawUniforms.init(model_transform, white);
                     skinned.joint_offset = binding.joint_offset;
+                    skinned.params = params;
                     skinned.flags |= bindings.DrawFlags.skinned;
                     primitive.draw(frame, shader, skinned, binding.object_bind_group);
                     continue;

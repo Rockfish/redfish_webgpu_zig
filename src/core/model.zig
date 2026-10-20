@@ -23,6 +23,9 @@ const animation = @import("animator.zig");
 const Allocator = std.mem.Allocator;
 const ManagedArrayList = containers.ManagedArrayList;
 
+/// PBR draws take no shader-specific params (`Mesh.drawAt`).
+const NO_PARAMS = vec4(0.0, 0.0, 0.0, 0.0);
+
 pub const Model = struct {
     alloc: Allocator,
     name: []const u8,
@@ -112,7 +115,7 @@ pub const Model = struct {
         if (node.mesh) |mesh_index| {
             const transform = self.animator.nodes[node_index].calculated_transform.?;
             const mesh: *Mesh = self.gltf_asset.meshes[mesh_index];
-            mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin);
+            mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin, NO_PARAMS);
         }
 
         if (node.children) |children| {

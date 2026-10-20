@@ -139,7 +139,8 @@ pub const BakedAnimator = struct {
     /// Draws each mesh at its baked node matrix; skinned primitives read this frame's
     /// joints from the storage buffer. Replaces the `frameId` / `numMeshes` /
     /// `animationOffset` uniforms of redfish's pbr_anim_baked.vert.
-    pub fn draw(self: *Self, model: *ModelInstance, frame: *const Frame, shader: *const Shader, model_transform: Mat4) void {
+    /// `params` goes to each draw's `DrawUniforms.params` (see `Mesh.drawAt`).
+    pub fn draw(self: *Self, model: *ModelInstance, frame: *const Frame, shader: *const Shader, model_transform: Mat4, params: math.Vec4) void {
         const header = self.headers[self.anim_id];
         const row_start = header.animation_offset + self.current_frame * (header.num_meshes + header.num_joints);
         const skin: SkinBinding = .{
@@ -149,7 +150,7 @@ pub const BakedAnimator = struct {
 
         for (0..header.num_meshes) |index| {
             const mesh = model.gltf_asset.meshes[index];
-            mesh.drawAt(frame, shader, model_transform, self.data[row_start + index], skin);
+            mesh.drawAt(frame, shader, model_transform, self.data[row_start + index], skin, params);
         }
     }
 

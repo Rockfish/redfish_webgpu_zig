@@ -119,7 +119,8 @@ docs/
 
 ## Build
 
-Zig 0.16.0 (`~/zig/zig-aarch64-macos-0.16.0`). `zig build <app>` and `zig build <app>-run`,
+Zig 0.16.0 (`~/zig/zig-aarch64-macos-0.16.0`; the `zig` on PATH is 0.17 since 2026-10-20, which
+the build doesn't support until plan 020: call the 0.16 binary). `zig build <app>` and `zig build <app>-run`,
 as in redfish_gl_zig (e.g. `zig build gpu_caps-run`). wgpu-native is listed for macOS arm64
 only; add a lazy package per platform in `build.zig.zon` and `wgpuNativeDependency`.
 

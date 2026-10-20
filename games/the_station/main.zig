@@ -4,8 +4,9 @@
 //! Room 01 as a greybox, seen through its open front by the cutaway camera
 //! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
 //! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm and
-//! opens the door. Drawn in ink: hatching and outlines (`ink.zig`). A panel tunes the
-//! camera, the ink, the room, and the alarm.
+//! opens the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
+//! Blender model (`robot_model.zig`), or the box placeholder without it. A panel tunes
+//! the camera, the ink, the room, and the alarm.
 //!
 //! Keys: 1 / 2 / 3 pick the view (shifted, aimed, orthographic), Space toggles the
 //! alarm, Escape quits.
@@ -22,6 +23,7 @@ const interaction = @import("interaction.zig");
 const ink = @import("ink.zig");
 const Game = @import("game.zig").Game;
 const Robot = @import("robot.zig").Robot;
+const RobotModel = @import("robot_model.zig").RobotModel;
 
 const Arenas = core.Arenas;
 const Frame = core.Frame;
@@ -50,18 +52,26 @@ const MAX_LINES = GRID_LINES + 12;
 const Scene = struct {
     room: *const Room,
     robot: *const Robot,
+    /// Null: the box placeholder.
+    robot_model: ?*const RobotModel,
     alarm_glow: f32,
     door_open: f32,
 
-    fn draw(self: Scene, frame: *const Frame, shader: *const Shader, hatching: room.Hatching) void {
-        self.room.draw(frame, shader, hatching, self.alarm_glow, self.door_open);
-        self.robot.draw(frame, shader, self.room, hatching);
+    fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room.Hatching) void {
+        self.room.draw(frame, shaders.room, hatching, self.alarm_glow, self.door_open);
+        if (self.robot_model) |model| {
+            model.draw(frame, shaders.robot, self.robot, hatching);
+        } else {
+            self.robot.draw(frame, shaders.room, self.room, hatching);
+        }
     }
 };
 
 /// Everything the panel changes besides the camera, the ink, and the game.
 const Settings = struct {
     show_grid: bool = false,
+    /// Draw the box robot even when the Blender model is loaded.
+    use_placeholder: bool = false,
     /// Alarm pulses per second.
     alarm_rate: f32 = 0.8,
     /// The alarm light's brightness at the top of a pulse.
@@ -93,10 +103,8 @@ pub fn main(init: std.process.Init) !void {
 
 /// `allocator` is for ImGui, which frees in any order (an arena wouldn't reclaim it).
 fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Window, gpu: *GpuContext) !void {
-    const room_shader = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/room.wgsl", .{
-        .vertex_buffers = &Shape.vertex_buffer_layouts,
-    });
-    defer room_shader.releaseGpuObjects();
+    const scene_shaders = try ink.SceneShaders.init(context, gpu, false);
+    defer scene_shaders.releaseGpuObjects();
 
     const lines_shader = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/lines.wgsl", .{
         .vertex_buffers = &Lines.vertex_buffer_layouts,
@@ -111,11 +119,15 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     var ink_pass = try ink.Ink.init(context, gpu);
     defer ink_pass.releaseGpuObjects();
 
+    var robot_model = RobotModel.load(context, gpu);
+    defer if (robot_model) |*model| {
+        model.cleanUp();
+    };
+
     var camera: RoomCamera = .{};
     var settings: Settings = .{};
     var style: ink.Style = .{};
     var game: Game = .{};
-    var was_mouse_down = false;
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
@@ -131,11 +143,11 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
         const render_context = camera.renderContext(Room.framing(), aspect, time);
 
-        // A click is the frame the button goes down; isMouseDown is false over a panel
-        const is_mouse_down = input.isMouseDown(.left);
-        const clicked = is_mouse_down and !was_mouse_down;
-        was_mouse_down = is_mouse_down;
-        game.update(mouseRay(input, render_context), clicked, input.delta_time);
+        // A press counts even if released before the frame (a trackpad tap); none over a panel
+        game.update(mouseRay(input, render_context), input.mousePressed(.left), input.delta_time);
+        if (robot_model) |*model| {
+            try model.update(&game.robot, input.delta_time);
+        }
 
         const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm_rate) else 0.0;
 
@@ -147,15 +159,21 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         gpu.writeFrameUniforms(uniforms);
 
         // The scene twice: its normals and depth for the outlines, then in color
-        const scene: Scene = .{ .room = &control_room, .robot = &game.robot, .alarm_glow = alarm_level, .door_open = game.door_open };
+        const scene: Scene = .{
+            .room = &control_room,
+            .robot = &game.robot,
+            .robot_model = if (settings.use_placeholder) null else if (robot_model) |*model| model else null,
+            .alarm_glow = alarm_level,
+            .door_open = game.door_open,
+        };
         if (style.show_outlines) {
             ink_pass.beginNormalDepthPass(&frame);
-            scene.draw(&frame, ink_pass.normal_depth_shader, style.hatching());
+            scene.draw(&frame, ink_pass.normal_depth_shaders, style.hatching());
             frame.endPass();
         }
 
         frame.beginSurfacePass(CLEAR_COLOR);
-        scene.draw(&frame, room_shader, style.hatching());
+        scene.draw(&frame, scene_shaders, style.hatching());
         ink_pass.drawOutlines(&frame, style);
         drawLines(&frame, &lines, settings.show_grid, game.hovered);
 
@@ -326,6 +344,7 @@ fn drawPanel(camera: *RoomCamera, settings: *Settings, style: *ink.Style, game: 
 
         zgui.separatorText("Room");
         _ = zgui.checkbox("floor grid", .{ .v = &settings.show_grid });
+        _ = zgui.checkbox("placeholder robot", .{ .v = &settings.use_placeholder });
         _ = zgui.sliderFloat("room light", .{ .v = &settings.room_light, .min = 0.0, .max = 1.5 });
         if (zgui.button("reset room", .{})) {
             game.* = .{};

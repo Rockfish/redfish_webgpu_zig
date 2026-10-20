@@ -2,6 +2,13 @@
 
 ## Recent Changes
 
+### 2026-10-20 - The Station: the robot from Blender; plan 021 phase C
+- **core.Input**: `mousePressed(button)`, true on the frame a press arrived even if it was released before the frame (a trackpad tap; `isMouseDown` misses it); test
+- **core.Shader**: `ShaderConfig.includes`, WGSL files placed after common.wgsl and before the shader's own (an app's shared shader code); compile errors give the line offset with them
+- **core.Mesh / ModelInstance / BakedAnimator**: `Mesh.drawAt` takes `params` for `DrawUniforms.params`; `ModelInstance.drawWithParams` (`draw` passes zero, as before)
+- **games/the_station**: the robot is the Blender model (`robot_model.zig`, `the-station/models/robot/robot.glb`), animated through the state machine (looks around at the start, idle, walk, push with the hand at the button when the effect fires) and drawn in ink (`shaders/robot.wgsl`; lighting and hatching shared with room.wgsl in `shaders/ink_common.wgsl`); the box placeholder draws without the model, or with the panel's "placeholder robot"; clicking the open door walks the robot out through the doorway, out of view in the dark beyond, and any click in the room brings it back in through the doorway; clicks use `mousePressed`, a click during a gesture runs when the gesture ends (it was ignored), and the robot's hatching is laid out in its parts' own coordinates (it shifted and flickered as they moved); outlines compare every pixel within the line's radius with soft thresholds (small parts showed dotted, shimmering lines); the robot's bevels are smooth-shaded and its seam is a dark stripe on the torso's surface instead of a band (flat 30° bevel facets made outline dashes come and go; the band's ledge, under a pixel tall, caught the alarm light in some frames and not others)
+- **the-station** (its own repo): `blender/build_robot.py` builds the robot from primitives (rigid parts on empties, five clips) headless or in an open Blender (`blender/send_to_blender.py`, through the MCP add-on's bridge)
+
 ### 2026-10-18 - The Station: ink outlines and hatching; plan 021 phase D
 - **games/the_station**: the ink look of the robot drawing (`ink.zig`). Outlines: the scene is drawn first into a normal-depth target (`room.wgsl` with `NORMAL_DEPTH`), then a full-screen pass (`shaders/ink_edges.wgsl`) draws ink where depth jumps (silhouettes) or normals turn (creases), so anything added to a room is outlined. Hatching in `room.wgsl`: up to three layers of lines by how lit a surface is (from the light, not its color), laid out in each part's own space so they move with it; cut faces get a section drawing's diagonal lines. Panel "Ink" section with every setting
 

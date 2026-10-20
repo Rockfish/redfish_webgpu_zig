@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-B done, D built)
+## Status: Active (started 2026-10-18; phases A-D done)
 
 ## Context
 
@@ -78,11 +78,14 @@ a door that opens. Multi-floor views and further rooms are later plans.
 - [x] Right-wall panel: the action stops the alarm and opens the door
 
 ### C. Robot model (Blender)
-- [ ] Turnaround sheet of the robot from `best_robot_example.png`
-- [ ] Model from primitives with Blender MCP; rigid part hierarchy; glTF export
-- [ ] Clips: idle, walk, turn, push button, look around, startle
-- [ ] In the room, live; the push fires the effect on its frame
-- [ ] Decide live 3D or sprites
+- [-] Turnaround sheet of the robot from `best_robot_example.png` (skipped: modeled from
+      the drawing directly; one view was enough for a rigid robot)
+- [x] Model from primitives; rigid part hierarchy; glTF export
+      (`the-station/blender/build_robot.py`, headless, or in an open Blender through
+      the MCP bridge with `send_to_blender.py`)
+- [x] Clips: idle, walk, push button, look around, startle (turning uses walk)
+- [x] In the room, live; the push fires the effect on its frame
+- [x] Decide live 3D or sprites: live 3D, with the ink shader
 
 ### D. Ink shader
 - [x] Outlines
@@ -155,3 +158,114 @@ a door that opens. Multi-floor views and further rooms are later plans.
     drawing's poché.
   - Panel "Ink": outlines on/off, line width, depth and crease thresholds, ink opacity,
     hatching on/off, strength, spacing, reset.
+- 2026-10-20, phase C, as built:
+  - **Driving Blender** (John: both routes). `the-station/blender/build_robot.py` builds
+    the robot from primitives (bmesh boxes with bevels, cylinders, spheres) and writes
+    `models/robot/robot.blend` and `robot.glb`; run headless with `--preview DIR` for
+    front, three-quarter, side, push-contact, and walk renders. The installed add-on is
+    Blender Lab's official MCP (Blender 5.2, extension `mcp`): a bridge in Blender on
+    localhost:9876 that runs Python sent as null-terminated JSON. Claude Code has no MCP
+    server registered for it; `send_to_blender.py` talks to the bridge directly, so the
+    same script rebuilds the robot in an open Blender. Tried 2026-10-20: about 3 s, the
+    same .glb as headless. The add-on's server autostarts when Blender launches, and only
+    if "Allow Online Access" is on then; turned on later, the server needs a restart of
+    Blender or the add-on's "Start MCP Bridge Server" button.
+  - **Rigid parts, no armature.** Joints are empties (hips, knees, body, neck, shoulders,
+    elbows) with mesh parts parented to them; the engine poses unskinned nodes already
+    (`Mesh.drawAt` folds the node matrix into the draw). The robot faces -Y in Blender,
+    +Z in glTF (the engine robot's forward). 1.35 m to the top of the head.
+  - **Clips** (24 fps): idle 2 s, walk 1 s (one stride, matching 1.2 m/s), push 1 s
+    (hand at the button at frame 11, 0.46 s; the gesture's effect fires at 0.45 s),
+    look_around 3 s (the opening, as if woken by the alarm), startle 0.75 s (not used
+    yet). One action per joint per clip on NLA tracks named after the clip; the
+    exporter merges same-named tracks (`NLA_TRACKS`) into one animation per clip.
+  - **Every clip keys every animated joint** (`hold_rest`), at rest where it doesn't move
+    it: the engine leaves a joint the playing clip doesn't animate where the last clip
+    put it, and the robot stood mid-stride after walking to the console. The exporter's
+    size optimizer drops constant channels, so `export_optimize_animation_keep_anim_object`
+    is on.
+  - **In the game** (`robot_model.zig`): a `ModelInstance` with a live animator and the
+    animation state machine; the task picks the clip (idle, walk also while turning,
+    push; look uses idle), crossfades 0.2 s (push 0.1 s, not interruptible). Loaded from
+    `the-station/models/robot/robot.glb`; without it (no the-station checkout) the box
+    placeholder draws, and the panel's "placeholder robot" switches to it.
+  - **Ink on the model**: robot.wgsl, a `.pbr` shader (mesh draws bind their glTF material
+    at group 1), using the material's base color and emissive (the eye lenses). Shared
+    with room.wgsl through `ink_common.wgsl`.
+  - **Engine changes**: `ShaderConfig.includes` (WGSL files placed after common.wgsl, for
+    an app's shared shader code; error line offsets include them); `Mesh.drawAt` takes
+    `params`, and `ModelInstance.drawWithParams` passes them to `DrawUniforms.params`
+    (`draw` passes zero; `Model` and `BakedAnimator` too).
+  - Zig: the `zig` on PATH is 0.17 since 2026-10-20; the engine builds with 0.16
+    (`~/zig/zig-aarch64-macos-0.16.0/zig`) until plan 020.
+- 2026-10-20, leaving the room (John): clicking the open door sends the robot to the
+  door's stand point; it looks, then walks out through the doorway to a point inside the
+  dark recess beyond the wall (`room.doorway.outside`), which hides it, and waits there
+  (`Task.outside`, idle clip). Any click in the room (floor or hotspot) brings it back:
+  a walk from the doorway or beyond goes through the inside point first (`Task.walk.via`),
+  so it never cuts through the wall. A walk ends in `Arrival` (stand, use, step out).
+- 2026-10-20, from testing (John): clicks on the back-wall panels sometimes need a second
+  click, and the robot's hatching flickers and shifts, most visibly in idle. Causes:
+  1. **Short clicks are lost.** `core.Input` keeps only whether a button is down
+     (`mouseHandler` sets `mouse_left_button`); the game sees a click when it's down this
+     frame and wasn't last frame. A press and release that both arrive between two frames
+     (a trackpad tap) leave it up both times, so there's no click. Fix: `Input` latches
+     each press in the callback and reports it once (`mousePressedOnce`), as `pressedOnce`
+     does for keys.
+  2. **Clicks during a gesture are ignored** (`Robot.startWalk` returns while acting):
+     look is 0.6 s, push 1 s. At the back wall the next panel is often clicked while the
+     robot still looks at the last one. Fix: keep the last click made during a gesture
+     and carry it out when the gesture ends.
+  3. **Hatching in world axes.** `ink_common.inked` lays the lines on the world-axis
+     plane a surface mostly faces, relative to the part's origin. When a part turns (idle:
+     neck 3-4°, shoulders 2-3°) its surfaces turn under lines that stay in world axes, so
+     the lines shift; on cylinders and bevels the plane choice flips where the normal
+     crosses 45°, so bands flicker. Fix: the robot hatches in its parts' own coordinates
+     (the mesh's vertex positions and normals, in meters), which turn with the parts. The
+     room's parts don't move, and their models are scaled unit shapes, so they keep world
+     axes.
+  Fixed the same day (John: all three now): `Input.mousePressed` (presses latched in
+  the callback, handed to the frame by `update`; test), used for the game's clicks;
+  `Robot.pending` keeps the last walk asked for during a gesture and starts it when the
+  gesture ends (checked: the screen asked for during the look at the gauges, used 2.4 s
+  later); robot.wgsl hatches in the mesh's own positions and normals (checked: the lines
+  hold still on the robot in idle; their thickness still follows the alarm's pulse, as
+  shading should).
+- 2026-10-20, from testing (John, `temp/shader_gliches`): specks still showed at the
+  robot's neck and waist. Captures with each effect off placed them in the outline pass,
+  not the hatching. The edge test compared each pixel with four pixels exactly
+  `line width` (2) away, all or nothing; the robot is about 200 px tall, so the collar,
+  the chest port's rim, and bevels are 2-4 px wide, and the 2 px steps sometimes went
+  over them: dotted lines, switching on and off as idle moved the parts by fractions of
+  a pixel. Fixed in ink_edges.wgsl: every pixel within the radius is compared
+  (diagonals and nearest included), both thresholds are soft (`smoothstep` over the
+  threshold to 1.5 times it), and pixels at the radius's rim count partly. Checked: the
+  rim is a solid ring, the specks are gone, and the lines hold still in idle.
+- 2026-10-20, from testing (John, second set of screenshots): dashes still came and
+  went along the torso's top edge, ticks at the band's ends, a dot at a heel. All on
+  features under a few pixels (about 6.5 mm per pixel at the console): the bevels (the
+  torso's 3.5 cm, about 5 px) were three flat facets 30° apart, so whether the edge test
+  spanned one facet boundary (30°, no line) or two (60°, a line) depended on where the
+  pixels fell; and the band stood only 5 mm proud, under a pixel, with small square-ish
+  corners leaving slivers. Fixed in the model (`build_robot.py`): bevel faces are
+  smooth-shaded (the six sides stay flat), so the normal turns evenly across a bevel;
+  the band stands 1.5 cm proud with its bevel following the torso's corners, in the
+  body's grey, so its two outlined edges draw the seam as in the drawing. Checked over
+  idle frames: no dashes or ticks; the bevelled edges inside a part are now shading,
+  not lines (the parts' silhouettes are still outlined).
+- 2026-10-20, from testing (John): the band lit up red with the alarm while facing away
+  from it. The band's bevel (5 cm, to follow the torso's corners) was larger than half
+  its 3 cm height, so the bevel folded the surface over itself: the band measured 7 cm
+  tall, and the folded faces seen from the front pointed back toward the light. Fixed in
+  `build_robot.py`: `box` can round only the vertical edges (`vertical_bevel_only`, used
+  for the band: 3 cm, 18 faces, none facing inward), and every bevel clamps overlaps.
+  Checked in the alarm: the band lights as the torso around it does.
+- 2026-10-20, from testing (John): the belt flickered in idle. A fast capture (every
+  0.08 s) showed a thin red line along its top in some frames and not others: the top of
+  the 1.5 cm ledge faces up toward the alarm light, and seen from the camera's eye
+  height (about 10° above it) it is 0.4 px tall, so as the body bobs 8 mm it covers a
+  pixel or doesn't. Any ledge that small does this. Fixed in `build_robot.py`: no band;
+  the seam is a dark stripe on the torso's own surface (`box(..., stripe=...)` cuts the
+  mesh and gives the faces between a second material), 1.2 cm, about 2 px. Nothing
+  stands out, so nothing catches light or outlines. Checked over 12 frames: the seam
+  holds still. `vertical_bevel_only` went with the band.

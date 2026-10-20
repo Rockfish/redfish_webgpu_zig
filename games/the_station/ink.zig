@@ -9,8 +9,10 @@
 //!   that target differ: silhouettes (depth jumps) and creases (normal turns). Edges come
 //!   from geometry, so anything added to a room is outlined without extra work.
 //!
-//! A frame: `beginNormalDepthPass`, draw the scene with `normal_depth_shader`, `endPass`;
+//! A frame: `beginNormalDepthPass`, draw the scene with `normal_depth_shaders`, `endPass`;
 //! the window pass with the scene; `drawOutlines`.
+//!
+//! The room's and robot's shaders share ink_common.wgsl (`INCLUDES`).
 
 const std = @import("std");
 const core = @import("core");
@@ -32,9 +34,46 @@ const vec4 = math.vec4;
 /// Depth written where nothing is drawn: far beyond the room, so its silhouette is an edge.
 const EMPTY_DEPTH = 1000.0;
 
+/// The lighting and hatching the room's and robot's shaders share.
+pub const INCLUDES: []const []const u8 = &.{"games/the_station/shaders/ink_common.wgsl"};
+
+/// The shaders one pass draws the scene with: the room's shapes and the robot model.
+pub const SceneShaders = struct {
+    room: *Shader,
+    robot: *Shader,
+
+    /// The color shaders (window pass), or with `normal_depth` their variants writing the
+    /// outline pass's input.
+    pub fn init(context: core.Context, gpu: *GpuContext, normal_depth: bool) !SceneShaders {
+        const normal_depth_constants: []const core.pipeline.OverrideConstant = &.{.{ .key = "NORMAL_DEPTH", .value = 1.0 }};
+        const color_target: core.pipeline.ColorTarget = if (normal_depth) .{ .format = core.texture.hdr_format } else .surface;
+        const constants = if (normal_depth) normal_depth_constants else &.{};
+        return .{
+            .room = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/room.wgsl", .{
+                .vertex_buffers = &Shape.vertex_buffer_layouts,
+                .color_target = color_target,
+                .constants = constants,
+                .includes = INCLUDES,
+            }),
+            .robot = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/robot.wgsl", .{
+                .vertex_buffers = &core.MeshPrimitive.vertex_buffer_layouts,
+                .material = .pbr,
+                .color_target = color_target,
+                .constants = constants,
+                .includes = INCLUDES,
+            }),
+        };
+    }
+
+    pub fn releaseGpuObjects(self: *const SceneShaders) void {
+        self.robot.releaseGpuObjects();
+        self.room.releaseGpuObjects();
+    }
+};
+
 pub const Style = struct {
     show_outlines: bool = true,
-    /// Pixels between the samples compared; the line is about this wide.
+    /// Radius in pixels of the neighbors compared (rounded); a line is about twice this wide.
     line_width: f32 = 2.0,
     /// A depth jump of this fraction of the depth is a silhouette.
     depth_threshold: f32 = 0.04,
@@ -60,8 +99,8 @@ pub const Ink = struct {
     allocator: std.mem.Allocator,
     /// View-space normal (xyz) and depth (w) of the frame's scene, the window's size.
     normal_depth: *Texture,
-    /// room.wgsl drawing into `normal_depth`.
-    normal_depth_shader: *Shader,
+    /// The scene's shaders drawing into `normal_depth`.
+    normal_depth_shaders: SceneShaders,
     /// ink_edges.wgsl, in the window pass.
     outline_shader: *Shader,
     quad: *Shape,
@@ -69,11 +108,6 @@ pub const Ink = struct {
     const Self = @This();
 
     pub fn init(context: core.Context, gpu: *GpuContext) !Self {
-        const normal_depth_shader = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/room.wgsl", .{
-            .vertex_buffers = &Shape.vertex_buffer_layouts,
-            .color_target = .{ .format = core.texture.hdr_format },
-            .constants = &.{.{ .key = "NORMAL_DEPTH", .value = 1.0 }},
-        });
         const outline_shader = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/ink_edges.wgsl", .{
             .vertex_buffers = &Shape.vertex_buffer_layouts,
             .material = .texture,
@@ -89,7 +123,7 @@ pub const Ink = struct {
         return .{
             .allocator = context.alloc,
             .normal_depth = try createNormalDepth(context.alloc, gpu),
-            .normal_depth_shader = normal_depth_shader,
+            .normal_depth_shaders = try SceneShaders.init(context, gpu, true),
             .outline_shader = outline_shader,
             .quad = quad,
         };
@@ -129,7 +163,7 @@ pub const Ink = struct {
     pub fn releaseGpuObjects(self: *Self) void {
         self.quad.releaseGpuObjects();
         self.outline_shader.releaseGpuObjects();
-        self.normal_depth_shader.releaseGpuObjects();
+        self.normal_depth_shaders.releaseGpuObjects();
         self.normal_depth.releaseGpuObjects();
     }
 };

@@ -24,6 +24,7 @@ const srgbToLinear = core.colors.srgbToLinear;
 const Framing = @import("room_camera.zig").Framing;
 const Hotspot = @import("interaction.zig").Hotspot;
 const WalkArea = @import("interaction.zig").WalkArea;
+const Doorway = @import("robot.zig").Doorway;
 const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -58,6 +59,14 @@ pub const walk_area: WalkArea = .{ .min_x = -3.4, .max_x = 2.85, .min_z = -3.3, 
 /// Where the robot starts.
 pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 
+/// The way out: the door's stand point, and a point beyond the doorway inside the dark
+/// recess (`addDoorway`), which hides the robot there.
+pub const doorway: Doorway = .{
+    .inside = DOOR_STAND_POINT,
+    .outside = vec3(-WIDTH / 2.0 - WALL - 0.7, 0.0, DOOR_CENTER_Z),
+};
+const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
+
 /// What each hotspot is, for the game to decide what using it does.
 pub const HotspotKind = enum { door, red_button, grey_button, lever, gauges, screen, breakers };
 
@@ -71,7 +80,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .kind = .door,
         .name = "Door",
         .bounds = bounds(vec3(-WIDTH / 2.0 - 0.05, 0.0, DOOR_CENTER_Z - DOOR_WIDTH / 2.0), vec3(-WIDTH / 2.0 + 0.15, DOOR_HEIGHT, DOOR_CENTER_Z + DOOR_WIDTH / 2.0)),
-        .stand_point = vec3(-3.3, 0.0, DOOR_CENTER_Z),
+        .stand_point = DOOR_STAND_POINT,
         .facing = FACE_LEFT_WALL,
         .action = .look,
     },

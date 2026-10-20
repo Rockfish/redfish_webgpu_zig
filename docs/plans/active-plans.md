@@ -5,11 +5,11 @@ How these files work, including parking and resuming plans: [README.md](README.m
 ## 🔄 Active
 
 - **[021-the-station-room-01.md](021-the-station-room-01.md)**: started 2026-10-18. A new
-  point-and-click game in `games/the_station` (docs and art in `the-station/`): a robot in
-  a one-point cutaway room, ink and hatching shader, hotspots with stand points. Phase A
-  done (greybox Room 01, the shifted-lens cutaway camera at 6 m, the alarm); phase B
-  done (placeholder robot, walking and clicking, the red button opens the door). Phase D
-  (ink outlines and hatching) built, waiting for testing. Next: C (Blender robot).
+  point-and-click game in `games/the_station` (docs and art in `the-station/`). Phases
+  A-D done: greybox Room 01 with the shifted-lens cutaway camera, walking and clicking
+  with hotspots (the red button opens the door; the robot leaves through it and comes
+  back), ink outlines and hatching, the robot from Blender (`the-station/blender/
+  build_robot.py`, live 3D in ink). Next: phase E (room art).
 
 ## ⏸️ Parked
 

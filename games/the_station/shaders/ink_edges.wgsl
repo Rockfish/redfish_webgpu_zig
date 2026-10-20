@@ -8,7 +8,7 @@
 //
 // draw.color: the ink color (rgb) and opacity (a).
 // draw.params:
-//   x: line width in pixels (the distance to the neighbors compared).
+//   x: line width in pixels: neighbors within this radius are compared.
 //   y: depth threshold, as a fraction of the depth (0.05: a 5% jump is an edge).
 //   z: normal threshold, 0..2 (1 - the cosine of the angle between normals).
 
@@ -28,27 +28,41 @@ fn vs_main(in: VertexInput) -> @builtin(position) vec4f {
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let size = vec2i(textureDimensions(normal_depth));
     let pixel = vec2i(position.xy);
-    let step = max(i32(draw.params.x), 1);
     let center = textureLoad(normal_depth, pixel, 0);
 
+    // Every pixel within the line's radius, diagonals and the nearest ones included:
+    // comparing only with four pixels `line width` away stepped over parts a few pixels
+    // wide (the robot's collar, its chest port's rim), leaving dotted lines that shimmered
+    // as the parts moved
+    let radius = max(i32(round(draw.params.x)), 1);
     var edge = 0.0;
-    let offsets = array<vec2i, 4>(vec2i(step, 0), vec2i(-step, 0), vec2i(0, step), vec2i(0, -step));
-    for (var i = 0; i < 4; i++) {
-        let neighbor_pixel = clamp(pixel + offsets[i], vec2i(0), size - 1);
-        let neighbor = textureLoad(normal_depth, neighbor_pixel, 0);
-        edge = max(edge, edgeStrength(center, neighbor));
+    for (var dy = -radius; dy <= radius; dy++) {
+        for (var dx = -radius; dx <= radius; dx++) {
+            let offset = vec2f(f32(dx), f32(dy));
+            let distance = length(offset);
+            if (distance == 0.0 || distance > f32(radius) + 0.5) {
+                continue;
+            }
+            let neighbor_pixel = clamp(pixel + vec2i(dx, dy), vec2i(0), size - 1);
+            let neighbor = textureLoad(normal_depth, neighbor_pixel, 0);
+            // Pixels at the rim of the radius count partly, smoothing the line's sides
+            let reach = 1.0 - smoothstep(f32(radius) - 0.5, f32(radius) + 0.5, distance);
+            edge = max(edge, edgeStrength(center, neighbor) * reach);
+        }
     }
     return vec4f(draw.color.rgb, draw.color.a * edge);
 }
 
-/// 1 where `a` and `b` are on different surfaces: their depths differ by more than the
-/// depth threshold (relative to the nearer one), or their normals by more than the normal
-/// threshold. A cleared pixel (empty space) has depth far beyond the scene.
+/// How surely `a` and `b` are on different surfaces, 0..1: their depths differ by more
+/// than the depth threshold (relative to the nearer one), or their normals by more than
+/// the normal threshold. Soft over the threshold's first half again, so an edge fades in
+/// instead of popping on and off. A cleared pixel (empty space) has depth far beyond the
+/// scene.
 fn edgeStrength(a: vec4f, b: vec4f) -> f32 {
     let nearer = min(a.w, b.w);
     let depth_jump = abs(a.w - b.w) / max(nearer, 0.001);
     let normal_turn = 1.0 - dot(normalize(a.xyz + 1e-6), normalize(b.xyz + 1e-6));
-    let is_depth_edge = depth_jump > draw.params.y;
-    let is_crease = normal_turn > draw.params.z;
-    return select(0.0, 1.0, is_depth_edge || is_crease);
+    let depth_edge = smoothstep(draw.params.y, draw.params.y * 1.5, depth_jump);
+    let crease = smoothstep(draw.params.z, draw.params.z * 1.5, normal_turn);
+    return max(depth_edge, crease);
 }

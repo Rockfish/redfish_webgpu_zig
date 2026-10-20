@@ -49,6 +49,9 @@ pub const ShaderConfig = struct {
     /// Values for the shader's `override` constants, e.g. `DEPTH_MODE` for a shadow
     /// pipeline made from a lit shader.
     constants: []const OverrideConstant = &.{},
+    /// WGSL files placed after common.wgsl and before the shader's own file, in order:
+    /// functions and constants an app's shaders share (WGSL has no imports).
+    includes: []const []const u8 = &.{},
     /// Depth bias for shadow casters (see `DepthBias`); zero for everything else.
     depth_bias: DepthBias = .{},
     /// A render-target (`.format`) pipeline that draws in a multisampled pass, one whose
@@ -87,7 +90,7 @@ pub const Shader = struct {
         file_path: []const u8,
         config: ShaderConfig,
     ) !*Shader {
-        const module = try createModule(io, allocator, gpu, file_path);
+        const module = try createModule(io, allocator, gpu, file_path, config.includes);
         const pipeline_layout = createPipelineLayout(gpu, config.material, config.pass);
 
         const shader = try allocator.create(Shader);
@@ -134,11 +137,25 @@ pub const Shader = struct {
 
 /// Compile inside a validation error scope so a WGSL error is reported here, with the
 /// file name, instead of as an uncaptured error at first use.
-fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path: []const u8) !c.WGPUShaderModule {
-    const file_source = try utils.readFileToEnd(io, allocator, file_path);
-    defer allocator.free(file_source);
+fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path: []const u8, includes: []const []const u8) !c.WGPUShaderModule {
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer {
+        // The header and common.wgsl are embedded; the rest were read here
+        for (parts.items[2..]) |part| {
+            allocator.free(part);
+        }
+        parts.deinit(allocator);
+    }
+    try parts.appendSlice(allocator, &.{ bindings.wgsl_header, common_wgsl });
+    var prepended_lines: usize = PREPENDED_LINES;
+    for (includes) |include_path| {
+        const include_source = try utils.readFileToEnd(io, allocator, include_path);
+        try parts.append(allocator, include_source);
+        prepended_lines += std.mem.count(u8, include_source, "\n");
+    }
+    try parts.append(allocator, try utils.readFileToEnd(io, allocator, file_path));
 
-    const source = try std.mem.concat(allocator, u8, &.{ bindings.wgsl_header, common_wgsl, file_source });
+    const source = try std.mem.concat(allocator, u8, parts.items);
     defer allocator.free(source);
 
     const wgsl: c.WGPUShaderSourceWGSL = .{
@@ -152,7 +169,7 @@ fn createModule(io: Io, allocator: Allocator, gpu: *const GpuContext, file_path:
         .label = stringView(file_path),
     });
     if (gpu_debug.popValidationScope(gpu.instance, gpu.device)) |scope_error| {
-        log.err("{s} (subtract {d} from naga's line numbers): {s}", .{ file_path, PREPENDED_LINES, scope_error.message() });
+        log.err("{s} (subtract {d} from naga's line numbers): {s}", .{ file_path, prepended_lines, scope_error.message() });
         if (module != null) {
             c.wgpuShaderModuleRelease(module);
         }

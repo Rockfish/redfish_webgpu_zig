@@ -16,7 +16,7 @@ const DOOR_OPEN_TIME: f32 = 1.2;
 const MESSAGE_TIME: f32 = 4.0;
 
 pub const Game = struct {
-    robot: Robot = .{ .position = room.ROBOT_START },
+    robot: Robot = .{ .position = room.ROBOT_START, .doorway = room.doorway },
     is_alarm_on: bool = true,
     is_door_open: bool = false,
     /// 0..1: how far the door has slid into the wall.
@@ -82,7 +82,14 @@ pub const Game = struct {
                     self.say("Nothing more happens.");
                 }
             },
-            .door => self.say(if (self.is_door_open) "Open. The next room comes later." else "Sealed tight."),
+            .door => {
+                if (self.is_door_open) {
+                    // Out of view beyond the doorway; any click in the room brings it back
+                    self.robot.leave();
+                } else {
+                    self.say("Sealed tight.");
+                }
+            },
             .grey_button => self.say("Click. Nothing happens."),
             .lever => self.say("Stuck."),
             .gauges => self.say("Pressure in the reactor ring is falling."),

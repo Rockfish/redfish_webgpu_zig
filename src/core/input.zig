@@ -17,6 +17,12 @@ const XY = struct {
     y: f32 = 0.0,
 };
 
+/// Which mouse buttons were pressed.
+const MousePresses = struct {
+    left: bool = false,
+    right: bool = false,
+};
+
 pub var input: Input = .{};
 
 /// The first connected gamepad, read each frame by `Input.update` through GLFW's gamepad
@@ -69,6 +75,11 @@ pub const Input = struct {
     mouse_y: f32 = 0.0,
     mouse_right_button: bool = false,
     mouse_left_button: bool = false,
+    /// Presses since the last `update`, from the callback: a press and release that both
+    /// arrive between two frames (a trackpad tap) still count.
+    pending_mouse_presses: MousePresses = .{},
+    /// This frame's presses, set by `update`; see `mousePressed`.
+    mouse_presses: MousePresses = .{},
     /// This frame's scroll, set by `update`.
     scroll_xoffset: f32 = 0.0,
     scroll_yoffset: f32 = 0.0,
@@ -139,6 +150,8 @@ pub const Input = struct {
         self.gui_has_keyboard = has_gui and zgui.io.getWantCaptureKeyboard();
         self.gui_has_mouse = has_gui and zgui.io.getWantCaptureMouse();
 
+        self.takeMousePresses();
+
         const scroll = if (self.gui_has_mouse) XY{} else self.pending_scroll;
         self.scroll_xoffset = scroll.x;
         self.scroll_yoffset = scroll.y;
@@ -186,6 +199,23 @@ pub const Input = struct {
             .right => self.mouse_right_button,
             else => false,
         };
+    }
+
+    /// True on the frame a press of `button` arrived, even if it was released before the
+    /// frame (`isMouseDown` would miss that). False while ImGui wants the mouse.
+    pub fn mousePressed(self: *const Self, button: glfw.MouseButton) bool {
+        return switch (button) {
+            .left => self.mouse_presses.left,
+            .right => self.mouse_presses.right,
+            else => false,
+        };
+    }
+
+    /// The presses since the last frame become this frame's (none while ImGui wants the
+    /// mouse).
+    fn takeMousePresses(self: *Self) void {
+        self.mouse_presses = if (self.gui_has_mouse) .{} else self.pending_mouse_presses;
+        self.pending_mouse_presses = .{};
     }
 
     /// Reads the first joystick GLFW recognizes as a gamepad; none leaves everything at rest.
@@ -312,8 +342,14 @@ fn mouseHandler(window: *glfw.Window, button: glfw.MouseButton, action: glfw.Act
 
     const is_pressed = action == .press;
     switch (button) {
-        .left => input.mouse_left_button = is_pressed,
-        .right => input.mouse_right_button = is_pressed,
+        .left => {
+            input.mouse_left_button = is_pressed;
+            input.pending_mouse_presses.left = input.pending_mouse_presses.left or is_pressed;
+        },
+        .right => {
+            input.mouse_right_button = is_pressed;
+            input.pending_mouse_presses.right = input.pending_mouse_presses.right or is_pressed;
+        },
         else => {},
     }
 }
@@ -374,6 +410,22 @@ test "mouse buttons: releasing one leaves the other held" {
     mouseHandler(window, .right, .press, .{});
     mouseHandler(window, .right, .release, .{});
     try std.testing.expect(input.mouse_left_button and !input.mouse_right_button);
+}
+
+test "mousePressed: a press released before the frame still counts, for one frame" {
+    const saved = input;
+    defer input = saved;
+    input = .{};
+
+    const window: *glfw.Window = undefined;
+    mouseHandler(window, .left, .press, .{});
+    mouseHandler(window, .left, .release, .{});
+    input.takeMousePresses();
+    try std.testing.expect(input.mousePressed(.left) and !input.isMouseDown(.left));
+    try std.testing.expect(!input.mousePressed(.right));
+
+    input.takeMousePresses();
+    try std.testing.expect(!input.mousePressed(.left));
 }
 
 test "while ImGui wants the keyboard, keys are neither down nor pressed" {

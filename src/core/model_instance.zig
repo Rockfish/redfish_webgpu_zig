@@ -18,6 +18,7 @@ const Allocator = std.mem.Allocator;
 const Frame = gpu_context.Frame;
 const GpuContext = gpu_context.GpuContext;
 const Mat4 = math.Mat4;
+const Vec4 = math.Vec4;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 pub const AnimatorType = enum {
@@ -162,6 +163,12 @@ pub const ModelInstance = struct {
     /// `Animator.draw` in redfish) and skinned meshes upload this frame's pose; draw each
     /// instance once per frame. Without an animator, meshes draw at the identity.
     pub fn draw(self: *Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4) void {
+        self.drawWithParams(frame, shader, model_transform, Vec4.init(0.0, 0.0, 0.0, 0.0));
+    }
+
+    /// `draw`, with `params` in each draw's `DrawUniforms.params`, for a shader that reads
+    /// them (shader-specific; PBR shaders don't).
+    pub fn drawWithParams(self: *Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4, params: Vec4) void {
         switch (self.animator_impl) {
             .live_animator => |animator| {
                 const skin: ?skinning.SkinBinding = if (self.joint_buffer) |*joint_buffer|
@@ -172,13 +179,13 @@ pub const ModelInstance = struct {
                 for (self.gltf_asset.meshes, 0..) |mesh, index| {
                     const node_index = animator.meshToNode[index];
                     const transform = animator.nodes[node_index].calculated_transform.?;
-                    mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin);
+                    mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin, params);
                 }
             },
-            .baked_animator => |baked| baked.draw(self, frame, shader, model_transform),
+            .baked_animator => |baked| baked.draw(self, frame, shader, model_transform, params),
             .null_animator => {
                 for (self.gltf_asset.meshes) |mesh| {
-                    mesh.drawAt(frame, shader, model_transform, Mat4.Identity, null);
+                    mesh.drawAt(frame, shader, model_transform, Mat4.Identity, null, params);
                 }
             },
         }
