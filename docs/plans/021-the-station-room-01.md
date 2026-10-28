@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-E done)
+## Status: Active (started 2026-10-18; phases A-E done, F in progress)
 
 ## Context
 
@@ -103,8 +103,22 @@ a door that opens. Multi-floor views and further rooms are later plans.
       logic in `game.zig` repeats across rooms; our own binding to Lua's C source
 
 ### F. Room art
-- [ ] Room modeled in Blender with detail (pipes, vents, panel faces), glTF
-- [ ] Greyscale textures for surface detail
+After `the-station/images/10 GeV Dubna Synchro-Phasotron.jpeg` (John, 2026-10-28): a
+Soviet accelerator control hall; the feel wanted is its equipment, especially the mimic
+board in the upper left.
+- [x] `the-station/blender/build_room.py`: Room 01's equipment from primitives, written to
+      `models/room_01/room_01.glb`; shared primitives with `build_robot.py`
+      (`blender/primitives.py`)
+- [x] Back wall: a continuous row of instrument cabinets (the gauges, screen, and
+      breakers are cabinets in it) under a mimic board across the wall
+- [x] Right-wall console restyled to match: instrument hood, wall panel, mushroom
+      buttons, a lever; pipes moved off the back wall
+- [x] Greyscale textures for printed detail (seams, scales, labels, the board's
+      diagram), generated as SVG by `build_room.py` and turned into PNG by `rsvg-convert`
+- [x] In the game: the model drawn in ink with its textures; hotspots moved onto the
+      cabinets; the greybox kept as an option and as the fallback without the model
+- [ ] Later (separate step): a lighter look after
+      `images/grey-tones-red-highlites-hatching-shader-example.jpg`
 
 ## Notes & Decisions
 
@@ -293,6 +307,17 @@ a door that opens. Multi-floor views and further rooms are later plans.
   The deciding point: settings saved from the panel are rewritten by the program, and a
   program can rewrite data but not logic, so saved settings are data whatever else is
   scripted. Lua's place is game scripting (see phase E's last item).
+- 2026-10-28, phase F decisions (John): the back wall becomes a Dubna-style wall, a row
+  of cabinets under a mimic board, with the hotspots kept where they are; the lighter
+  look of the kitchen example is a separate step afterward. Approach:
+  - **The shell stays in code** (floor, walls, doorway, door, alarm lamp): its cut faces,
+    the sliding door, and the pulsing lamp are driven per draw. The equipment comes from
+    Blender as one model drawn with one set of params.
+  - **Detail by size**: features a few centimeters and up (dials, lamps, switches,
+    buttons) are geometry, so they get outlines; anything smaller (seams between
+    cabinets, scale marks, labels, the board's diagram lines) is texture. Phase C showed
+    that features under a few pixels (the belt's ledge) flicker in the outline pass;
+    textures are mipmapped instead.
 - 2026-10-28, phase E, as built:
   - `src/core/settings_file.zig`: `SettingsFile(Values)`, where `Values` is a struct of
     sections, each a struct of settings with defaults. The file's type is made at
@@ -317,3 +342,44 @@ a door that opens. Multi-floor views and further rooms are later plans.
   - Checked with a temporary edit: saved the camera distance and the ink section, the
     file held only the two changed values, a second run loaded them, and the panel
     marked an unsaved line width. The test file was removed afterwards.
+- 2026-10-28, phase F, as built:
+  - **`the-station/blender/build_room.py`** builds the equipment (not the shell) in the
+    game's coordinates (`at` and `extent` turn them into Blender's) and writes
+    `models/room_01/room_01.glb` and `.blend`; headless or through the MCP bridge, as the
+    robot. Its primitives moved to `blender/primitives.py`, shared with
+    `build_robot.py` (the robot rebuilt through it gave the same vertices and
+    animation).
+  - **Back wall**: ten 0.8 m bays, 1.85 m tall, 0.35 m deep. Single bays: meters
+    (square meters, lamps, toggle switches, knobs) at each end, the ring (lamps in a
+    circle around a meter, as the photo's), keys (a grid of push keys). Two-bay
+    cabinets are the hotspots: gauges (three dials with printed faces and needles),
+    the screen (an oscilloscope in a hooded bezel, its glass glowing with a graticule
+    and a trace), breakers (two rows of handles and a main lever). Above them the mimic
+    board, 7.7 x 0.64 m: the station's ring, two buses with switches, lamps, and units
+    (pumps, vacuum, airlock, oxygen, heat, comms) in light lines on a dark board, labels
+    in Russian as on the photo; the alarm lamp sits over its middle.
+  - **Console**: desk with plinth and top, an instrument hood leaning to the wall, a
+    wall panel with three meters and lamps, mushroom buttons (red for the alarm) and a
+    lever with a ball knob, in the hotspots' places. Pipes run along the tops of the
+    side walls (the back wall is the board's).
+  - **Textures** are drawn in meters as SVG by the same script (`Svg`), so printed and
+    modeled parts share coordinates, and turned into PNGs with `rsvg-convert`: the
+    cabinets' fronts (seams, doors, label plates, printed lines and knob scales), the
+    board, dial and meter faces, the screen. The board is about 11 mm a pixel in the
+    game: its lines are 12-20 mm and labels 50-80 mm, or they vanish.
+  - **Draws**: each group (cabinets, board, console, pipes) is joined into one mesh with
+    its origin at the room's: about a dozen draws instead of hundreds. Every mesh's
+    node is at the origin because `ModelInstance` without an animator draws meshes at
+    the identity (node transforms unused): the board, a single unjoined mesh with its
+    own node translation, first drew at the floor in front of the room.
+  - **In the game**: `shaders/robot.wgsl` is now `model.wgsl` (any glTF model in ink)
+    and multiplies the base color by the base color texture (white without one). `Room`
+    loads the model (`room.MODEL_PATH`); the shell stays boxes; the greybox equipment
+    draws without the model or with the panel's "greybox room" (`settings.room
+    .use_greybox`). Hotspots for the gauges, screen, and breakers moved onto their
+    cabinets (stand points x -2.4, 0, 2.4); the walk area's back edge is z -3.25.
+  - Checked on screen: alarm on and off, the board's labels legible, every hotspot's box
+    over its fittings (temporary edit drawing all of them).
+- 2026-10-28, the console's buttons (John): the red button only stops the alarm; the
+  middle button (`HotspotKind.door_button`, still named "Button") opens the door. They
+  were one action before (the red button did both).

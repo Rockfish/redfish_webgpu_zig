@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-28 - The Station: Room 01's equipment from Blender; plan 021 phase F
+- **games/the_station**: the room's equipment is a Blender model after the Dubna accelerator control hall (`the-station/models/room_01/room_01.glb`): a row of instrument cabinets along the back wall (meters, lamps, toggles, knobs, a ring of lamps, push keys; the gauges, screen, and breakers are two-bay cabinets) under a mimic board, a restyled console on the right wall, pipes along the side walls; printed detail from textures. `shaders/model.wgsl` (was robot.wgsl) draws any glTF model in ink with its base color texture. The shell stays boxes; the greybox equipment is the fallback and the panel's "greybox room". Hotspots moved onto the cabinets. The red button only stops the alarm; the console's middle button opens the door
+- **the-station**: `blender/build_room.py` builds the room's equipment and its textures (SVG, `rsvg-convert`); `blender/primitives.py`, shared with `build_robot.py`
+
 ### 2026-10-28 - Saved settings; plan 021 phase E
 - **core.SettingsFile**: settings saved one at a time to a ZON file holding only those that differ from the defaults in code (save, revert to saved, reset to default, per setting or section; `isChanged`); unknown settings skipped, an unreadable file never written over; tests
 - **games/the_station**: the panel's settings (`settings.zig`) save to `the-station/settings/room_01.zon`; right-click a setting to save, revert, or reset it, buttons per section, `*` marks unsaved settings; "reset room" is now "restart room"

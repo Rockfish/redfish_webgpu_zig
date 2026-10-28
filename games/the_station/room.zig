@@ -1,4 +1,11 @@
-//! Room 01, the control room, as a greybox of boxes and cylinders (plan 021).
+//! Room 01, the control room (plan 021).
+//!
+//! The shell (floor, ceiling, walls, the doorway and its door, the alarm lamp) is boxes
+//! and cylinders drawn here: its cut faces, the sliding door, and the pulsing lamp change
+//! per draw. The equipment (a row of instrument cabinets under a mimic board on the back
+//! wall, the console on the right wall, pipes) is the model `MODEL_PATH`, built by
+//! `the-station/blender/build_room.py`; without it, or with the panel's "greybox room",
+//! the greybox equipment draws instead.
 //!
 //! World layout, 1 unit = 1 m: x runs left to right across the room, y up from the
 //! floor, z out of the room toward the camera. The room's inside spans
@@ -7,8 +14,8 @@
 //! station, drawn dark.
 //!
 //! Left wall: a doorway with a door that slides into the wall. Right wall: the control
-//! console. Back wall: three panels (gauges, a screen, a breaker box) and the alarm lamp
-//! above the middle one. The things the robot can use are `hotspots`.
+//! console. Back wall: the cabinets (among them the gauges, the screen, and the breakers)
+//! and the alarm lamp above the middle. The things the robot can use are `hotspots`.
 
 const std = @import("std");
 const core = @import("core");
@@ -18,6 +25,7 @@ const AABB = core.AABB;
 const DrawUniforms = core.DrawUniforms;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
+const ModelInstance = core.ModelInstance;
 const Shader = core.Shader;
 const Shape = core.shapes.Shape;
 const srgbToLinear = core.colors.srgbToLinear;
@@ -30,6 +38,8 @@ const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
 const vec3 = math.vec3;
 const vec4 = math.vec4;
+
+pub const MODEL_PATH = "the-station/models/room_01/room_01.glb";
 
 pub const WIDTH: f32 = 8.0;
 pub const HEIGHT: f32 = 3.0;
@@ -53,8 +63,8 @@ pub const ALARM_LAMP_POSITION = vec3(0.0, 2.7, -DEPTH + 0.12);
 pub const ALARM_LIGHT_POSITION = vec3(0.0, 2.5, -DEPTH + 0.8);
 const ALARM_RED = vec3(1.0, 0.04, 0.02);
 
-/// The floor the robot can walk on: clear of the walls, the console, and the back panels.
-pub const walk_area: WalkArea = .{ .min_x = -3.4, .max_x = 2.85, .min_z = -3.3, .max_z = -0.4 };
+/// The floor the robot can walk on: clear of the walls, the console, and the cabinets.
+pub const walk_area: WalkArea = .{ .min_x = -3.4, .max_x = 2.85, .min_z = -3.25, .max_z = -0.4 };
 
 /// Where the robot starts.
 pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
@@ -68,7 +78,9 @@ pub const doorway: Doorway = .{
 const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
 /// What each hotspot is, for the game to decide what using it does.
-pub const HotspotKind = enum { door, red_button, grey_button, lever, gauges, screen, breakers };
+/// The console's buttons: red stops the alarm, the middle one opens the door, the other
+/// does nothing.
+pub const HotspotKind = enum { door, red_button, door_button, grey_button, lever, gauges, screen, breakers };
 
 /// Facing directions for stand points: the robot's yaw, 0 toward the camera (+z).
 const FACE_LEFT_WALL = -std.math.pi / 2.0;
@@ -93,7 +105,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .action = .push,
     },
     .{
-        .kind = .grey_button,
+        .kind = .door_button,
         .name = "Button",
         .bounds = bounds(vec3(3.33, 0.85, -2.12), vec3(3.57, 1.0, -1.88)),
         .stand_point = vec3(2.75, 0.0, -2.0),
@@ -116,27 +128,29 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .facing = FACE_RIGHT_WALL,
         .action = .push,
     },
+    // The back wall's hotspots are two-bay cabinets in the row (build_room.py), each
+    // the cabinet's fittings, standing out from its front at z -3.65
     .{
         .kind = .gauges,
         .name = "Gauges",
-        .bounds = bounds(vec3(-3.0, 0.7, -DEPTH), vec3(-1.6, 2.2, -DEPTH + 0.18)),
-        .stand_point = vec3(-2.3, 0.0, -3.2),
+        .bounds = bounds(vec3(-3.2, 0.62, -DEPTH), vec3(-1.6, 1.72, -3.55)),
+        .stand_point = vec3(-2.4, 0.0, -3.2),
         .facing = FACE_BACK_WALL,
         .action = .look,
     },
     .{
         .kind = .screen,
         .name = "Screen",
-        .bounds = bounds(vec3(-0.7, 0.7, -DEPTH), vec3(0.7, 2.2, -DEPTH + 0.18)),
+        .bounds = bounds(vec3(-0.5, 0.95, -DEPTH), vec3(0.5, 1.7, -3.5)),
         .stand_point = vec3(0.0, 0.0, -3.2),
         .facing = FACE_BACK_WALL,
         .action = .look,
     },
     .{
         .kind = .breakers,
-        .name = "Breaker box",
-        .bounds = bounds(vec3(1.6, 0.7, -DEPTH), vec3(3.0, 2.2, -DEPTH + 0.18)),
-        .stand_point = vec3(2.3, 0.0, -3.2),
+        .name = "Breakers",
+        .bounds = bounds(vec3(1.6, 0.9, -DEPTH), vec3(3.2, 1.65, -3.5)),
+        .stand_point = vec3(2.4, 0.0, -3.2),
         .facing = FACE_BACK_WALL,
         .action = .look,
     },
@@ -164,7 +178,12 @@ pub const Part = struct {
 pub const Room = struct {
     cube: *Shape,
     cylinder: *Shape,
+    /// The shell.
     parts: []Part,
+    /// The equipment as boxes, drawn without the model.
+    greybox: []Part,
+    /// The equipment from Blender; null without the-station's model.
+    model: ?*ModelInstance,
     /// The alarm lamp, drawn with its glow.
     alarm_lamp: Part,
     /// The door, drawn where it has slid to.
@@ -172,7 +191,7 @@ pub const Room = struct {
 
     const Self = @This();
 
-    pub fn init(context: core.Context, gpu: *const GpuContext) !Self {
+    pub fn init(context: core.Context, gpu: *GpuContext) !Self {
         const cube = try core.shapes.createCube(context.alloc, gpu, .{});
         const cylinder = try core.shapes.createCylinder(context.alloc, gpu, 0.5, 1.0, 24);
 
@@ -180,14 +199,18 @@ pub const Room = struct {
         const builder: PartBuilder = .{ .cube = cube, .cylinder = cylinder };
         try builder.addShell(context.alloc, &parts);
         try builder.addDoorway(context.alloc, &parts);
-        try builder.addConsole(context.alloc, &parts);
-        try builder.addBackPanels(context.alloc, &parts);
-        try builder.addPipes(context.alloc, &parts);
+
+        var greybox: std.ArrayList(Part) = .empty;
+        try builder.addConsole(context.alloc, &greybox);
+        try builder.addBackPanels(context.alloc, &greybox);
+        try builder.addPipes(context.alloc, &greybox);
 
         return .{
             .cube = cube,
             .cylinder = cylinder,
             .parts = try parts.toOwnedSlice(context.alloc),
+            .greybox = try greybox.toOwnedSlice(context.alloc),
+            .model = loadModel(context, gpu),
             .alarm_lamp = .{
                 .shape = cylinder,
                 .model = cylinderModel(ALARM_LAMP_POSITION.sub(vec3(0.0, 0.0, 0.1)), .z, 0.3, 0.2),
@@ -207,11 +230,19 @@ pub const Room = struct {
         };
     }
 
+    /// `shader` draws the shell's shapes, `model_shader` the equipment model.
     /// `alarm_glow` 0..1: how lit the lamp is (0 is a dark red lamp). `door_open` 0..1:
-    /// how far the door has slid into the wall.
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, hatching: Hatching, alarm_glow: f32, door_open: f32) void {
+    /// how far the door has slid into the wall. `use_greybox`: the boxes, not the model.
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, alarm_glow: f32, door_open: f32, use_greybox: bool) void {
         for (self.parts) |part| {
             drawPart(frame, shader, part, hatching);
+        }
+        if (self.model != null and !use_greybox) {
+            self.model.?.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
+        } else {
+            for (self.greybox) |part| {
+                drawPart(frame, shader, part, hatching);
+            }
         }
 
         var lamp = self.alarm_lamp;
@@ -224,11 +255,22 @@ pub const Room = struct {
         drawPart(frame, shader, door, hatching);
     }
 
-    pub fn releaseGpuObjects(self: *const Self) void {
+    pub fn cleanUp(self: *const Self) void {
         self.cube.releaseGpuObjects();
         self.cylinder.releaseGpuObjects();
+        if (self.model) |model| {
+            model.cleanUp();
+        }
     }
 };
+
+/// Null, with a warning, when the model can't be loaded (no the-station checkout).
+fn loadModel(context: core.Context, gpu: *GpuContext) ?*ModelInstance {
+    return ModelInstance.initWithConfig(context, gpu, .{ .name = "room_01", .file_path = MODEL_PATH }) catch |err| {
+        std.log.warn("{s} not loaded ({s}); drawing the greybox room", .{ MODEL_PATH, @errorName(err) });
+        return null;
+    };
+}
 
 /// Light falling on the room from the alarm, for point light `SceneLights.setPointLight`.
 pub fn alarmLightColor(intensity: f32) Vec3 {
@@ -303,7 +345,8 @@ const PartBuilder = struct {
         });
     }
 
-    /// Gauges on the left, a screen in the middle, a breaker box on the right.
+    /// Gauges on the left, a screen in the middle, a breaker box on the right, where the
+    /// model's two-bay cabinets for them are.
     fn addBackPanels(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const wall_z = -DEPTH;
         const panel_size = vec3(1.4, 1.5, 0.12);
@@ -312,19 +355,19 @@ const PartBuilder = struct {
         const detail_color = grey(0.3);
         const front_z = wall_z + panel_size.z;
         try parts.appendSlice(allocator, &.{
-            .{ .shape = self.cube, .model = box(vec3(-2.3, panel_y, wall_z + panel_size.z / 2.0), panel_size), .color = panel_color },
+            .{ .shape = self.cube, .model = box(vec3(-2.4, panel_y, wall_z + panel_size.z / 2.0), panel_size), .color = panel_color },
             .{ .shape = self.cube, .model = box(vec3(0.0, panel_y, wall_z + panel_size.z / 2.0), panel_size), .color = panel_color },
-            .{ .shape = self.cube, .model = box(vec3(2.3, panel_y, wall_z + panel_size.z / 2.0), panel_size), .color = panel_color },
+            .{ .shape = self.cube, .model = box(vec3(2.4, panel_y, wall_z + panel_size.z / 2.0), panel_size), .color = panel_color },
 
-            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-2.65, 1.75, front_z), .z, 0.45, 0.05), .color = grey(0.8) },
-            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-1.95, 1.75, front_z), .z, 0.45, 0.05), .color = grey(0.8) },
-            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-2.3, 1.1, front_z), .z, 0.55, 0.05), .color = grey(0.8) },
+            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-2.75, 1.75, front_z), .z, 0.45, 0.05), .color = grey(0.8) },
+            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-2.05, 1.75, front_z), .z, 0.45, 0.05), .color = grey(0.8) },
+            .{ .shape = self.cylinder, .model = cylinderModel(vec3(-2.4, 1.1, front_z), .z, 0.55, 0.05), .color = grey(0.8) },
 
             .{ .shape = self.cube, .model = box(vec3(0.0, 1.55, front_z + 0.01), vec3(1.1, 0.8, 0.02)), .color = grey(0.7), .emissive = 0.3 },
             .{ .shape = self.cube, .model = box(vec3(0.0, 0.95, front_z + 0.02), vec3(0.9, 0.12, 0.04)), .color = detail_color },
 
-            .{ .shape = self.cube, .model = box(vec3(2.3, panel_y, front_z + 0.02), vec3(1.1, 1.2, 0.04)), .color = grey(0.4) },
-            .{ .shape = self.cube, .model = box(vec3(2.75, panel_y, front_z + 0.06), vec3(0.06, 0.25, 0.06)), .color = detail_color },
+            .{ .shape = self.cube, .model = box(vec3(2.4, panel_y, front_z + 0.02), vec3(1.1, 1.2, 0.04)), .color = grey(0.4) },
+            .{ .shape = self.cube, .model = box(vec3(2.85, panel_y, front_z + 0.06), vec3(0.06, 0.25, 0.06)), .color = detail_color },
         });
     }
 

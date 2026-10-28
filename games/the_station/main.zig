@@ -3,8 +3,8 @@
 //!
 //! Room 01 as a greybox, seen through its open front by the cutaway camera
 //! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
-//! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm and
-//! opens the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
+//! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm, the
+//! console's middle button opens the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
 //! Blender model (`robot_model.zig`), or the box placeholder without it. A panel tunes
 //! the camera, the ink, the room, and the alarm, and saves settings one at a time
 //! (`settings.zig`).
@@ -59,11 +59,12 @@ const Scene = struct {
     robot_model: ?*const RobotModel,
     alarm_glow: f32,
     door_open: f32,
+    use_greybox: bool,
 
     fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room.Hatching) void {
-        self.room.draw(frame, shaders.room, hatching, self.alarm_glow, self.door_open);
+        self.room.draw(frame, shaders.room, shaders.model, hatching, self.alarm_glow, self.door_open, self.use_greybox);
         if (self.robot_model) |model| {
-            model.draw(frame, shaders.robot, self.robot, hatching);
+            model.draw(frame, shaders.model, self.robot, hatching);
         } else {
             self.robot.draw(frame, shaders.room, self.room, hatching);
         }
@@ -102,7 +103,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     var lines = try Lines.init(context.alloc, lines_shader, 1.0, 0.6, MAX_LINES);
 
     const control_room = try Room.init(context, gpu);
-    defer control_room.releaseGpuObjects();
+    defer control_room.cleanUp();
 
     var ink_pass = try ink.Ink.init(context, gpu);
     defer ink_pass.releaseGpuObjects();
@@ -155,6 +156,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
             .robot_model = if (settings.room.use_placeholder) null else if (robot_model) |*model| model else null,
             .alarm_glow = alarm_level,
             .door_open = game.door_open,
+            .use_greybox = settings.room.use_greybox,
         };
         if (style.show_outlines) {
             ink_pass.beginNormalDepthPass(&frame);
@@ -331,6 +333,7 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.section(.room, "Room");
         panel.checkbox(.room, .show_grid, "floor grid");
         panel.checkbox(.room, .use_placeholder, "placeholder robot");
+        panel.checkbox(.room, .use_greybox, "greybox room");
         panel.slider(.room, .light, "room light", 0.0, 1.5);
         if (zgui.button("restart room", .{})) {
             game.* = .{};

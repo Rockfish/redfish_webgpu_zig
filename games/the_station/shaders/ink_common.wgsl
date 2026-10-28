@@ -1,4 +1,4 @@
-// The ink look shared by room.wgsl and robot.wgsl (`ShaderConfig.includes`): lighting,
+// The ink look shared by room.wgsl and model.wgsl (`ShaderConfig.includes`): lighting,
 // hatching, and the normal-depth output for the outline pass. Uses `frame` and `draw`
 // from common.wgsl.
 //

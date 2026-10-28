@@ -30,6 +30,8 @@ pub const RoomSettings = struct {
     show_grid: bool = false,
     /// Draw the box robot even when the Blender model is loaded.
     use_placeholder: bool = false,
+    /// Draw the room's equipment as boxes even when the Blender model is loaded.
+    use_greybox: bool = false,
     /// The room's light while the alarm is off; with the alarm on it drops to the
     /// emergency level.
     light: f32 = 0.8,

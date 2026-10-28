@@ -12,7 +12,7 @@
 //! A frame: `beginNormalDepthPass`, draw the scene with `normal_depth_shaders`, `endPass`;
 //! the window pass with the scene; `drawOutlines`.
 //!
-//! The room's and robot's shaders share ink_common.wgsl (`INCLUDES`).
+//! The room's and the models' shaders share ink_common.wgsl (`INCLUDES`).
 
 const std = @import("std");
 const core = @import("core");
@@ -34,13 +34,14 @@ const vec4 = math.vec4;
 /// Depth written where nothing is drawn: far beyond the room, so its silhouette is an edge.
 const EMPTY_DEPTH = 1000.0;
 
-/// The lighting and hatching the room's and robot's shaders share.
+/// The lighting and hatching the room's and the models' shaders share.
 pub const INCLUDES: []const []const u8 = &.{"games/the_station/shaders/ink_common.wgsl"};
 
-/// The shaders one pass draws the scene with: the room's shapes and the robot model.
+/// The shaders one pass draws the scene with: the room's shapes, and the glTF models
+/// (the robot, the room's equipment).
 pub const SceneShaders = struct {
     room: *Shader,
-    robot: *Shader,
+    model: *Shader,
 
     /// The color shaders (window pass), or with `normal_depth` their variants writing the
     /// outline pass's input.
@@ -55,7 +56,7 @@ pub const SceneShaders = struct {
                 .constants = constants,
                 .includes = INCLUDES,
             }),
-            .robot = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/robot.wgsl", .{
+            .model = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/model.wgsl", .{
                 .vertex_buffers = &core.MeshPrimitive.vertex_buffer_layouts,
                 .material = .pbr,
                 .color_target = color_target,
@@ -66,7 +67,7 @@ pub const SceneShaders = struct {
     }
 
     pub fn releaseGpuObjects(self: *const SceneShaders) void {
-        self.robot.releaseGpuObjects();
+        self.model.releaseGpuObjects();
         self.room.releaseGpuObjects();
     }
 };

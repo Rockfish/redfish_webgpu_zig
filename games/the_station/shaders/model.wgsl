@@ -1,7 +1,9 @@
-// The robot (a glTF model of rigid parts, drawn through `ModelInstance.drawWithParams`):
-// each part's material color lit by the frame's lights and shaded with ink hatching
-// (ink_common.wgsl, included before this file). A `.pbr` shader, since mesh draws bind
-// their glTF material at group 1; only the base color and emissive factors are used.
+// glTF models from Blender (the robot, the room's equipment), drawn through
+// `ModelInstance.drawWithParams`: each part's material color, times its base color
+// texture (printed detail; white without one), lit by the frame's lights and shaded
+// with ink hatching (ink_common.wgsl, included before this file). A `.pbr` shader, since
+// mesh draws bind their glTF material at group 1; only the base color (factor and
+// texture) and the emissive factor are used.
 //
 // draw.params: z, w are the hatch strength and spacing (ink_common.wgsl); x, y unused.
 //
@@ -12,6 +14,7 @@ override NORMAL_DEPTH: bool = false;
 
 struct VertexInput {
     @location(LOCATION_POSITION) position: vec3f,
+    @location(LOCATION_TEXCOORD) texcoord: vec2f,
     @location(LOCATION_NORMAL) normal: vec3f,
 }
 
@@ -22,9 +25,12 @@ struct VertexOutput {
     // The part's own coordinates (its mesh, in meters), where the hatching is laid out
     @location(2) part_position: vec3f,
     @location(3) part_normal: vec3f,
+    @location(4) texcoord: vec2f,
 }
 
 @group(GROUP_MATERIAL) @binding(0) var<uniform> material: MaterialUniforms;
+@group(GROUP_MATERIAL) @binding(1) var base_color_texture: texture_2d<f32>;
+@group(GROUP_MATERIAL) @binding(6) var base_color_sampler: sampler;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
@@ -37,6 +43,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.world_normal = (draw.normal_matrix * vec4f(in.normal, 0.0)).xyz;
     out.part_position = in.position;
     out.part_normal = in.normal;
+    out.texcoord = in.texcoord;
     return out;
 }
 
@@ -47,8 +54,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         return normalDepth(normal, in.world_position);
     }
 
-    let color = material.base_color_factor.rgb;
-    // The eye lenses glow: their emissive factor says how much they show unlit
+    let color = material.base_color_factor.rgb * textureSample(base_color_texture, base_color_sampler, in.texcoord).rgb;
+    // The eye lenses and the screen glow: their emissive factor says how much they show unlit
     let emissive = clamp(max(material.emissive_factor.r, max(material.emissive_factor.g, material.emissive_factor.b)), 0.0, 1.0);
 
     let light = lighting(normal, in.world_position);
