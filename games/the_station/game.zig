@@ -167,6 +167,7 @@ pub const Game = struct {
             },
             .locked_door => self.say("Locked."),
             .keypad => self.say("DOOR LOCKED OUT. The keypad doesn't respond."),
+            .power_cabinet => self.say("No voltage on any phase. The feed comes up the shaft."),
             .lever => self.say("Stuck."),
             .gauges => self.say("Pressure in the reactor ring is falling."),
             .screen => self.say(if (self.is_alarm_on) "ALARM: MAIN POWER LOST" else "MAIN POWER LOST (acknowledged)"),

@@ -75,7 +75,8 @@ pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 /// What each hotspot on the deck is, for the game to decide what using it does. The
 /// console's buttons: red stops the alarm, the middle one opens and closes the door, the
 /// third turns on the lights. Room 02 (`room_02.zig`): its locked door and the keypad
-/// beside it, and the ladder, whose lower part (the hole) is a hotspot of its own.
+/// beside it, the power cabinet, and the ladder, whose lower part (the hole) is a hotspot
+/// of its own.
 pub const HotspotKind = enum {
     door,
     red_button,
@@ -87,6 +88,7 @@ pub const HotspotKind = enum {
     breakers,
     locked_door,
     keypad,
+    power_cabinet,
     ladder,
     ladder_hole,
 };

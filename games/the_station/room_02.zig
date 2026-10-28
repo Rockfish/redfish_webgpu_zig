@@ -1,6 +1,13 @@
-//! Room 02 (plan 021, phase G), left of Room 01 through its door: a greybox for now. A
-//! locked door on the far left, and a ladder down through a hole in the floor toward the
-//! back center; the robot walks around the hole's front.
+//! Room 02 (plan 021, phases G and H), left of Room 01 through its door: the hatch room.
+//! A locked door on the far left with a keypad, a ladder down through a hole in the floor
+//! toward the back center (the robot walks around the hole's front), the deck's power
+//! cabinet and lockers on the back wall.
+//!
+//! As Room 01, the shell (floor around the hole, walls, the locked door, the deck below)
+//! is boxes drawn here, and the equipment (ladder, rim, keypad, cabinet, lockers, signs,
+//! pipes) is the model `MODEL_PATH`, built by `the-station/blender/build_room_02.py`;
+//! without it, or with the panel's "greybox room", the greybox equipment draws instead.
+//! The hole's and the ladder's sizes here are the script's too.
 //!
 //! Same size and layout as Room 01 (`room_01.zig`), centered on `CENTER_X`; its right wall is
 //! Room 01's left wall, with the doorway. Below the hole a shaft through the deck below
@@ -28,6 +35,8 @@ const WIDTH = room_01.WIDTH;
 const HEIGHT = room_01.HEIGHT;
 const DEPTH = room_01.DEPTH;
 const WALL = room_01.WALL;
+
+pub const MODEL_PATH = "the-station/models/room_02/room_02.glb";
 
 /// The room's middle on x: one room width and a wall left of Room 01's.
 pub const CENTER_X: f32 = -(room_01.WIDTH + room_01.WALL);
@@ -96,6 +105,15 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .facing = room_01.FACE_LEFT_WALL,
         .action = .push_high,
     },
+    // The deck's power cabinet right of the hole (build_room_02.py), 0.25 m deep
+    .{
+        .kind = .power_cabinet,
+        .name = "Power cabinet",
+        .bounds = bounds(vec3(-7.1, 0.6, -DEPTH), vec3(-5.5, 2.0, -3.65)),
+        .stand_point = vec3(-6.3, 0.0, -3.4),
+        .facing = room_01.FACE_BACK_WALL,
+        .action = .look,
+    },
     // The ladder above the floor, and its lower part: the hole it goes down
     .{
         .kind = .ladder,
@@ -115,19 +133,25 @@ pub const hotspots = [_]Hotspot(HotspotKind){
     },
 };
 
-/// The shell (floor around the hole, ceiling, back wall, left wall around the locked
-/// door), the shaft and ladder, and a few things on the back wall.
-pub fn addParts(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
-    try addShell(builder, allocator, parts);
+/// The shell: floor around the hole, ceiling, back wall, the left wall around the locked
+/// door, and the deck below with the shaft through it.
+pub fn addShell(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    try addRoomBox(builder, allocator, parts);
     try addLockedDoor(builder, allocator, parts);
     try addShaft(builder, allocator, parts);
+}
+
+/// The equipment as boxes, drawn without the model: the ladder, the keypad, and stand-ins
+/// for the lockers and the power cabinet.
+pub fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
     try addLadder(builder, allocator, parts);
+    try addKeypad(builder, allocator, parts);
     try addBackWall(builder, allocator, parts);
 }
 
 /// As Room 01's: floor and ceiling run under and over the side walls. The floor is four
 /// pieces around the hole; only the front one reaches the cut.
-fn addShell(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+fn addRoomBox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
     const left = INNER_MIN_X - WALL;
     const right = INNER_MAX_X;
     const width = right - left;
@@ -147,8 +171,7 @@ fn addShell(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.Arra
     });
 }
 
-/// The left wall in three pieces around the doorway, a frame, the door shut in it, and
-/// a keypad beside it, dead.
+/// The left wall in three pieces around the doorway, a frame, and the door shut in it.
 fn addLockedDoor(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
     const door_z = room_01.DOOR_CENTER_Z;
     const back_edge = door_z - room_01.DOOR_WIDTH / 2.0;
@@ -169,8 +192,14 @@ fn addLockedDoor(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std
         .{ .shape = cube, .model = box(vec3(inner_x + 0.06, door_height / 2.0, back_edge - trim / 2.0), vec3(0.12, door_height, trim)), .color = frame_color },
         .{ .shape = cube, .model = box(vec3(inner_x + 0.06, door_height / 2.0, front_edge + trim / 2.0), vec3(0.12, door_height, trim)), .color = frame_color },
         .{ .shape = cube, .model = box(vec3(inner_x + 0.06, door_height + trim / 2.0, door_z), vec3(0.12, trim, room_01.DOOR_WIDTH + 2.0 * trim)), .color = frame_color },
+    });
+}
 
-        .{ .shape = cube, .model = box(vec3(inner_x + 0.04, 1.25, KEYPAD_Z), vec3(0.08, 0.26, 0.18)), .color = grey(0.25) },
+/// The keypad beside the locked door, dead.
+fn addKeypad(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    const inner_x = INNER_MIN_X;
+    try parts.appendSlice(allocator, &.{
+        .{ .shape = builder.cube, .model = box(vec3(inner_x + 0.04, 1.25, KEYPAD_Z), vec3(0.08, 0.26, 0.18)), .color = grey(0.25) },
         .{ .shape = builder.cylinder, .model = cylinderModel(vec3(inner_x + 0.08, 1.33, KEYPAD_Z), .x, 0.04, 0.02), .color = grey(0.15) },
     });
 }
@@ -209,13 +238,12 @@ fn addLadder(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.Arr
     }
 }
 
-/// Two flat wall panels and a vent, so the wall isn't bare.
+/// Flat stand-ins for the lockers (left of the hole) and the power cabinet (right).
 fn addBackWall(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
     const wall_z = -DEPTH;
     const cube = builder.cube;
     try parts.appendSlice(allocator, &.{
-        .{ .shape = cube, .model = box(vec3(CENTER_X - 2.6, 1.4, wall_z + 0.03), vec3(1.4, 1.5, 0.06)), .color = grey(0.48) },
-        .{ .shape = cube, .model = box(vec3(CENTER_X + 2.6, 1.4, wall_z + 0.03), vec3(1.4, 1.5, 0.06)), .color = grey(0.48) },
-        .{ .shape = cube, .model = box(vec3(CENTER_X + 2.6, 2.5, wall_z + 0.03), vec3(0.8, 0.35, 0.06)), .color = grey(0.25) },
+        .{ .shape = cube, .model = box(vec3(-11.4, 0.98, wall_z + 0.12), vec3(1.4, 1.95, 0.24)), .color = grey(0.48) },
+        .{ .shape = cube, .model = box(vec3(-6.3, 1.05, wall_z + 0.12), vec3(1.6, 1.9, 0.24)), .color = grey(0.48) },
     });
 }

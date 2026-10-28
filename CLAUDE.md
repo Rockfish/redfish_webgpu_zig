@@ -50,7 +50,7 @@ the regression check. Since then:
   from Blender, power out with emergency lights, Room 02 and its ladder, the camera
   panning between rooms
 
-Active plan: 021 The Station, Room 01 (phases A-G done). Plan 019 tower attack is parked
+Active plan: 021 The Station, Room 01 (phases A-H done). Plan 019 tower attack is parked
 (phases A-J done). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

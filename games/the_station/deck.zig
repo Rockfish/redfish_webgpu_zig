@@ -79,6 +79,10 @@ pub fn isHotspotIn(index: usize, id: RoomId) bool {
     return roomAt((bounds.min.x + bounds.max.x) / 2.0) == id;
 }
 
+/// The alarm lamp's lens when it isn't glowing: a dull red, so room light doesn't make
+/// it look lit (linear).
+const ALARM_LENS_DULL = vec4(0.1, 0.012, 0.01, 1.0);
+
 /// The light on the deck: emergency light glows yellowish.
 pub const EMERGENCY_TINT = vec3(1.0, 0.72, 0.3);
 
@@ -87,10 +91,8 @@ pub const Deck = struct {
     cylinder: *Shape,
     /// Both rooms' shells.
     parts: []Part,
-    /// Room 01's equipment as boxes, drawn without the model.
-    greybox: []Part,
-    /// Room 01's equipment from Blender; null without the-station's model.
-    model: ?*ModelInstance,
+    /// Each room's equipment, by `RoomId`.
+    equipment: [2]Equipment,
     /// The alarm lamp, drawn with its glow.
     alarm_lamp: Part,
     /// Room 01's door, drawn where it has slid to.
@@ -109,22 +111,26 @@ pub const Deck = struct {
         var tubes: std.ArrayList(Part) = .empty;
         try builder.addShell(context.alloc, &parts);
         try builder.addDoorway(context.alloc, &parts);
-        try room_02.addParts(builder, context.alloc, &parts);
+        try room_02.addShell(builder, context.alloc, &parts);
         try builder.addCeilingLights(context.alloc, &parts, &tubes, 0.0);
         try builder.addCeilingLights(context.alloc, &parts, &tubes, room_02.CENTER_X);
 
-        var greybox: std.ArrayList(Part) = .empty;
-        try builder.addConsole(context.alloc, &greybox);
-        try builder.addBackPanels(context.alloc, &greybox);
-        try builder.addPipes(context.alloc, &greybox);
+        var greybox_01: std.ArrayList(Part) = .empty;
+        try builder.addConsole(context.alloc, &greybox_01);
+        try builder.addBackPanels(context.alloc, &greybox_01);
+        try builder.addPipes(context.alloc, &greybox_01);
+        var greybox_02: std.ArrayList(Part) = .empty;
+        try room_02.addGreybox(builder, context.alloc, &greybox_02);
 
         const red = room_01.alarmLightColor(1.0);
         return .{
             .cube = cube,
             .cylinder = cylinder,
             .parts = try parts.toOwnedSlice(context.alloc),
-            .greybox = try greybox.toOwnedSlice(context.alloc),
-            .model = loadModel(context, gpu),
+            .equipment = .{
+                .{ .greybox = try greybox_01.toOwnedSlice(context.alloc), .model = loadModel(context, gpu, "room_01", room_01.MODEL_PATH) },
+                .{ .greybox = try greybox_02.toOwnedSlice(context.alloc), .model = loadModel(context, gpu, "room_02", room_02.MODEL_PATH) },
+            },
             .alarm_lamp = .{
                 .shape = cylinder,
                 .model = room_01.cylinderModel(room_01.ALARM_LAMP_POSITION.sub(vec3(0.0, 0.0, 0.1)), .z, 0.3, 0.2),
@@ -135,20 +141,18 @@ pub const Deck = struct {
         };
     }
 
-    /// `shader` draws the shapes, `model_shader` the equipment model.
+    /// `shader` draws the shapes, `model_shader` the equipment models.
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, state: DrawState) void {
         for (self.parts) |part| {
             room_01.drawPart(frame, shader, part, hatching);
         }
-        if (self.model != null and !state.use_greybox) {
-            self.model.?.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
-        } else {
-            for (self.greybox) |part| {
-                room_01.drawPart(frame, shader, part, hatching);
-            }
+        for (self.equipment) |equipment| {
+            equipment.draw(frame, shader, model_shader, hatching, state.use_greybox);
         }
 
+        // From the dull red of an unlit lens to the alarm's red as it glows
         var lamp = self.alarm_lamp;
+        lamp.color = ALARM_LENS_DULL.lerp(lamp.color, state.alarm_glow);
         lamp.emissive = state.alarm_glow;
         room_01.drawPart(frame, shader, lamp, hatching);
 
@@ -170,28 +174,48 @@ pub const Deck = struct {
     pub fn cleanUp(self: *const Self) void {
         self.cube.releaseGpuObjects();
         self.cylinder.releaseGpuObjects();
-        if (self.model) |model| {
-            model.cleanUp();
+        for (self.equipment) |equipment| {
+            if (equipment.model) |model| {
+                model.cleanUp();
+            }
+        }
+    }
+};
+
+/// A room's equipment: the Blender model, or boxes without it.
+const Equipment = struct {
+    /// Drawn without the model, or with the panel's "greybox room".
+    greybox: []Part,
+    /// From Blender; null without the-station's model.
+    model: ?*ModelInstance,
+
+    fn draw(self: Equipment, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, use_greybox: bool) void {
+        if (self.model != null and !use_greybox) {
+            self.model.?.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
+            return;
+        }
+        for (self.greybox) |part| {
+            room_01.drawPart(frame, shader, part, hatching);
         }
     }
 };
 
 /// What changes from frame to frame in how the deck looks.
 pub const DrawState = struct {
-    /// 0..1: how lit the alarm lamp is (0 is a dark red lamp).
+    /// 0..1: how lit the alarm lamp is (0 is off, a dull red lens).
     alarm_glow: f32,
     /// 0..1: how much the ceiling lights' tubes glow (0 is off).
     light_glow: f32,
     /// 0..1: how far the door has slid into the wall.
     door_open: f32,
-    /// Room 01's equipment as boxes, not the model.
+    /// The rooms' equipment as boxes, not the models.
     use_greybox: bool,
 };
 
 /// Null, with a warning, when the model can't be loaded (no the-station checkout).
-fn loadModel(context: core.Context, gpu: *GpuContext) ?*ModelInstance {
-    return ModelInstance.initWithConfig(context, gpu, .{ .name = "room_01", .file_path = room_01.MODEL_PATH }) catch |err| {
-        std.log.warn("{s} not loaded ({s}); drawing the greybox room", .{ room_01.MODEL_PATH, @errorName(err) });
+fn loadModel(context: core.Context, gpu: *GpuContext, name: []const u8, path: []const u8) ?*ModelInstance {
+    return ModelInstance.initWithConfig(context, gpu, .{ .name = name, .file_path = path }) catch |err| {
+        std.log.warn("{s} not loaded ({s}); drawing the greybox room", .{ path, @errorName(err) });
         return null;
     };
 }

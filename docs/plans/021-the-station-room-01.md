@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-G done)
+## Status: Active (started 2026-10-18; phases A-H done)
 
 ## Context
 
@@ -138,6 +138,11 @@ toward the back center.
 - [x] Ladder: click the ladder to step onto it, its lower part to climb down out of sight,
       the ladder again to climb back up; a click elsewhere gets off and walks there.
       Climb clips for the robot in `build_robot.py`. Nothing below yet
+
+### H. Room 02 art
+- [x] `the-station/blender/build_room_02.py`: Room 02's equipment in Room 01's style,
+      written to `models/room_02/room_02.glb`; shared pieces in `blender/room_kit.py`
+- [x] In the game: each room's model or greybox (`deck.Equipment`)
 
 ## Notes & Decisions
 
@@ -477,3 +482,32 @@ toward the back center.
   placeholder's arm goes to 120° too (`Gesture.reach`). The clips come from one helper
   in `build_robot.py`, `push_clip`; the existing pushes came out the same. Checked with
   frames of the keypad push: the hand reaches the keypad.
+- 2026-10-28, phase H, Room 02 in Blender (John: "like room 01"), as built:
+  - **`blender/room_kit.py`**: what both room scripts use, moved out of
+    `build_room.py`: the game's coordinates (`at`, `extent`), `place`, `disc`, texture
+    mapping (`front_texture`, `cap_texture`, and new `top_texture` for faces up and
+    `left_wall_texture` for a left wall), `Svg` (now given its directory), fittings
+    (`meter`, `dial`, `toggle`, `knob`, `label_plate`; they take the surface's `front`),
+    `join_groups`, `save`. Room 01 rebuilt through it came out the same (only float
+    noise in one mesh's normals, 0.0001), so its committed model was kept.
+  - **`blender/build_room_02.py`**, the hatch room: the ladder (rails, rungs to the top,
+    caps, brackets to the shaft wall), a steel rim around the hole with hazard stripes
+    on top, the deck's power distribution cabinet right of the hole (three phase dials,
+    a main rotary switch set to off, fuses, toggles, knobs, printed doors, conduits to
+    the ceiling), two lockers left of it, a warning sign over the hole, the section's
+    name over the locked door, the keypad (printed keys, display, lamp), two pipes along
+    the back wall, the lower one turning down the shaft beside the ladder. Things on the
+    back wall are at most 0.25 m deep, clear of the walk areas. Sizes the game also uses
+    (hole, ladder, keypad) are room_02.zig's.
+  - **In the game**: `room_02.MODEL_PATH`; `room_02.addShell` (shell, locked door, deck
+    below) and `addGreybox` (ladder, keypad, stand-ins for lockers and cabinet), drawn
+    without the model or with "greybox room". `Deck.equipment` holds each room's model
+    and greybox. A new hotspot, the power cabinet ("No voltage on any phase. The feed
+    comes up the shaft."), points the robot down the ladder.
+  - Checked on screen with the emergency lights on; the warning sign was narrowed to
+    clear the pipe going down the shaft.
+- 2026-10-28 (John): the alarm lamp, shut off, should be a dull red. Its lens kept the
+  alarm's bright red and only lost its glow, so the emergency light lit it up as if on.
+  Now its color goes from a dull red (`deck.ALARM_LENS_DULL`) to the alarm's red with
+  its glow; while the alarm runs the lens dims to dull between pulses. Checked with the
+  alarm off, lights off and emergency lights on.
