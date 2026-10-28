@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-D done)
+## Status: Active (started 2026-10-18; phases A-E done)
 
 ## Context
 
@@ -93,7 +93,16 @@ a door that opens. Multi-floor views and further rooms are later plans.
 - [ ] Tune on the room and robot together (panel "Ink" section; defaults set from
       screenshots, John to tune)
 
-### E. Room art
+### E. Saved settings (ZON)
+- [x] `core.SettingsFile(Values)`: the panel's settings in a ZON file, only those that
+      differ from the defaults in code; tests
+- [x] Panel: right-click a setting to save, revert to saved, or reset to default; per
+      section save / revert / defaults; `*` on unsaved settings and sections
+- [x] File: `the-station/settings/room_01.zon` (with the room's art)
+- [ ] Lua, later, for game scripting (hotspot effects, puzzles, dialogue) once the
+      logic in `game.zig` repeats across rooms; our own binding to Lua's C source
+
+### F. Room art
 - [ ] Room modeled in Blender with detail (pipes, vents, panel faces), glTF
 - [ ] Greyscale textures for surface detail
 
@@ -269,3 +278,42 @@ a door that opens. Multi-floor views and further rooms are later plans.
   mesh and gives the faces between a second material), 1.2 cm, about 2 px. Nothing
   stands out, so nothing catches light or outlines. Checked over 12 frames: the seam
   holds still. `vertical_bevel_only` went with the band.
+- 2026-10-28, saving settings (John: ZON for now; "I think we'll end up with both ZON and
+  Lua"). Options weighed:
+  - **ZON** (`std.zon`, in Zig 0.16): no dependency, reads into the settings structs
+    with their types checked (a wrong field names its line), allows comments, Zig syntax.
+    Comments are lost when the program rewrites the file.
+  - **JSON** (`std.json`): no dependency, every tool reads it; no comments, noisier.
+  - **Lua through ziglua**: real scripting, proven in adventure games (Grim Fandango's
+    logic was Lua); but a dependency that follows Zig releases, as zglfw and zgui do
+    now (plan 020 waits on them), and far more than settings need.
+  - **Lua through our own binding**: compile Lua's C files (MIT) in `build.zig`, translate
+    `lua.h` as with `webgpu.h`; the stack API and errors are real work.
+  - TOML / INI / our own format: a parser to write or depend on, nothing gained over ZON.
+  The deciding point: settings saved from the panel are rewritten by the program, and a
+  program can rewrite data but not logic, so saved settings are data whatever else is
+  scripted. Lua's place is game scripting (see phase E's last item).
+- 2026-10-28, phase E, as built:
+  - `src/core/settings_file.zig`: `SettingsFile(Values)`, where `Values` is a struct of
+    sections, each a struct of settings with defaults. The file's type is made at
+    compile time (`@Struct`): each section with every setting optional and null. Saving a
+    setting stores its value, or null if it equals the default, so the file holds only
+    what differs and a default changed in code still applies to the rest. Written one
+    setting per line (`std.zon.Serializer`), sections with nothing saved left out:
+    ```
+    .{
+        .camera = .{
+            .distance = 6.5,
+        },
+    }
+    ```
+    Settings in the file the program no longer has are skipped (and dropped on the next
+    save); a file that isn't readable as these settings is reported and never written
+    over. Reset and revert change only the value in memory; the file changes on save.
+  - `games/the_station/settings.zig`: `Settings` (camera, ink, room, alarm; the room and
+    alarm settings are their own structs now) and `Panel`, the panel's widgets with the
+    right-click menu and the `*`. "reset room" (restarts the game) is now "restart room",
+    apart from the settings' "defaults".
+  - Checked with a temporary edit: saved the camera distance and the ink section, the
+    file held only the two changed values, a second run loaded them, and the panel
+    marked an unsaved line width. The test file was removed afterwards.

@@ -22,6 +22,7 @@ pub const Transform = @import("transform.zig").Transform;
 pub const String = @import("string.zig").String;
 
 pub const Input = @import("input.zig").Input;
+pub const SettingsFile = @import("settings_file.zig").SettingsFile;
 pub const Model = @import("model.zig").Model;
 pub const ModelInstance = @import("model_instance.zig").ModelInstance;
 pub const Mesh = @import("mesh.zig").Mesh;

@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-28 - Saved settings; plan 021 phase E
+- **core.SettingsFile**: settings saved one at a time to a ZON file holding only those that differ from the defaults in code (save, revert to saved, reset to default, per setting or section; `isChanged`); unknown settings skipped, an unreadable file never written over; tests
+- **games/the_station**: the panel's settings (`settings.zig`) save to `the-station/settings/room_01.zon`; right-click a setting to save, revert, or reset it, buttons per section, `*` marks unsaved settings; "reset room" is now "restart room"
+
 ### 2026-10-20 - The Station: the robot from Blender; plan 021 phase C
 - **core.Input**: `mousePressed(button)`, true on the frame a press arrived even if it was released before the frame (a trackpad tap; `isMouseDown` misses it); test
 - **core.Shader**: `ShaderConfig.includes`, WGSL files placed after common.wgsl and before the shader's own (an app's shared shader code); compile errors give the line offset with them

@@ -45,9 +45,10 @@ the regression check. Since then:
   control, explosions, projectiles, turrets, steering)
 - Plan 021 The Station: `games/the_station`, a point-and-click game (docs and art in
   `the-station/`, its own repo, symlinked and gitignored); Room 01 greybox, cutaway
-  camera with a shifted lens (`Mat4.frustumRhZo`)
+  camera with a shifted lens (`Mat4.frustumRhZo`), ink shader, the robot from Blender;
+  `core.SettingsFile` (panel settings saved per setting to ZON)
 
-Active plan: 021 The Station, Room 01 (phase A done). Plan 019 tower attack is parked
+Active plan: 021 The Station, Room 01 (phases A-E done). Plan 019 tower attack is parked
 (phases A-J done). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

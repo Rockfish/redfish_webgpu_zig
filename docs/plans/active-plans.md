@@ -9,7 +9,8 @@ How these files work, including parking and resuming plans: [README.md](README.m
   A-D done: greybox Room 01 with the shifted-lens cutaway camera, walking and clicking
   with hotspots (the red button opens the door; the robot leaves through it and comes
   back), ink outlines and hatching, the robot from Blender (`the-station/blender/
-  build_robot.py`, live 3D in ink). Next: phase E (room art).
+  build_robot.py`, live 3D in ink), settings saved per setting to a ZON file
+  (`core.SettingsFile`; Lua later for game scripting). Next: phase F (room art).
 
 ## ⏸️ Parked
 

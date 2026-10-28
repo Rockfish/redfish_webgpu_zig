@@ -6,7 +6,8 @@
 //! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm and
 //! opens the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
 //! Blender model (`robot_model.zig`), or the box placeholder without it. A panel tunes
-//! the camera, the ink, the room, and the alarm.
+//! the camera, the ink, the room, and the alarm, and saves settings one at a time
+//! (`settings.zig`).
 //!
 //! Keys: 1 / 2 / 3 pick the view (shifted, aimed, orthographic), Space toggles the
 //! alarm, Escape quits.
@@ -21,6 +22,7 @@ const room_camera = @import("room_camera.zig");
 const room = @import("room.zig");
 const interaction = @import("interaction.zig");
 const ink = @import("ink.zig");
+const settings_file = @import("settings.zig");
 const Game = @import("game.zig").Game;
 const Robot = @import("robot.zig").Robot;
 const RobotModel = @import("robot_model.zig").RobotModel;
@@ -39,6 +41,7 @@ const Shape = core.shapes.Shape;
 const gui = core.gui;
 const Room = room.Room;
 const RoomCamera = room_camera.RoomCamera;
+const Settings = settings_file.Settings;
 const vec3 = math.vec3;
 
 /// The space outside the station.
@@ -65,21 +68,6 @@ const Scene = struct {
             self.robot.draw(frame, shaders.room, self.room, hatching);
         }
     }
-};
-
-/// Everything the panel changes besides the camera, the ink, and the game.
-const Settings = struct {
-    show_grid: bool = false,
-    /// Draw the box robot even when the Blender model is loaded.
-    use_placeholder: bool = false,
-    /// Alarm pulses per second.
-    alarm_rate: f32 = 0.8,
-    /// The alarm light's brightness at the top of a pulse.
-    alarm_intensity: f32 = 4.0,
-    /// The room's light while the alarm is off; with the alarm on it drops to the
-    /// emergency level.
-    room_light: f32 = 0.8,
-    emergency_light: f32 = 0.25,
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -124,9 +112,11 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         model.cleanUp();
     };
 
-    var camera: RoomCamera = .{};
+    var saved_settings = settings_file.File.load(allocator, context.io, settings_file.SETTINGS_PATH);
     var settings: Settings = .{};
-    var style: ink.Style = .{};
+    saved_settings.apply(&settings);
+    const camera = &settings.camera;
+    const style = &settings.ink;
     var game: Game = .{};
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
@@ -137,7 +127,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     while (!window.shouldClose()) {
         zglfw.pollEvents();
         input.update();
-        processKeys(input, window, &camera, &game);
+        processKeys(input, window, camera, &game);
 
         const time = input.total_time;
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
@@ -149,7 +139,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
             try model.update(&game.robot, input.delta_time);
         }
 
-        const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm_rate) else 0.0;
+        const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm.rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
         try ink_pass.update(gpu);
@@ -162,7 +152,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const scene: Scene = .{
             .room = &control_room,
             .robot = &game.robot,
-            .robot_model = if (settings.use_placeholder) null else if (robot_model) |*model| model else null,
+            .robot_model = if (settings.room.use_placeholder) null else if (robot_model) |*model| model else null,
             .alarm_glow = alarm_level,
             .door_open = game.door_open,
         };
@@ -174,13 +164,13 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
 
         frame.beginSurfacePass(CLEAR_COLOR);
         scene.draw(&frame, scene_shaders, style.hatching());
-        ink_pass.drawOutlines(&frame, style);
-        drawLines(&frame, &lines, settings.show_grid, game.hovered);
+        ink_pass.drawOutlines(&frame, style.*);
+        drawLines(&frame, &lines, settings.room.show_grid, game.hovered);
 
         gui.newFrame();
         drawLabel("remark", game.remark(), .{ zgui.io.getDisplaySize()[0] / 2.0, 24.0 }, 0.5);
         drawLabel("hovered", game.hoveredName(), .{ input.mouse_x + 18.0, input.mouse_y + 8.0 }, 0.0);
-        drawPanel(&camera, &settings, &style, &game, aspect);
+        drawPanel(.{ .file = &saved_settings, .values = &settings }, &game, aspect);
         gui.draw(frame);
 
         gpu.endFrame(frame);
@@ -229,14 +219,14 @@ fn alarmPulse(time: f32, rate: f32) f32 {
 
 /// Dim light from above the opening, and the alarm's red point light.
 fn roomLights(settings: Settings, is_alarm_on: bool, alarm_level: f32) SceneLights {
-    const room_light = if (is_alarm_on) settings.emergency_light else settings.room_light;
+    const room_light = if (is_alarm_on) settings.alarm.emergency_light else settings.room.light;
 
     var lights = SceneLights.init();
     lights.ambient = vec3(1.0, 1.0, 1.0).mulScalar(0.06 + 0.1 * room_light);
     lights.direction_light = .{ .dir = vec3(0.25, -1.0, -0.6), .color = vec3(1.0, 1.0, 1.0).mulScalar(room_light) };
     lights.setPointLight(0, .{
         .world_pos = room.ALARM_LIGHT_POSITION,
-        .color = room.alarmLightColor(settings.alarm_intensity * alarm_level),
+        .color = room.alarmLightColor(settings.alarm.intensity * alarm_level),
         .constant = 1.0,
         .linear = 0.35,
         .quadratic = 0.15,
@@ -309,52 +299,48 @@ fn drawLabel(id: [:0]const u8, text: []const u8, position: [2]f32, pivot_x: f32)
     zgui.end();
 }
 
-fn drawPanel(camera: *RoomCamera, settings: *Settings, style: *ink.Style, game: *Game, aspect: f32) void {
+fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
     zgui.setNextWindowPos(.{ .x = 20, .y = 20, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = 340, .h = 0, .cond = .first_use_ever });
     // Collapsed at first: open it covers the door
     zgui.setNextWindowCollapsed(.{ .collapsed = true, .cond = .first_use_ever });
     if (zgui.begin("room 01", .{})) {
         zgui.text("1 / 2 / 3: view   Space: alarm", .{});
+        zgui.text("Right-click a setting: save, revert, reset", .{});
 
-        zgui.separatorText("Camera");
-        _ = zgui.comboFromEnum("view", &camera.view);
-        _ = zgui.sliderFloat("distance", .{ .v = &camera.distance, .min = 2.0, .max = 40.0 });
-        _ = zgui.sliderFloat("eye height", .{ .v = &camera.eye_height, .min = -1.0, .max = 5.0 });
-        _ = zgui.sliderFloat("eye x", .{ .v = &camera.eye_x, .min = -4.0, .max = 4.0 });
-        if (zgui.button("reset camera", .{})) {
-            camera.* = .{ .view = camera.view };
-        }
+        panel.section(.camera, "Camera");
+        panel.combo(.camera, .view, "view");
+        panel.slider(.camera, .distance, "distance", 2.0, 40.0);
+        panel.slider(.camera, .eye_height, "eye height", -1.0, 5.0);
+        panel.slider(.camera, .eye_x, "eye x", -4.0, 4.0);
+        const camera = &panel.values.camera;
         const framing = RoomCamera.fitToAspect(Room.framing(), aspect);
         zgui.text("vertical field of view: {d:.1}°", .{camera.verticalFov(framing)});
         zgui.text("horizontal field of view: {d:.1}°", .{horizontalFov(camera.verticalFov(framing), aspect)});
 
-        zgui.separatorText("Ink");
-        _ = zgui.checkbox("outlines", .{ .v = &style.show_outlines });
-        _ = zgui.sliderFloat("line width", .{ .v = &style.line_width, .min = 1.0, .max = 4.0 });
-        _ = zgui.sliderFloat("depth threshold", .{ .v = &style.depth_threshold, .min = 0.005, .max = 0.2 });
-        _ = zgui.sliderFloat("crease threshold", .{ .v = &style.normal_threshold, .min = 0.05, .max = 1.0 });
-        _ = zgui.sliderFloat("ink opacity", .{ .v = &style.ink_opacity, .min = 0.0, .max = 1.0 });
-        _ = zgui.checkbox("hatching", .{ .v = &style.show_hatching });
-        _ = zgui.sliderFloat("hatch strength", .{ .v = &style.hatch_strength, .min = 0.0, .max = 1.0 });
-        _ = zgui.sliderFloat("hatch spacing", .{ .v = &style.hatch_spacing, .min = 0.02, .max = 0.2 });
-        if (zgui.button("reset ink", .{})) {
-            style.* = .{};
-        }
+        panel.section(.ink, "Ink");
+        panel.checkbox(.ink, .show_outlines, "outlines");
+        panel.slider(.ink, .line_width, "line width", 1.0, 4.0);
+        panel.slider(.ink, .depth_threshold, "depth threshold", 0.005, 0.2);
+        panel.slider(.ink, .normal_threshold, "crease threshold", 0.05, 1.0);
+        panel.slider(.ink, .ink_opacity, "ink opacity", 0.0, 1.0);
+        panel.checkbox(.ink, .show_hatching, "hatching");
+        panel.slider(.ink, .hatch_strength, "hatch strength", 0.0, 1.0);
+        panel.slider(.ink, .hatch_spacing, "hatch spacing", 0.02, 0.2);
 
-        zgui.separatorText("Room");
-        _ = zgui.checkbox("floor grid", .{ .v = &settings.show_grid });
-        _ = zgui.checkbox("placeholder robot", .{ .v = &settings.use_placeholder });
-        _ = zgui.sliderFloat("room light", .{ .v = &settings.room_light, .min = 0.0, .max = 1.5 });
-        if (zgui.button("reset room", .{})) {
+        panel.section(.room, "Room");
+        panel.checkbox(.room, .show_grid, "floor grid");
+        panel.checkbox(.room, .use_placeholder, "placeholder robot");
+        panel.slider(.room, .light, "room light", 0.0, 1.5);
+        if (zgui.button("restart room", .{})) {
             game.* = .{};
         }
 
-        zgui.separatorText("Alarm");
+        panel.section(.alarm, "Alarm");
         _ = zgui.checkbox("on", .{ .v = &game.is_alarm_on });
-        _ = zgui.sliderFloat("pulses per second", .{ .v = &settings.alarm_rate, .min = 0.2, .max = 3.0 });
-        _ = zgui.sliderFloat("intensity", .{ .v = &settings.alarm_intensity, .min = 0.0, .max = 12.0 });
-        _ = zgui.sliderFloat("emergency light", .{ .v = &settings.emergency_light, .min = 0.0, .max = 1.0 });
+        panel.slider(.alarm, .rate, "pulses per second", 0.2, 3.0);
+        panel.slider(.alarm, .intensity, "intensity", 0.0, 12.0);
+        panel.slider(.alarm, .emergency_light, "emergency light", 0.0, 1.0);
     }
     zgui.end();
 }
