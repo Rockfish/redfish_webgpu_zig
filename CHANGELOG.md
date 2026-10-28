@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-28 - The Station: the door button closes the door too
+- **games/the_station**: the console's middle button opens the door, or closes it when open
+
 ### 2026-10-28 - The Station: Room 01's equipment from Blender; plan 021 phase F
 - **games/the_station**: the room's equipment is a Blender model after the Dubna accelerator control hall (`the-station/models/room_01/room_01.glb`): a row of instrument cabinets along the back wall (meters, lamps, toggles, knobs, a ring of lamps, push keys; the gauges, screen, and breakers are two-bay cabinets) under a mimic board, a restyled console on the right wall, pipes along the side walls; printed detail from textures. `shaders/model.wgsl` (was robot.wgsl) draws any glTF model in ink with its base color texture. The shell stays boxes; the greybox equipment is the fallback and the panel's "greybox room". Hotspots moved onto the cabinets. The red button only stops the alarm; the console's middle button opens the door
 - **the-station**: `blender/build_room.py` builds the room's equipment and its textures (SVG, `rsvg-convert`); `blender/primitives.py`, shared with `build_robot.py`

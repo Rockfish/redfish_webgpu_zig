@@ -4,7 +4,7 @@
 //! Room 01 as a greybox, seen through its open front by the cutaway camera
 //! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
 //! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm, the
-//! console's middle button opens the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
+//! console's middle button opens and closes the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
 //! Blender model (`robot_model.zig`), or the box placeholder without it. A panel tunes
 //! the camera, the ink, the room, and the alarm, and saves settings one at a time
 //! (`settings.zig`).

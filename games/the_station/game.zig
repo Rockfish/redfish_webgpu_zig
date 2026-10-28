@@ -1,6 +1,6 @@
 //! Room 01's state, the clicks that drive the robot, and what using each hotspot does
 //! (plan 021, phase B). The red button stops the alarm; the console's middle button opens
-//! the door.
+//! and closes the door.
 
 const std = @import("std");
 const core = @import("core");
@@ -82,13 +82,11 @@ pub const Game = struct {
                     self.say("Nothing more happens.");
                 }
             },
+            // The robot presses it at the console, so it is never in the doorway as the
+            // door closes
             .door_button => {
-                if (!self.is_door_open) {
-                    self.is_door_open = true;
-                    self.say("A lock clicks. The door slides open.");
-                } else {
-                    self.say("Nothing more happens.");
-                }
+                self.is_door_open = !self.is_door_open;
+                self.say(if (self.is_door_open) "A lock clicks. The door slides open." else "The door slides shut.");
             },
             .door => {
                 if (self.is_door_open) {

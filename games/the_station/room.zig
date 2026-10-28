@@ -78,8 +78,8 @@ pub const doorway: Doorway = .{
 const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
 /// What each hotspot is, for the game to decide what using it does.
-/// The console's buttons: red stops the alarm, the middle one opens the door, the other
-/// does nothing.
+/// The console's buttons: red stops the alarm, the middle one opens and closes the door,
+/// the other does nothing.
 pub const HotspotKind = enum { door, red_button, door_button, grey_button, lever, gauges, screen, breakers };
 
 /// Facing directions for stand points: the robot's yaw, 0 toward the camera (+z).

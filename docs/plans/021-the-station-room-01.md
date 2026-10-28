@@ -383,3 +383,4 @@ board in the upper left.
 - 2026-10-28, the console's buttons (John): the red button only stops the alarm; the
   middle button (`HotspotKind.door_button`, still named "Button") opens the door. They
   were one action before (the red button did both).
+- 2026-10-28 (John): the middle button also closes the door when it is open.
