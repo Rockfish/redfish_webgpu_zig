@@ -3,9 +3,12 @@
 //! animator poses nodes; no skinning.
 //!
 //! What the robot is doing (`Robot.task`) picks a clip, played through the animation
-//! state machine with short crossfades: idle, walk (also while turning in place), push
-//! (its contact at 0.45 s matches the gesture's effect time in `robot.zig`). The robot
-//! starts by looking around, as if woken by the alarm.
+//! state machine with short crossfades: idle, walk (also while turning in place and
+//! stepping on and off a ladder), push or push_left (push_high, push_high_left for a
+//! control above the shoulders), with the arm nearer the camera
+//! (`robot.usesLeftArm`; contact at 0.45 s, the gesture's effect time in `robot.zig`),
+//! climb and ladder_hold on a ladder. The robot starts by
+//! looking around, as if woken by the alarm.
 //!
 //! The model is in the-station's repo, not the engine's; without it the game draws the
 //! box placeholder (`Robot.draw`).
@@ -14,8 +17,9 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const room = @import("room.zig");
-const Robot = @import("robot.zig").Robot;
+const room_01 = @import("room_01.zig");
+const robot_module = @import("robot.zig");
+const Robot = robot_module.Robot;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
 const ModelInstance = core.ModelInstance;
@@ -28,7 +32,7 @@ const log = std.log.scoped(.robot_model);
 pub const MODEL_PATH = "the-station/models/robot/robot.glb";
 
 /// The robot's clips; each name is a glTF animation in the model.
-const Clip = enum(u32) { idle, walk, push, look_around, startle };
+const Clip = enum(u32) { idle, walk, push, push_left, push_high, push_high_left, look_around, startle, climb, ladder_hold };
 const Fsm = core.AnimationStateMachine(Clip);
 
 pub const RobotModel = struct {
@@ -67,7 +71,7 @@ pub const RobotModel = struct {
         try self.fsm.update(self.instance, dt);
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, robot: *const Robot, hatching: room.Hatching) void {
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, robot: *const Robot, hatching: room_01.Hatching) void {
         const transform = Mat4.fromTranslation(robot.position).mulMat4(&Mat4.fromRotationY(robot.yaw));
         self.instance.drawWithParams(frame, shader, transform, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
     }
@@ -79,12 +83,14 @@ pub const RobotModel = struct {
 
 fn clipFor(robot: *const Robot) Clip {
     return switch (robot.task) {
-        .idle, .outside => .idle,
-        .walk, .turn => .walk,
+        .idle => .idle,
+        .walk, .turn, .mount, .dismount => .walk,
         .act => |act| switch (act.use.action) {
-            .push => .push,
+            .push => if (robot_module.usesLeftArm(act.use.facing)) .push_left else .push,
+            .push_high => if (robot_module.usesLeftArm(act.use.facing)) .push_high_left else .push_high,
             .look => .idle,
         },
+        .ladder => if (robot.isClimbing()) .climb else .ladder_hold,
     };
 }
 
@@ -92,13 +98,17 @@ fn clipFor(robot: *const Robot) Clip {
 fn stateConfigs(instance: *const ModelInstance) ![Fsm.count]Fsm.StateConfig {
     var configs: [Fsm.count]Fsm.StateConfig = undefined;
     for (std.enums.values(Clip)) |clip| {
-        const is_loop = clip == .idle or clip == .walk;
+        const is_push = switch (clip) {
+            .push, .push_left, .push_high, .push_high_left => true,
+            .idle, .walk, .look_around, .startle, .climb, .ladder_hold => false,
+        };
+        const is_loop = clip == .idle or clip == .walk or clip == .climb or clip == .ladder_hold;
         configs[@intFromEnum(clip)] = .{
             .animation_id = try findAnimation(instance, @tagName(clip)),
             .repeat = if (is_loop) .Forever else .Once,
-            .crossfade_in = if (clip == .push) 0.1 else 0.2,
+            .crossfade_in = if (is_push) 0.1 else 0.2,
             // The push plays to its end, so the hand reaches the button
-            .interruptible = clip != .push,
+            .interruptible = !is_push,
             .return_state = if (is_loop) null else .idle,
         };
     }

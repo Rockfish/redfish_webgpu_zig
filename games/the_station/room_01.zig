@@ -1,11 +1,12 @@
-//! Room 01, the control room (plan 021).
+//! Room 01, the control room (plan 021), and the pieces every room is drawn with
+//! (`Part`, `PartBuilder`, `box`, `grey`). The deck (`deck.zig`) puts it next to Room 02.
 //!
-//! The shell (floor, ceiling, walls, the doorway and its door, the alarm lamp) is boxes
-//! and cylinders drawn here: its cut faces, the sliding door, and the pulsing lamp change
-//! per draw. The equipment (a row of instrument cabinets under a mimic board on the back
-//! wall, the console on the right wall, pipes) is the model `MODEL_PATH`, built by
-//! `the-station/blender/build_room.py`; without it, or with the panel's "greybox room",
-//! the greybox equipment draws instead.
+//! The shell (floor, ceiling, walls, the doorway and its door, the alarm lamp, the
+//! ceiling lights) is boxes and cylinders: its cut faces, the sliding door, and the
+//! lamps change per draw. The equipment (a row of instrument cabinets under a mimic board
+//! on the back wall, the console on the right wall, pipes) is the model `MODEL_PATH`,
+//! built by `the-station/blender/build_room.py`; without it, or with the panel's
+//! "greybox room", the greybox equipment draws instead.
 //!
 //! World layout, 1 unit = 1 m: x runs left to right across the room, y up from the
 //! floor, z out of the room toward the camera. The room's inside spans
@@ -13,8 +14,8 @@
 //! (floor, ceiling, walls) is WALL thick, and its faces at z = 0 are the cut through the
 //! station, drawn dark.
 //!
-//! Left wall: a doorway with a door that slides into the wall. Right wall: the control
-//! console. Back wall: the cabinets (among them the gauges, the screen, and the breakers)
+//! Left wall: a doorway to Room 02 with a door that slides into the wall. Right wall: the
+//! control console. Back wall: the cabinets (among them the gauges, the screen, and the breakers)
 //! and the alarm lamp above the middle. The things the robot can use are `hotspots`.
 
 const std = @import("std");
@@ -24,15 +25,10 @@ const math = @import("math");
 const AABB = core.AABB;
 const DrawUniforms = core.DrawUniforms;
 const Frame = core.Frame;
-const GpuContext = core.GpuContext;
-const ModelInstance = core.ModelInstance;
 const Shader = core.Shader;
 const Shape = core.shapes.Shape;
 const srgbToLinear = core.colors.srgbToLinear;
-const Framing = @import("room_camera.zig").Framing;
 const Hotspot = @import("interaction.zig").Hotspot;
-const WalkArea = @import("interaction.zig").WalkArea;
-const Doorway = @import("robot.zig").Doorway;
 const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -45,16 +41,17 @@ pub const WIDTH: f32 = 8.0;
 pub const HEIGHT: f32 = 3.0;
 pub const DEPTH: f32 = 4.0;
 pub const WALL: f32 = 0.4;
+/// The deck below, not explored yet: solid under the floor, drawn as a cut.
+pub const BELOW_DEPTH: f32 = 3.0;
+pub const BELOW_COLOR_SRGB: f32 = 0.35;
 
-/// Space shown around the shell's cut edges.
-const FRAME_MARGIN: f32 = 0.3;
-
-/// The doorway in the left wall.
-const DOOR_CENTER_Z: f32 = -2.2;
-const DOOR_WIDTH: f32 = 1.2;
-const DOOR_HEIGHT: f32 = 2.2;
-/// The left wall's center line; the door slides along it, inside the wall.
-const LEFT_WALL_X: f32 = -(WIDTH + WALL) / 2.0;
+/// The doorway in the left wall (and the doors of other rooms).
+pub const DOOR_CENTER_Z: f32 = -2.2;
+pub const DOOR_WIDTH: f32 = 1.2;
+pub const DOOR_HEIGHT: f32 = 2.2;
+/// The left wall's center line; the door slides along it, inside the wall. Room 02's
+/// right wall is this wall.
+pub const LEFT_WALL_X: f32 = -(WIDTH + WALL) / 2.0;
 
 /// Where the alarm lamp is, on the back wall above the screen panel.
 pub const ALARM_LAMP_POSITION = vec3(0.0, 2.7, -DEPTH + 0.12);
@@ -64,28 +61,40 @@ pub const ALARM_LIGHT_POSITION = vec3(0.0, 2.5, -DEPTH + 0.8);
 const ALARM_RED = vec3(1.0, 0.04, 0.02);
 
 /// The floor the robot can walk on: clear of the walls, the console, and the cabinets.
-pub const walk_area: WalkArea = .{ .min_x = -3.4, .max_x = 2.85, .min_z = -3.25, .max_z = -0.4 };
+pub const WALK_MIN_X: f32 = -3.4;
+pub const WALK_MAX_X: f32 = 2.85;
+pub const WALK_MIN_Z: f32 = -3.25;
+pub const WALK_MAX_Z: f32 = -0.4;
 
 /// Where the robot starts.
 pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 
-/// The way out: the door's stand point, and a point beyond the doorway inside the dark
-/// recess (`addDoorway`), which hides the robot there.
-pub const doorway: Doorway = .{
-    .inside = DOOR_STAND_POINT,
-    .outside = vec3(-WIDTH / 2.0 - WALL - 0.7, 0.0, DOOR_CENTER_Z),
-};
-const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
+/// Where the robot stands to use the door, in this room_01.
+pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
-/// What each hotspot is, for the game to decide what using it does.
-/// The console's buttons: red stops the alarm, the middle one opens and closes the door,
-/// the other does nothing.
-pub const HotspotKind = enum { door, red_button, door_button, grey_button, lever, gauges, screen, breakers };
+/// What each hotspot on the deck is, for the game to decide what using it does. The
+/// console's buttons: red stops the alarm, the middle one opens and closes the door, the
+/// third turns on the lights. Room 02 (`room_02.zig`): its locked door and the keypad
+/// beside it, and the ladder, whose lower part (the hole) is a hotspot of its own.
+pub const HotspotKind = enum {
+    door,
+    red_button,
+    door_button,
+    lights_button,
+    lever,
+    gauges,
+    screen,
+    breakers,
+    locked_door,
+    keypad,
+    ladder,
+    ladder_hole,
+};
 
 /// Facing directions for stand points: the robot's yaw, 0 toward the camera (+z).
-const FACE_LEFT_WALL = -std.math.pi / 2.0;
-const FACE_RIGHT_WALL = std.math.pi / 2.0;
-const FACE_BACK_WALL = std.math.pi;
+pub const FACE_LEFT_WALL = -std.math.pi / 2.0;
+pub const FACE_RIGHT_WALL = std.math.pi / 2.0;
+pub const FACE_BACK_WALL = std.math.pi;
 
 pub const hotspots = [_]Hotspot(HotspotKind){
     .{
@@ -113,7 +122,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .action = .push,
     },
     .{
-        .kind = .grey_button,
+        .kind = .lights_button,
         .name = "Button",
         .bounds = bounds(vec3(3.33, 0.85, -2.62), vec3(3.57, 1.0, -2.38)),
         .stand_point = vec3(2.75, 0.0, -2.5),
@@ -175,103 +184,6 @@ pub const Part = struct {
     is_cut: bool = false,
 };
 
-pub const Room = struct {
-    cube: *Shape,
-    cylinder: *Shape,
-    /// The shell.
-    parts: []Part,
-    /// The equipment as boxes, drawn without the model.
-    greybox: []Part,
-    /// The equipment from Blender; null without the-station's model.
-    model: ?*ModelInstance,
-    /// The alarm lamp, drawn with its glow.
-    alarm_lamp: Part,
-    /// The door, drawn where it has slid to.
-    door: Part,
-
-    const Self = @This();
-
-    pub fn init(context: core.Context, gpu: *GpuContext) !Self {
-        const cube = try core.shapes.createCube(context.alloc, gpu, .{});
-        const cylinder = try core.shapes.createCylinder(context.alloc, gpu, 0.5, 1.0, 24);
-
-        var parts: std.ArrayList(Part) = .empty;
-        const builder: PartBuilder = .{ .cube = cube, .cylinder = cylinder };
-        try builder.addShell(context.alloc, &parts);
-        try builder.addDoorway(context.alloc, &parts);
-
-        var greybox: std.ArrayList(Part) = .empty;
-        try builder.addConsole(context.alloc, &greybox);
-        try builder.addBackPanels(context.alloc, &greybox);
-        try builder.addPipes(context.alloc, &greybox);
-
-        return .{
-            .cube = cube,
-            .cylinder = cylinder,
-            .parts = try parts.toOwnedSlice(context.alloc),
-            .greybox = try greybox.toOwnedSlice(context.alloc),
-            .model = loadModel(context, gpu),
-            .alarm_lamp = .{
-                .shape = cylinder,
-                .model = cylinderModel(ALARM_LAMP_POSITION.sub(vec3(0.0, 0.0, 0.1)), .z, 0.3, 0.2),
-                .color = vec4(ALARM_RED.x, ALARM_RED.y, ALARM_RED.z, 1.0),
-            },
-            .door = .{ .shape = cube, .model = Mat4.Identity, .color = grey(0.4) },
-        };
-    }
-
-    /// The opening and the cut edges around it, for the camera to frame.
-    pub fn framing() Framing {
-        return .{
-            .center_x = 0.0,
-            .center_y = HEIGHT / 2.0,
-            .half_width = WIDTH / 2.0 + WALL + FRAME_MARGIN,
-            .half_height = HEIGHT / 2.0 + WALL + FRAME_MARGIN,
-        };
-    }
-
-    /// `shader` draws the shell's shapes, `model_shader` the equipment model.
-    /// `alarm_glow` 0..1: how lit the lamp is (0 is a dark red lamp). `door_open` 0..1:
-    /// how far the door has slid into the wall. `use_greybox`: the boxes, not the model.
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, alarm_glow: f32, door_open: f32, use_greybox: bool) void {
-        for (self.parts) |part| {
-            drawPart(frame, shader, part, hatching);
-        }
-        if (self.model != null and !use_greybox) {
-            self.model.?.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
-        } else {
-            for (self.greybox) |part| {
-                drawPart(frame, shader, part, hatching);
-            }
-        }
-
-        var lamp = self.alarm_lamp;
-        lamp.emissive = alarm_glow;
-        drawPart(frame, shader, lamp, hatching);
-
-        var door = self.door;
-        const door_z = DOOR_CENTER_Z - DOOR_WIDTH * door_open;
-        door.model = box(vec3(LEFT_WALL_X, DOOR_HEIGHT / 2.0, door_z), vec3(0.08, DOOR_HEIGHT, DOOR_WIDTH));
-        drawPart(frame, shader, door, hatching);
-    }
-
-    pub fn cleanUp(self: *const Self) void {
-        self.cube.releaseGpuObjects();
-        self.cylinder.releaseGpuObjects();
-        if (self.model) |model| {
-            model.cleanUp();
-        }
-    }
-};
-
-/// Null, with a warning, when the model can't be loaded (no the-station checkout).
-fn loadModel(context: core.Context, gpu: *GpuContext) ?*ModelInstance {
-    return ModelInstance.initWithConfig(context, gpu, .{ .name = "room_01", .file_path = MODEL_PATH }) catch |err| {
-        std.log.warn("{s} not loaded ({s}); drawing the greybox room", .{ MODEL_PATH, @errorName(err) });
-        return null;
-    };
-}
-
 /// Light falling on the room from the alarm, for point light `SceneLights.setPointLight`.
 pub fn alarmLightColor(intensity: f32) Vec3 {
     return ALARM_RED.mulScalar(intensity);
@@ -283,15 +195,16 @@ pub fn drawPart(frame: *const Frame, shader: *const Shader, part: Part, hatching
     part.shape.draw(frame, shader, uniforms);
 }
 
-/// Adds the room's parts, one group per function.
-const PartBuilder = struct {
+/// Adds a room's parts, one group per function: Room 01's here, Room 02's in
+/// `room_02.zig`.
+pub const PartBuilder = struct {
     cube: *Shape,
     cylinder: *Shape,
 
     /// Floor, ceiling, back wall, and the right wall. Floor and ceiling run under and over
     /// the side walls, so the cut reads as one frame. The left wall has the doorway, so it
-    /// is built around it (`addDoorway`).
-    fn addShell(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    /// is built around it (`addDoorway`). Under the floor, the deck below as a solid cut.
+    pub fn addShell(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const outer_width = WIDTH + 2.0 * WALL;
         const shell = grey(0.55);
         try parts.appendSlice(allocator, &.{
@@ -299,18 +212,20 @@ const PartBuilder = struct {
             .{ .shape = self.cube, .model = box(vec3(0.0, HEIGHT + WALL / 2.0, -DEPTH / 2.0), vec3(outer_width, WALL, DEPTH)), .color = shell, .is_cut = true },
             .{ .shape = self.cube, .model = box(vec3(0.0, HEIGHT / 2.0, -DEPTH - WALL / 2.0), vec3(outer_width, HEIGHT + 2.0 * WALL, WALL)), .color = grey(0.6) },
             .{ .shape = self.cube, .model = box(vec3(-LEFT_WALL_X, HEIGHT / 2.0, -DEPTH / 2.0), vec3(WALL, HEIGHT, DEPTH)), .color = shell, .is_cut = true },
+            .{ .shape = self.cube, .model = box(vec3(0.0, -WALL - BELOW_DEPTH / 2.0, -(DEPTH + WALL) / 2.0), vec3(outer_width, BELOW_DEPTH, DEPTH + WALL)), .color = grey(BELOW_COLOR_SRGB), .is_cut = true },
         });
     }
 
     /// The left wall in three pieces around the doorway (behind it, in front of it, above
-    /// it), a frame of two posts and a lintel, and a dark recess beyond: the corridor.
-    /// The door slides into the piece behind the doorway.
-    fn addDoorway(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    /// it), and a frame of two posts and a lintel on each side: Room 02 is beyond it. The
+    /// door slides into the piece behind the doorway.
+    pub fn addDoorway(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const shell = grey(0.55);
         const back_edge = DOOR_CENTER_Z - DOOR_WIDTH / 2.0;
         const front_edge = DOOR_CENTER_Z + DOOR_WIDTH / 2.0;
         const behind_depth = DEPTH + back_edge;
         const inner_x = -WIDTH / 2.0;
+        const outer_x = -WIDTH / 2.0 - WALL;
         const trim = 0.14;
         const frame_color = grey(0.3);
         try parts.appendSlice(allocator, &.{
@@ -322,13 +237,27 @@ const PartBuilder = struct {
             .{ .shape = self.cube, .model = box(vec3(inner_x + 0.06, DOOR_HEIGHT / 2.0, front_edge + trim / 2.0), vec3(0.12, DOOR_HEIGHT, trim)), .color = frame_color },
             .{ .shape = self.cube, .model = box(vec3(inner_x + 0.06, DOOR_HEIGHT + trim / 2.0, DOOR_CENTER_Z), vec3(0.12, trim, DOOR_WIDTH + 2.0 * trim)), .color = frame_color },
 
-            .{ .shape = self.cube, .model = box(vec3(inner_x - WALL - 0.5, DOOR_HEIGHT / 2.0, DOOR_CENTER_Z), vec3(1.0, DOOR_HEIGHT, DOOR_WIDTH)), .color = grey(0.08) },
+            .{ .shape = self.cube, .model = box(vec3(outer_x - 0.06, DOOR_HEIGHT / 2.0, back_edge - trim / 2.0), vec3(0.12, DOOR_HEIGHT, trim)), .color = frame_color },
+            .{ .shape = self.cube, .model = box(vec3(outer_x - 0.06, DOOR_HEIGHT / 2.0, front_edge + trim / 2.0), vec3(0.12, DOOR_HEIGHT, trim)), .color = frame_color },
+            .{ .shape = self.cube, .model = box(vec3(outer_x - 0.06, DOOR_HEIGHT + trim / 2.0, DOOR_CENTER_Z), vec3(0.12, trim, DOOR_WIDTH + 2.0 * trim)), .color = frame_color },
         });
+    }
+
+    /// Two ceiling tube fittings in the room centered on `center_x`, running front to
+    /// back: each a housing (into `housings`) and its tube (into `tubes`, lit per draw).
+    pub fn addCeilingLights(self: PartBuilder, allocator: std.mem.Allocator, housings: *std.ArrayList(Part), tubes: *std.ArrayList(Part), center_x: f32) !void {
+        const length = 2.6;
+        const back_z = -3.4;
+        for ([_]f32{ -1.8, 1.8 }) |offset| {
+            const x = center_x + offset;
+            try housings.append(allocator, .{ .shape = self.cube, .model = box(vec3(x, HEIGHT - 0.03, back_z + length / 2.0), vec3(0.22, 0.06, length + 0.1)), .color = grey(0.45) });
+            try tubes.append(allocator, .{ .shape = self.cylinder, .model = cylinderModel(vec3(x, HEIGHT - 0.1, back_z), .z, 0.07, length), .color = grey(0.7) });
+        }
     }
 
     /// The control console against the right wall: a desk, an upright panel on the wall,
     /// three buttons (the red one stops the alarm), and a lever.
-    fn addConsole(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    pub fn addConsole(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const wall_x = WIDTH / 2.0;
         const center_z = -2.0;
         const desk_height = 0.9;
@@ -347,7 +276,7 @@ const PartBuilder = struct {
 
     /// Gauges on the left, a screen in the middle, a breaker box on the right, where the
     /// model's two-bay cabinets for them are.
-    fn addBackPanels(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    pub fn addBackPanels(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const wall_z = -DEPTH;
         const panel_size = vec3(1.4, 1.5, 0.12);
         const panel_y = 1.45;
@@ -372,7 +301,7 @@ const PartBuilder = struct {
     }
 
     /// Two pipes along the back wall under the ceiling.
-    fn addPipes(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+    pub fn addPipes(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
         const start_x = -WIDTH / 2.0;
         try parts.appendSlice(allocator, &.{
             .{ .shape = self.cylinder, .model = cylinderModel(vec3(start_x, 2.75, -DEPTH + 0.5), .x, 0.18, WIDTH), .color = grey(0.4) },
@@ -381,7 +310,7 @@ const PartBuilder = struct {
     }
 };
 
-fn bounds(min: Vec3, max: Vec3) AABB {
+pub fn bounds(min: Vec3, max: Vec3) AABB {
     return .{ .min = min, .max = max };
 }
 

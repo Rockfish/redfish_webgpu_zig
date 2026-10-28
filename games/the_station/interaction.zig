@@ -4,7 +4,7 @@
 //! The SCUMM model, with one click: a hotspot has a stand point where the robot stands to
 //! use it, a facing it turns to there, and an action (the gesture). Clicking a hotspot
 //! sends the robot to use it; clicking the floor sends it to the nearest point it can
-//! walk to.
+//! walk to (`navigation.zig`).
 
 const std = @import("std");
 const core = @import("core");
@@ -16,8 +16,10 @@ const Ray = core.Ray;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 
-/// The robot's gesture at a hotspot.
-pub const Action = enum { push, look };
+/// The robot's gesture at a hotspot: a push straight out (buttons at about waist to
+/// shoulder height), a push up (controls above the shoulders: a wall keypad, a high
+/// panel), or a look.
+pub const Action = enum { push, push_high, look };
 
 /// Something the robot can use. `Kind` is the room's list of what its hotspots are.
 pub fn Hotspot(comptime Kind: type) type {
@@ -35,36 +37,25 @@ pub fn Hotspot(comptime Kind: type) type {
     };
 }
 
-/// A rectangle of floor the robot can walk on. One rectangle is enough for Room 01: any
-/// two points in it can be walked between in a straight line.
-pub const WalkArea = struct {
-    min_x: f32,
-    max_x: f32,
-    min_z: f32,
-    max_z: f32,
-
-    pub fn nearestPoint(self: WalkArea, point: Vec3) Vec3 {
-        return vec3(
-            std.math.clamp(point.x, self.min_x, self.max_x),
-            0.0,
-            std.math.clamp(point.z, self.min_z, self.max_z),
-        );
-    }
-};
-
-/// What the mouse ray points at: a hotspot (its index), or a floor point to walk to.
+/// What the mouse ray points at: a hotspot (its index), or a floor point under what it
+/// meets in the room.
 pub const Target = union(enum) {
     hotspot: usize,
     floor: Vec3,
     nothing,
 };
 
-/// The nearest hotspot the ray hits, else where it meets the floor (moved into the walk
-/// area), else nothing (the ray points up).
-pub fn pick(hotspots: anytype, walk_area: WalkArea, ray: Ray) Target {
+/// The nearest hotspot the ray hits among those `filter.allows(index)`, else the floor
+/// under where it meets the room's inside (`room`: floor, walls, ceiling; the ray comes
+/// in through the open front): a click on a wall walks to the foot of the wall, not to
+/// the floor beyond it. Nothing when the ray misses the room.
+pub fn pick(hotspots: anytype, filter: anytype, ray: Ray, room: AABB) Target {
     var nearest: ?usize = null;
     var nearest_distance = std.math.inf(f32);
     for (hotspots, 0..) |hotspot, i| {
+        if (!filter.allows(i)) {
+            continue;
+        }
         if (hotspot.bounds.rayIntersects(ray)) |distance| {
             if (distance < nearest_distance) {
                 nearest = i;
@@ -76,11 +67,36 @@ pub fn pick(hotspots: anytype, walk_area: WalkArea, ray: Ray) Target {
         return .{ .hotspot = index };
     }
 
-    const floor_point = math.getRayPlaneIntersection(ray.origin, ray.direction, vec3(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0));
-    if (floor_point) |point| {
-        return .{ .floor = walk_area.nearestPoint(point) };
+    if (exitPoint(room, ray)) |point| {
+        return .{ .floor = vec3(point.x, 0.0, point.z) };
     }
     return .nothing;
+}
+
+/// Where the ray leaves `box`, if it passes through it ahead of its origin.
+fn exitPoint(box: AABB, ray: Ray) ?Vec3 {
+    var t_near = -std.math.inf(f32);
+    var t_far = std.math.inf(f32);
+    const origins = [3]f32{ ray.origin.x, ray.origin.y, ray.origin.z };
+    const directions = [3]f32{ ray.direction.x, ray.direction.y, ray.direction.z };
+    const mins = [3]f32{ box.min.x, box.min.y, box.min.z };
+    const maxs = [3]f32{ box.max.x, box.max.y, box.max.z };
+    for (origins, directions, mins, maxs) |origin, direction, min, max| {
+        if (direction == 0.0) {
+            if (origin < min or origin > max) {
+                return null;
+            }
+            continue;
+        }
+        const t1 = (min - origin) / direction;
+        const t2 = (max - origin) / direction;
+        t_near = @max(t_near, @min(t1, t2));
+        t_far = @min(t_far, @max(t1, t2));
+    }
+    if (t_near > t_far or t_far <= 0.0) {
+        return null;
+    }
+    return ray.origin.add(ray.direction.mulScalar(t_far));
 }
 
 /// The 12 edges of `bounds`, for a hover outline.

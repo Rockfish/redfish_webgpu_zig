@@ -11,8 +11,9 @@ How these files work, including parking and resuming plans: [README.md](README.m
   back), ink outlines and hatching, the robot from Blender (`the-station/blender/
   build_robot.py`, live 3D in ink), settings saved per setting to a ZON file
   (`core.SettingsFile`; Lua later for game scripting), Room 01's equipment from
-  Blender after the Dubna control hall (`the-station/blender/build_room.py`). Next: the
-  lighter look (phase F's last item).
+  Blender after the Dubna control hall (`the-station/blender/build_room.py`), power out
+  with emergency lights, Room 02 with a ladder down, walking between rooms (phase G).
+  Next: to be decided (below the ladder, Room 02's art, the lighter look).
 
 ## ⏸️ Parked
 

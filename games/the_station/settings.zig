@@ -23,6 +23,7 @@ pub const Settings = struct {
     camera: RoomCamera = .{},
     ink: ink.Style = .{},
     room: RoomSettings = .{},
+    lights: LightSettings = .{},
     alarm: AlarmSettings = .{},
 };
 
@@ -32,9 +33,14 @@ pub const RoomSettings = struct {
     use_placeholder: bool = false,
     /// Draw the room's equipment as boxes even when the Blender model is loaded.
     use_greybox: bool = false,
-    /// The room's light while the alarm is off; with the alarm on it drops to the
-    /// emergency level.
-    light: f32 = 0.8,
+};
+
+/// The deck's light: with the power off, and with the emergency lights on.
+pub const LightSettings = struct {
+    /// Ambient light with the lights off (the alarm and the glowing screen show too).
+    dark: f32 = 0.05,
+    /// The emergency lights' brightness: a yellowish light from each room's ceiling.
+    emergency: f32 = 0.8,
 };
 
 pub const AlarmSettings = struct {
@@ -42,8 +48,6 @@ pub const AlarmSettings = struct {
     rate: f32 = 0.8,
     /// The alarm light's brightness at the top of a pulse.
     intensity: f32 = 4.0,
-    /// The room's light while the alarm is on.
-    emergency_light: f32 = 0.25,
 };
 
 pub const File = core.SettingsFile(Settings);

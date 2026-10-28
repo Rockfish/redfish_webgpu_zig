@@ -47,9 +47,10 @@ the regression check. Since then:
   `the-station/`, its own repo, symlinked and gitignored); Room 01 greybox, cutaway
   camera with a shifted lens (`Mat4.frustumRhZo`), ink shader, the robot from Blender;
   `core.SettingsFile` (panel settings saved per setting to ZON), the room's equipment
-  from Blender
+  from Blender, power out with emergency lights, Room 02 and its ladder, the camera
+  panning between rooms
 
-Active plan: 021 The Station, Room 01 (phases A-F done; the lighter look is next). Plan 019 tower attack is parked
+Active plan: 021 The Station, Room 01 (phases A-G done). Plan 019 tower attack is parked
 (phases A-J done). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)

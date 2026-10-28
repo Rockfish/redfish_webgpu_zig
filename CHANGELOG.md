@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-28 - The Station: power out, Room 02, the ladder; plan 021 phase G
+- **games/the_station**: main power is out. Ceiling tube lights in both rooms, off at the start (only the alarm and a dim ambient); the console's third button turns on the yellowish emergency lights, which the door button needs. Room 02 (greybox, `room_02.zig`) through the door: a locked door and a ladder down a hole at the back center; the robot walks between rooms and around the hole (`navigation.zig`: walk rectangles joined at shared edges, the doorway open only with the door), and the camera pans to the robot's room (`deck.zig`). On the ladder: click it to step on, its lower part to climb down out of sight, again to climb up, elsewhere to step off and walk. A solid deck below both rooms, drawn as a cut. `room.zig` is now `room_01.zig`. Room 02's keypad is a hotspot; a click on a wall walks to the foot of the wall (it used the floor beyond the wall). The robot pushes with the arm nearer the camera (`push_left` clip). A higher push (`Action.push_high`) for controls above the shoulders, used by the keypad. Panel: "Lights" section, door and lights state for testing
+- **the-station**: robot clips `climb`, `ladder_hold`, `push_left`, `push_high`, and `push_high_left`
+
 ### 2026-10-28 - The Station: the door button closes the door too
 - **games/the_station**: the console's middle button opens the door, or closes it when open
 

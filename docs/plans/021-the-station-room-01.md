@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-E done, F in progress)
+## Status: Active (started 2026-10-18; phases A-G done)
 
 ## Context
 
@@ -117,8 +117,27 @@ board in the upper left.
       diagram), generated as SVG by `build_room.py` and turned into PNG by `rsvg-convert`
 - [x] In the game: the model drawn in ink with its textures; hotspots moved onto the
       cabinets; the greybox kept as an option and as the fallback without the model
-- [ ] Later (separate step): a lighter look after
-      `images/grey-tones-red-highlites-hatching-shader-example.jpg`
+- [ ] Later (separate step, skipped for now, John 2026-10-28): a lighter look after
+      `images/example_style/grey-tones-red-highlites-hatching-shader-example.jpg`
+
+### G. Power out, Room 02, the ladder
+The opening (John, 2026-10-28): main power is offline and the alarm signals that
+something bad happened. The robot turns off the alarm, tries the main lights and gets only
+low yellowish emergency lights, opens the door, and goes to investigate. Room 02, to the
+left, has a locked door on its far left and a ladder down through a hole in the floor
+toward the back center.
+- [x] Lights: ceiling tube fittings in both rooms, off at the start. The console's third
+      button turns on the emergency lights (a low yellowish light; main power stays
+      off). The alarm button works any time; the door button needs the emergency power on
+- [x] Walking between rooms: the walk area becomes rectangles joined where they meet
+      (`navigation.zig`), with paths through their shared edges; the doorway is one,
+      open only with the door. Replaces the hidden spot beyond the doorway
+- [x] Room 02 (greybox for now): shell, the locked door, a hole in the floor at the back
+      center with a dark shaft and the ladder; the robot walks around the hole's front
+- [x] Camera pans to the room the robot is in (the rooms side by side on one deck)
+- [x] Ladder: click the ladder to step onto it, its lower part to climb down out of sight,
+      the ladder again to climb back up; a click elsewhere gets off and walks there.
+      Climb clips for the robot in `build_robot.py`. Nothing below yet
 
 ## Notes & Decisions
 
@@ -384,3 +403,77 @@ board in the upper left.
   middle button (`HotspotKind.door_button`, still named "Button") opens the door. They
   were one action before (the red button did both).
 - 2026-10-28 (John): the middle button also closes the door when it is open.
+- 2026-10-28, phase G decisions (John): ceiling tube fittings for the lights; the camera
+  pans between rooms, which sit side by side on one deck; only the door needs the
+  emergency power first; nothing below the ladder yet (the robot waits out of sight on
+  it, as it used to beyond the doorway).
+- 2026-10-28, phase G, as built:
+  - **Lights** (`game.Lights`: off, emergency). With main power out nothing lights the
+    rooms from above: a dim ambient (panel "Lights", dark 0.05), the alarm's red, the
+    glowing screen. The third button (`lights_button`) turns on the emergency lights:
+    each room's two ceiling tubes glow, and a yellowish point light under each room's
+    ceiling (`deck.EMERGENCY_TINT`, strength 0.8) plus a tinted ambient. Point lights:
+    0 the alarm, 1 and 2 the rooms' emergency lights (4 at most). The door button says
+    "No power to the door" until the emergency lights are on. Remarks now tell the
+    power story (screen: main power lost; breakers: the fault is elsewhere).
+  - **`navigation.zig`**: `Area` rectangles where the robot's center can go, joined
+    where they touch or overlap; `findPath` searches breadth-first from the robot's area
+    and crosses each shared edge at the point nearest the next one, so paths stay close
+    to straight. A click on unreachable floor goes to the nearest reachable point. The
+    doorway is an area that needs the door open. Replaces `WalkArea` and the robot's
+    `Doorway`, `leave`, and hidden spot beyond the door: the door now leads to Room 02.
+    Clicking the open door walks through to the stand point on the other side.
+  - **`deck.zig`**: both rooms (`Deck`, which Room 01's `Room` became), all hotspots
+    (`room.hotspots ++ room_02.hotspots`), the walk areas, `roomAt` (the shared wall's
+    middle divides them), and the framing for a room. Only the robot's room's hotspots
+    are picked. `room.zig` keeps Room 01's data and the shared pieces (`PartBuilder` is
+    public; ceiling lights are `addCeilingLights`).
+  - **Camera pan**: the framing's center eases (`motion.dampAlpha`, rate 3) to the
+    robot's room as it crosses the wall; `RoomCamera.eye_x` is now from the framing's
+    center, so the eye pans with it. Both rooms are always drawn, so the neighbor shows
+    at the frame's edge.
+  - **Room 02** (`room_02.zig`, greybox): shell, locked door with a dead keypad ("Locked.
+    Its keypad is dead."), a 1.2 x 1 m hole at the back center with the ladder against
+    its back edge (rails to 1.2 m above the floor, rungs every 0.3 m to the top), two wall
+    panels and a vent; its own ceiling lights. Walk areas: in front of the hole and
+    either side of it, so the robot walks around its front.
+  - **The deck below**: under both rooms a solid block 3 m deep, drawn as a cut (dark,
+    section lines). Without it the shaft, and the robot climbing down, showed below the
+    rooms' floor cut; Room 02's block is four pieces around the shaft.
+  - **Ladder** (`Robot` tasks `mount`, `ladder`, `dismount`; `Ladder` in `robot.zig`,
+    Room 02's in `room_02.ladder`): a click on the ladder walks to the floor right of the
+    hole and steps onto the top rung, turning to face it; a click on its lower part (the
+    hole, `ladder_hole`) climbs down 1.9 m out of sight (0.6 m/s); a click on the ladder
+    climbs back up; any other click climbs up if needed, steps off, and walks there
+    (`Robot.pending`, the path starting at the ladder's exit, `walkStart`). Clips
+    `climb` (hand over hand, 1 s loop) and `ladder_hold` added in `build_robot.py`.
+  - Checked with a scripted run (temporary edit sending clicks): alarm off, door button
+    without power, lights, door open, through to Room 02, around the hole, onto the
+    ladder, down out of sight, up, off and away; captures along the way.
+  - Rungs to the ladder's top (John, during the work).
+- 2026-10-28 (John): `room.zig` renamed `room_01.zig` (and its import `room_01`), next to
+  `room_02.zig`. Earlier notes say `room.zig`.
+- 2026-10-28, from testing (John): in Room 02, a click left of the locked (west) door, on
+  the keypad, sent the robot to the back of the room facing the wall. Two causes: the
+  keypad wasn't a hotspot, and a click that missed every hotspot used where the mouse
+  ray met the floor plane, which for a click on a wall is beyond the wall; the nearest
+  reachable point to that was at the back. Fixed: the keypad is a hotspot ("Keypad",
+  push, "DOOR LOCKED OUT. The keypad doesn't respond."; the door itself says "Locked."),
+  pressed from a step in front of it; and `interaction.pick` takes the shown room's
+  inside (`deck.interior`) and uses the floor under where the ray leaves it, so a click
+  on a wall walks to the foot of the wall (nothing when the ray misses the room).
+  Checked with scripted clicks: the keypad (the robot walks to it, pushes, the remark)
+  and the wall left of the door (the robot walks to the wall's foot there).
+- 2026-10-28, from testing (John): the push at the keypad was hard to see, the robot's
+  left shoulder toward the camera and the pushing right arm behind it. Fixed: the robot
+  pushes with the arm nearer the camera (`robot.usesLeftArm`: the right side faces away
+  when facing the left wall). `build_robot.py` has `push_left`, the push mirrored; the
+  placeholder robot raises the same arm. Checked with frames of the keypad push: the
+  left arm reaches out on the camera's side. The push reaches straight out at shoulder
+  height (0.95 m buttons, 1.25 m keypad).
+- 2026-10-28 (John): a higher push for higher buttons and panels. `Action.push_high`,
+  which a hotspot picks (the keypad does): clips `push_high` and `push_high_left`, the
+  arm up to 120° (the push reaches 85°) and the head tipped up, same timing; the
+  placeholder's arm goes to 120° too (`Gesture.reach`). The clips come from one helper
+  in `build_robot.py`, `push_clip`; the existing pushes came out the same. Checked with
+  frames of the keypad push: the hand reaches the keypad.

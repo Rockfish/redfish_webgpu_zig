@@ -1,13 +1,15 @@
 //! The Station: a point-and-click game about a maintenance robot on a space station.
 //! Design notes: `the-station/docs/game_notes/the_station_design.md`; plan 021.
 //!
-//! Room 01 as a greybox, seen through its open front by the cutaway camera
-//! (`room_camera.zig`). Click the floor to walk there; click something (outlined under
-//! the mouse) to walk to it and use it (`game.zig`). The red button stops the alarm, the
-//! console's middle button opens and closes the door. Drawn in ink: hatching and outlines (`ink.zig`). The robot is the
-//! Blender model (`robot_model.zig`), or the box placeholder without it. A panel tunes
-//! the camera, the ink, the room, and the alarm, and saves settings one at a time
-//! (`settings.zig`).
+//! The deck (`deck.zig`): Room 01 and, through its door, Room 02, each seen through its
+//! open front by the cutaway camera (`room_camera.zig`), which pans to the robot's room_01.
+//! Click the floor to walk there; click something (outlined under the mouse) to walk to
+//! it and use it (`game.zig`). Main power is out: the red button stops the alarm, the
+//! console's third button turns on the emergency lights, its middle button opens and
+//! closes the door. Room 02 has a ladder down. Drawn in ink: hatching and outlines
+//! (`ink.zig`). The robot is the Blender model (`robot_model.zig`), or the box
+//! placeholder without it. A panel tunes the camera, the ink, the rooms, the lights, and
+//! the alarm, and saves settings one at a time (`settings.zig`).
 //!
 //! Keys: 1 / 2 / 3 pick the view (shifted, aimed, orthographic), Space toggles the
 //! alarm, Escape quits.
@@ -19,7 +21,8 @@ const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
 const room_camera = @import("room_camera.zig");
-const room = @import("room.zig");
+const room_01 = @import("room_01.zig");
+const deck = @import("deck.zig");
 const interaction = @import("interaction.zig");
 const ink = @import("ink.zig");
 const settings_file = @import("settings.zig");
@@ -39,34 +42,37 @@ const SceneLights = core.SceneLights;
 const Shader = core.Shader;
 const Shape = core.shapes.Shape;
 const gui = core.gui;
-const Room = room.Room;
+const Deck = deck.Deck;
 const RoomCamera = room_camera.RoomCamera;
 const Settings = settings_file.Settings;
 const vec3 = math.vec3;
 
+/// How fast the camera pans to the robot's room (`motion.dampAlpha` rate).
+const PAN_RATE: f32 = 3.0;
+/// How much the ceiling lights' tubes glow with the emergency lights on.
+const EMERGENCY_GLOW: f32 = 0.6;
+
 /// The space outside the station.
 const CLEAR_COLOR = [4]f64{ 0.01, 0.01, 0.012, 1.0 };
 /// One line per meter across and along the floor.
-const GRID_LINES = @as(usize, @intFromFloat(room.WIDTH + room.DEPTH)) + 2;
+const GRID_LINES = @as(usize, @intFromFloat(room_01.WIDTH + room_01.DEPTH)) + 2;
 /// The floor grid plus one hover outline.
 const MAX_LINES = GRID_LINES + 12;
 
 /// What a frame draws, in each of its passes.
 const Scene = struct {
-    room: *const Room,
+    deck: *const Deck,
     robot: *const Robot,
     /// Null: the box placeholder.
     robot_model: ?*const RobotModel,
-    alarm_glow: f32,
-    door_open: f32,
-    use_greybox: bool,
+    state: deck.DrawState,
 
-    fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room.Hatching) void {
-        self.room.draw(frame, shaders.room, shaders.model, hatching, self.alarm_glow, self.door_open, self.use_greybox);
+    fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room_01.Hatching) void {
+        self.deck.draw(frame, shaders.room, shaders.model, hatching, self.state);
         if (self.robot_model) |model| {
             model.draw(frame, shaders.model, self.robot, hatching);
         } else {
-            self.robot.draw(frame, shaders.room, self.room, hatching);
+            self.robot.draw(frame, shaders.room, .{ .cube = self.deck.cube, .cylinder = self.deck.cylinder }, hatching);
         }
     }
 };
@@ -102,8 +108,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     defer lines_shader.releaseGpuObjects();
     var lines = try Lines.init(context.alloc, lines_shader, 1.0, 0.6, MAX_LINES);
 
-    const control_room = try Room.init(context, gpu);
-    defer control_room.cleanUp();
+    const station_deck = try Deck.init(context, gpu);
+    defer station_deck.cleanUp();
 
     var ink_pass = try ink.Ink.init(context, gpu);
     defer ink_pass.releaseGpuObjects();
@@ -119,6 +125,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     const camera = &settings.camera;
     const style = &settings.ink;
     var game: Game = .{};
+    // The framing's center: the robot's room's, eased there as the robot changes rooms
+    var camera_x = deck.roomCenterX(game.robotRoom());
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
@@ -132,7 +140,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
 
         const time = input.total_time;
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
-        const render_context = camera.renderContext(Room.framing(), aspect, time);
+        camera_x = std.math.lerp(camera_x, deck.roomCenterX(game.robotRoom()), core.motion.dampAlpha(PAN_RATE, input.delta_time));
+        const render_context = camera.renderContext(deck.framing(camera_x), aspect, time);
 
         // A press counts even if released before the frame (a trackpad tap); none over a panel
         game.update(mouseRay(input, render_context), input.mousePressed(.left), input.delta_time);
@@ -146,17 +155,20 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         try ink_pass.update(gpu);
 
         var uniforms = render_context.frameUniforms();
-        uniforms.lights = roomLights(settings, game.is_alarm_on, alarm_level).uniforms();
+        uniforms.lights = deckLights(settings, &game, alarm_level).uniforms();
         gpu.writeFrameUniforms(uniforms);
 
         // The scene twice: its normals and depth for the outlines, then in color
         const scene: Scene = .{
-            .room = &control_room,
+            .deck = &station_deck,
             .robot = &game.robot,
             .robot_model = if (settings.room.use_placeholder) null else if (robot_model) |*model| model else null,
-            .alarm_glow = alarm_level,
-            .door_open = game.door_open,
-            .use_greybox = settings.room.use_greybox,
+            .state = .{
+                .alarm_glow = alarm_level,
+                .light_glow = if (game.lights == .emergency) EMERGENCY_GLOW else 0.0,
+                .door_open = game.door_open,
+                .use_greybox = settings.room.use_greybox,
+            },
         };
         if (style.show_outlines) {
             ink_pass.beginNormalDepthPass(&frame);
@@ -219,21 +231,35 @@ fn alarmPulse(time: f32, rate: f32) f32 {
     return 0.5 - 0.5 * @cos(time * rate * std.math.tau);
 }
 
-/// Dim light from above the opening, and the alarm's red point light.
-fn roomLights(settings: Settings, is_alarm_on: bool, alarm_level: f32) SceneLights {
-    const room_light = if (is_alarm_on) settings.alarm.emergency_light else settings.room.light;
+/// Main power is out: no light from above, only a dim ambient, the alarm's red point
+/// light, and with the emergency lights on a yellowish light under each room's ceiling.
+fn deckLights(settings: Settings, game: *const Game, alarm_level: f32) SceneLights {
+    const is_emergency = game.lights == .emergency;
 
     var lights = SceneLights.init();
-    lights.ambient = vec3(1.0, 1.0, 1.0).mulScalar(0.06 + 0.1 * room_light);
-    lights.direction_light = .{ .dir = vec3(0.25, -1.0, -0.6), .color = vec3(1.0, 1.0, 1.0).mulScalar(room_light) };
+    lights.ambient = if (is_emergency)
+        deck.EMERGENCY_TINT.mulScalar(settings.lights.dark + 0.06 * settings.lights.emergency)
+    else
+        vec3(1.0, 1.0, 1.0).mulScalar(settings.lights.dark);
+    lights.direction_light = .{ .dir = vec3(0.25, -1.0, -0.6), .color = vec3(0.0, 0.0, 0.0) };
     lights.setPointLight(0, .{
-        .world_pos = room.ALARM_LIGHT_POSITION,
-        .color = room.alarmLightColor(settings.alarm.intensity * alarm_level),
+        .world_pos = room_01.ALARM_LIGHT_POSITION,
+        .color = room_01.alarmLightColor(settings.alarm.intensity * alarm_level),
         .constant = 1.0,
         .linear = 0.35,
         .quadratic = 0.15,
-        .enabled = is_alarm_on,
+        .enabled = game.is_alarm_on,
     });
+    for ([_]deck.RoomId{ .room_01, .room_02 }, 1..) |id, index| {
+        lights.setPointLight(index, .{
+            .world_pos = vec3(deck.roomCenterX(id), room_01.HEIGHT - 0.4, -room_01.DEPTH / 2.0),
+            .color = deck.EMERGENCY_TINT.mulScalar(settings.lights.emergency),
+            .constant = 1.0,
+            .linear = 0.2,
+            .quadratic = 0.08,
+            .enabled = is_emergency,
+        });
+    }
     return lights;
 }
 
@@ -246,7 +272,7 @@ fn drawLines(frame: *const Frame, lines: *Lines, show_grid: bool, hovered: inter
     }
     switch (hovered) {
         .hotspot => |index| {
-            const outline = interaction.outline(room.hotspots[index].bounds);
+            const outline = interaction.outline(deck.hotspots[index].bounds);
             @memcpy(segments[count..][0..outline.len], &outline);
             count += outline.len;
         },
@@ -259,17 +285,17 @@ fn drawLines(frame: *const Frame, lines: *Lines, show_grid: bool, hovered: inter
 
 /// A 1 m grid on the floor, to see the perspective by. Returns the number of segments.
 fn floorGrid(segments: []LineSegment) usize {
-    const half_width = room.WIDTH / 2.0;
+    const half_width = room_01.WIDTH / 2.0;
     const y = 0.002;
     var count: usize = 0;
 
     var x = -half_width;
     while (x <= half_width) : (x += 1.0) {
-        segments[count] = .{ .start = vec3(x, y, 0.0), .end = vec3(x, y, -room.DEPTH), .color = .black };
+        segments[count] = .{ .start = vec3(x, y, 0.0), .end = vec3(x, y, -room_01.DEPTH), .color = .black };
         count += 1;
     }
     var z: f32 = 0.0;
-    while (z >= -room.DEPTH) : (z -= 1.0) {
+    while (z >= -room_01.DEPTH) : (z -= 1.0) {
         segments[count] = .{ .start = vec3(-half_width, y, z), .end = vec3(half_width, y, z), .color = .black };
         count += 1;
     }
@@ -316,7 +342,7 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.slider(.camera, .eye_height, "eye height", -1.0, 5.0);
         panel.slider(.camera, .eye_x, "eye x", -4.0, 4.0);
         const camera = &panel.values.camera;
-        const framing = RoomCamera.fitToAspect(Room.framing(), aspect);
+        const framing = RoomCamera.fitToAspect(deck.framing(0.0), aspect);
         zgui.text("vertical field of view: {d:.1}°", .{camera.verticalFov(framing)});
         zgui.text("horizontal field of view: {d:.1}°", .{horizontalFov(camera.verticalFov(framing), aspect)});
 
@@ -334,16 +360,20 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.checkbox(.room, .show_grid, "floor grid");
         panel.checkbox(.room, .use_placeholder, "placeholder robot");
         panel.checkbox(.room, .use_greybox, "greybox room");
-        panel.slider(.room, .light, "room light", 0.0, 1.5);
-        if (zgui.button("restart room", .{})) {
+        _ = zgui.checkbox("door open", .{ .v = &game.is_door_open });
+        if (zgui.button("restart", .{})) {
             game.* = .{};
         }
+
+        panel.section(.lights, "Lights");
+        _ = zgui.comboFromEnum("lights", &game.lights);
+        panel.slider(.lights, .dark, "dark", 0.0, 0.3);
+        panel.slider(.lights, .emergency, "emergency", 0.0, 4.0);
 
         panel.section(.alarm, "Alarm");
         _ = zgui.checkbox("on", .{ .v = &game.is_alarm_on });
         panel.slider(.alarm, .rate, "pulses per second", 0.2, 3.0);
         panel.slider(.alarm, .intensity, "intensity", 0.0, 12.0);
-        panel.slider(.alarm, .emergency_light, "emergency light", 0.0, 1.0);
     }
     zgui.end();
 }
