@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: the game's own cursors; plan 022 phase B3
+- **games/the_station**: cursors drawn by the game in the ink look, saying what a click does: an arrow to walk, a hand on controls, an eye on things looked at, exit arrows on open doors, a ladder and climb arrows on the ladder (`cursor.zig`, `Game.cursor`; the OS cursor hidden over the game, shown over the panel). `overlay.zig` and `shaders/overlay.wgsl` draw sprites in screen space (the inventory bar will use them). Tests for `Game.cursor`
+- **the-station**: `ui/build_cursors.py`, the cursor sheet (`ui/cursors.svg`, `ui/cursors.png`)
+
 ### 2026-10-29 - The Station: hovered controls light up; plan 022 phase B2
 - **core.ModelInstance**: `drawWithMeshParams` gives listed meshes their own params (`core.MeshParams`; live, baked, or no animator), `findMesh(name)`; test
 - **games/the_station**: a control under the mouse (the console's buttons and lever, Room 02's keypad) lights up in amber instead of a white box: thinner hatching, an amber tint, a brighter rim, easing in and out with a faint pulse (`Hotspot.mesh`, `ink_common.wgsl`); a hand cursor over every hotspot; panel: highlight strength, "hotspot bounds" for the old box

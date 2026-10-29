@@ -6,6 +6,7 @@ const std = @import("std");
 test {
     _ = @import("navigation.zig");
     _ = @import("room_kit.zig");
+    _ = @import("game.zig");
     // Analyzes every declaration, called by the game yet or not
     std.testing.refAllDecls(@import("room_kit.zig"));
 }

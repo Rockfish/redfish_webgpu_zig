@@ -25,11 +25,13 @@ const room_kit = @import("room_kit.zig");
 const room_01 = @import("room_01.zig");
 const deck = @import("deck.zig");
 const interaction = @import("interaction.zig");
+const cursor = @import("cursor.zig");
 const ink = @import("ink.zig");
 const settings_file = @import("settings.zig");
 const Game = @import("game.zig").Game;
 const Robot = @import("robot.zig").Robot;
 const RobotModel = @import("robot_model.zig").RobotModel;
+const Overlay = @import("overlay.zig").Overlay;
 
 const Arenas = core.Arenas;
 const Frame = core.Frame;
@@ -118,6 +120,15 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     var ink_pass = try ink.Ink.init(context, gpu);
     defer ink_pass.releaseGpuObjects();
 
+    const sprites = try Overlay.init(context, gpu);
+    defer sprites.releaseGpuObjects();
+
+    // Null without the-station's sheet: the OS cursor shows
+    const cursor_sheet = cursor.CursorSheet.load(context, gpu);
+    defer if (cursor_sheet) |sheet| {
+        sheet.releaseGpuObjects();
+    };
+
     var robot_model = RobotModel.load(context, gpu);
     defer if (robot_model) |*model| {
         model.cleanUp();
@@ -185,12 +196,14 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         scene.draw(&frame, scene_shaders, style.hatching());
         ink_pass.drawOutlines(&frame, style.*);
         drawLines(&frame, &lines, settings.room, game.hovered);
+        if (cursor_sheet) |sheet| {
+            if (!input.gui_has_mouse) {
+                sheet.draw(&frame, &sprites, game.cursor(), input.mouse_x, input.mouse_y, input.window_width, input.window_height);
+            }
+        }
 
         gui.newFrame();
-        // After newFrame: ImGui's backend sets the cursor every frame
-        if (game.hovered == .hotspot) {
-            zgui.setMouseCursor(.hand);
-        }
+        setOsCursor(input, cursor_sheet != null, game.hovered);
         drawLabel("remark", game.remark(), .{ zgui.io.getDisplaySize()[0] / 2.0, 24.0 }, 0.5);
         drawLabel("hovered", game.hoveredName(), .{ input.mouse_x + 18.0, input.mouse_y + 8.0 }, 0.0);
         drawPanel(.{ .file = &saved_settings, .values = &settings }, &game, aspect);
@@ -233,6 +246,20 @@ fn mouseRay(input: *const Input, render_context: RenderContext) ?Ray {
         input.mouse_y,
     );
     return .{ .origin = ray.origin, .direction = ray.direction };
+}
+
+/// Over the game, hidden while the game draws its own, else a hand over a hotspot; over
+/// the panel, ImGui's. After `gui.newFrame`: ImGui's backend sets the OS cursor every
+/// frame from what it was told last.
+fn setOsCursor(input: *const Input, has_game_cursor: bool, hovered: interaction.Target) void {
+    if (input.gui_has_mouse) {
+        return;
+    }
+    if (has_game_cursor) {
+        zgui.setMouseCursor(.none);
+    } else if (hovered == .hotspot) {
+        zgui.setMouseCursor(.hand);
+    }
 }
 
 /// 0..1, a smooth rise and fall `rate` times a second.

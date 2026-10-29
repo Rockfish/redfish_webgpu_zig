@@ -11,6 +11,7 @@ const core = @import("core");
 const math = @import("math");
 
 const interaction = @import("interaction.zig");
+const Cursor = @import("cursor.zig").Cursor;
 const navigation = @import("navigation.zig");
 const deck = @import("deck.zig");
 const room_01 = @import("room_01.zig");
@@ -87,6 +88,14 @@ pub const Game = struct {
         };
     }
 
+    /// What a click would do where the mouse is.
+    pub fn cursor(self: *const Self) Cursor {
+        return switch (self.hovered) {
+            .hotspot => |index| self.hotspotCursor(index),
+            .floor, .nothing => .walk,
+        };
+    }
+
     /// The robot's last remark while it lasts, or "".
     pub fn remark(self: *const Self) []const u8 {
         return if (self.message_time > 0.0) self.message else "";
@@ -107,6 +116,35 @@ pub const Game = struct {
         }
         const target: f32 = if (hovered != null) 1.0 else 0.0;
         self.highlight = std.math.lerp(self.highlight, target, motion.dampAlpha(HIGHLIGHT_RATE, dt));
+    }
+
+    /// An open door shows the way to the next room, the ladder what a click on it does
+    /// (`useLadder`), anything else its action. The ladder's upper part does nothing
+    /// while the robot stands at its top.
+    fn hotspotCursor(self: *const Self, index: usize) Cursor {
+        const hotspot = deck.hotspots[index];
+        return switch (hotspot.kind) {
+            .door => if (self.is_door_open) self.exitCursor() else actionCursor(hotspot.action),
+            .ladder => switch (self.robot.ladderPlace()) {
+                .off => .climb,
+                .top => .walk,
+                .below => .climb_up,
+            },
+            .ladder_hole => switch (self.robot.ladderPlace()) {
+                .off => .climb,
+                .top => .climb_down,
+                .below => .climb_up,
+            },
+            .red_button, .door_button, .lights_button, .lever, .gauges, .screen, .breakers, .locked_door, .keypad, .power_cabinet => actionCursor(hotspot.action),
+        };
+    }
+
+    /// Room 02 is left of Room 01.
+    fn exitCursor(self: *const Self) Cursor {
+        return switch (self.robotRoom()) {
+            .room_01 => .exit_left,
+            .room_02 => .exit_right,
+        };
     }
 
     fn sendRobot(self: *Self) void {
@@ -210,6 +248,13 @@ pub const Game = struct {
     }
 };
 
+fn actionCursor(action: interaction.Action) Cursor {
+    return switch (action) {
+        .push, .push_high => .use,
+        .look => .look,
+    };
+}
+
 /// Picks only the hotspots in one room.
 const RoomFilter = struct {
     room: deck.RoomId,
@@ -218,3 +263,41 @@ const RoomFilter = struct {
         return deck.isHotspotIn(index, self.room);
     }
 };
+
+fn hotspotIndex(kind: room_01.HotspotKind) usize {
+    for (deck.hotspots, 0..) |hotspot, index| {
+        if (hotspot.kind == kind) {
+            return index;
+        }
+    }
+    unreachable;
+}
+
+test "cursor: what a click does" {
+    var game: Game = .{};
+    try std.testing.expectEqual(Cursor.walk, game.cursor());
+
+    game.hovered = .{ .floor = room_01.ROBOT_START };
+    try std.testing.expectEqual(Cursor.walk, game.cursor());
+
+    game.hovered = .{ .hotspot = hotspotIndex(.red_button) };
+    try std.testing.expectEqual(Cursor.use, game.cursor());
+
+    game.hovered = .{ .hotspot = hotspotIndex(.screen) };
+    try std.testing.expectEqual(Cursor.look, game.cursor());
+}
+
+test "cursor: an open door points to the next room" {
+    var game: Game = .{};
+    game.hovered = .{ .hotspot = hotspotIndex(.door) };
+    try std.testing.expectEqual(Cursor.look, game.cursor());
+
+    game.is_door_open = true;
+    try std.testing.expectEqual(Cursor.exit_left, game.cursor());
+}
+
+test "cursor: the ladder from the floor" {
+    var game: Game = .{};
+    game.hovered = .{ .hotspot = hotspotIndex(.ladder_hole) };
+    try std.testing.expectEqual(Cursor.climb, game.cursor());
+}

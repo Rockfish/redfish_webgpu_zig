@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; next: phase C)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3 done; next: phase C)
 
 ## Context
 
@@ -153,6 +153,21 @@ phase G's part lookup and per-part params; the panels use the same.
 The greybox doesn't highlight: `room.wgsl`'s four params are all used (emissive, cut,
 hatch strength and spacing), and the greybox is a fallback.
 
+### Game cursor
+
+Drawn by the game rather than the OS: GLFW can make an OS cursor from an image, but on
+macOS only at 1x (blurry on a Retina screen), fixed, and ImGui's backend sets the cursor
+every frame. A game-drawn cursor is sharp at any size, matches the ink look, can animate,
+and in phase F becomes the held item's icon, as in SCUMM games. Its cost is a frame of
+lag, fine for pointing and clicking. The OS cursor is hidden over the game and shown
+over the panel; ImGui does both (`setMouseCursor(.none)` hides it).
+
+The cursor says what a click will do: an arrow over the floor (walk), a hand over
+controls (push), an eye over things looked at, an exit arrow over an open door pointing
+to the next room, a ladder over the ladder from the floor, down and up arrows on it.
+Drawn in the-station by a script as SVG (ink lines on a light fill, so they read on dark
+and light walls), rendered at 2x into one sheet.
+
 ### Connections
 
 A door, a ladder, or a hatch joins two rooms: `Connection` with an end in each room
@@ -281,6 +296,18 @@ light up themselves instead (Design, "Hotspot highlight").
       the hovered control only (a mask pass the outline pass reads, a second texture in
       ink_edges.wgsl); keep the one John picks, the other as a setting
 - [x] Check: captures hovering each control; the rooms otherwise unchanged
+
+### B3. Game cursor (added 2026-10-29)
+Our own cursors, drawn by the game, saying what a click does (Design, "Game cursor").
+- [x] `the-station/ui/build_cursors.py`: the cursors as SVG in ink, a 2x sheet
+      (`ui/cursors.png`, `rsvg-convert`)
+- [x] `overlay.zig`, `shaders/overlay.wgsl`: textured quads in screen pixels, alpha
+      blended, last in the window pass (phase F's inventory bar and remarks use it too)
+- [x] `cursor.zig`: the sheet, each cursor's click point, drawn at the mouse; the OS
+      cursor hidden over the game (`zgui.setMouseCursor(.none)`), shown over the panel;
+      without the sheet, the OS cursor as now
+- [x] `Game.cursor()`: what's under the mouse picks it (walk, use, look, exits, ladder)
+- [x] Check: captures of each cursor over its hotspots
 
 ### C. Rooms as data
 - [ ] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
@@ -418,4 +445,29 @@ light up themselves instead (Design, "Hotspot highlight").
   - Checked with captures (temporary edit forcing the highlight): the red button turns
     amber-orange, the black lever amber-tan, the keypad amber. Strong on dark parts; the
     strength slider is for tuning it.
+- 2026-10-29 (John): cursors of our own that fit the game. Drawn by the game (sharp on
+  Retina, animated, an item's icon later), not GLFW image cursors (1x on macOS). Added
+  as phase B3, the first user of phase F's overlay.
+- 2026-10-29, phase B3, as built:
+  - `the-station/ui/build_cursors.py` writes `ui/cursors.svg` (64 px cells: walk arrow,
+    pointing hand, eye, exit left and right, ladder, climb down and up; ink outline 6 on a
+    light fill, shapes outlined first and filled after so overlaps read as one) and
+    `ui/cursors.png` through `rsvg-convert`. The first hand, one finger up from a closed
+    hand, read as a rude gesture; redrawn with the finger at the side and a thumb.
+  - `overlay.zig` (`Overlay.draw`: a sheet's uv rectangle at a window rectangle, window
+    units from the top-left, the square placed in clip space) and `shaders/overlay.wgsl`
+    (`.texture` material, uv from `params`); the sheet loads with `flip_v = false`.
+  - `cursor.zig`: `Cursor` (in the sheet's order; click points: the arrow's tip, the
+    finger's tip, the others' middle), `CursorSheet` drawn 32 units at the mouse,
+    rounded to whole units. Drawn after the lines, before ImGui, not over the panel.
+    `main.setOsCursor`: `.none` over the game with the sheet (ImGui's backend hides the
+    OS cursor), the hand as before without it.
+  - `Game.cursor`: floor and nothing walk; an open door the exit toward the other room
+    (Room 02 is left of Room 01), closed its action; the ladder and the hole: climb from
+    the floor, down from the top (the hole), up from below; the ladder's upper part at
+    the top does nothing, so the arrow; others by action (push: hand, look: eye). Tests
+    in game.zig (`tests.zig` imports it).
+  - Checked with captures (temporary edit setting the mouse): hand on the red button (lit
+    amber), eye on the screen, left arrow on Room 01's open door, right on Room 02's,
+    ladder on the ladder, arrow on the floor.
 
