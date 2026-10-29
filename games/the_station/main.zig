@@ -21,6 +21,7 @@ const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 
 const room_camera = @import("room_camera.zig");
+const room_kit = @import("room_kit.zig");
 const room_01 = @import("room_01.zig");
 const deck = @import("deck.zig");
 const interaction = @import("interaction.zig");
@@ -55,7 +56,7 @@ const EMERGENCY_GLOW: f32 = 0.6;
 /// The space outside the station.
 const CLEAR_COLOR = [4]f64{ 0.01, 0.01, 0.012, 1.0 };
 /// One line per meter across and along the floor.
-const GRID_LINES = @as(usize, @intFromFloat(room_01.WIDTH + room_01.DEPTH)) + 2;
+const GRID_LINES = @as(usize, @intFromFloat(room_01.WIDTH + room_kit.DEPTH)) + 2;
 /// The floor grid plus one hover outline.
 const MAX_LINES = GRID_LINES + 12;
 
@@ -67,7 +68,7 @@ const Scene = struct {
     robot_model: ?*const RobotModel,
     state: deck.DrawState,
 
-    fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room_01.Hatching) void {
+    fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room_kit.Hatching) void {
         self.deck.draw(frame, shaders.room, shaders.model, hatching, self.state);
         if (self.robot_model) |model| {
             model.draw(frame, shaders.model, self.robot, hatching);
@@ -252,7 +253,7 @@ fn deckLights(settings: Settings, game: *const Game, alarm_level: f32) SceneLigh
     });
     for ([_]deck.RoomId{ .room_01, .room_02 }, 1..) |id, index| {
         lights.setPointLight(index, .{
-            .world_pos = vec3(deck.roomCenterX(id), room_01.HEIGHT - 0.4, -room_01.DEPTH / 2.0),
+            .world_pos = vec3(deck.roomCenterX(id), room_01.HEIGHT - 0.4, -room_kit.DEPTH / 2.0),
             .color = deck.EMERGENCY_TINT.mulScalar(settings.lights.emergency),
             .constant = 1.0,
             .linear = 0.2,
@@ -291,11 +292,11 @@ fn floorGrid(segments: []LineSegment) usize {
 
     var x = -half_width;
     while (x <= half_width) : (x += 1.0) {
-        segments[count] = .{ .start = vec3(x, y, 0.0), .end = vec3(x, y, -room_01.DEPTH), .color = .black };
+        segments[count] = .{ .start = vec3(x, y, 0.0), .end = vec3(x, y, -room_kit.DEPTH), .color = .black };
         count += 1;
     }
     var z: f32 = 0.0;
-    while (z >= -room_01.DEPTH) : (z -= 1.0) {
+    while (z >= -room_kit.DEPTH) : (z -= 1.0) {
         segments[count] = .{ .start = vec3(-half_width, y, z), .end = vec3(half_width, y, z), .color = .black };
         count += 1;
     }

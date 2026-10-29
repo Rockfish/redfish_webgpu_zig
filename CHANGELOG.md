@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: the room kit; plan 022 phase B
+- **games/the_station**: `room_kit.zig`, what every room is built with: the room grid (cells 2.8 x 3.4 m; Rooms 01 and 02 are 3 x 1), door sizes, parts, and `PartBuilder.addShell`, which builds any room's shell from a `Shell` (sides solid, with a doorway, or the neighbor's; a hole with its shaft). Rooms 01 and 02 describe their shells instead of building them (they were near copies); they look the same as before
+
 ### 2026-10-29 - The Station: style fixes and tests; plan 022 phase A
 - **docs/STYLE.md**: two exceptions: a short `if` as a switch arm stays on one line; a table of data keeps one item per line, however long
 - **games/the_station**: fixes from the review (comment leftovers of the `room_01` rename, an `else` branch over `HotspotKind`, a `.?`, constants placed after functions, `Ink` storing an allocator); settings saved to `the-station/settings/the_station.zon` (was `room_01.zon`), panel named "the station"; `tests.zig`, run by `zig build test`, with tests for `navigation.zig`

@@ -9,6 +9,7 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
+const room_kit = @import("room_kit.zig");
 const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
 const navigation = @import("navigation.zig");
@@ -20,8 +21,8 @@ const GpuContext = core.GpuContext;
 const ModelInstance = core.ModelInstance;
 const Shader = core.Shader;
 const Shape = core.shapes.Shape;
-const Hatching = room_01.Hatching;
-const Part = room_01.Part;
+const Hatching = room_kit.Hatching;
+const Part = room_kit.Part;
 const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
@@ -47,7 +48,7 @@ pub const hotspots = room_01.hotspots ++ room_02.hotspots;
 /// Room 01's floor, the doorway (with the door open), and Room 02's floor.
 pub const walk_areas = [_]navigation.Area{
     .{ .min_x = room_01.WALK_MIN_X, .max_x = room_01.WALK_MAX_X, .min_z = room_01.WALK_MIN_Z, .max_z = room_01.WALK_MAX_Z },
-    .{ .min_x = room_02.DOOR_STAND_POINT.x + 0.25, .max_x = room_01.WALK_MIN_X + 0.05, .min_z = room_01.DOOR_CENTER_Z - 0.25, .max_z = room_01.DOOR_CENTER_Z + 0.25, .needs_open_door = true },
+    .{ .min_x = room_02.DOOR_STAND_POINT.x + 0.25, .max_x = room_01.WALK_MIN_X + 0.05, .min_z = room_kit.DOOR_CENTER_Z - 0.25, .max_z = room_kit.DOOR_CENTER_Z + 0.25, .needs_open_door = true },
 } ++ room_02.walk_areas;
 
 /// The room `x` is in: the shared wall's middle divides them.
@@ -68,8 +69,8 @@ pub fn framing(center_x: f32) Framing {
     return .{
         .center_x = center_x,
         .center_y = room_01.HEIGHT / 2.0,
-        .half_width = room_01.WIDTH / 2.0 + room_01.WALL + FRAME_MARGIN,
-        .half_height = room_01.HEIGHT / 2.0 + room_01.WALL + FRAME_MARGIN,
+        .half_width = room_01.WIDTH / 2.0 + room_kit.WALL + FRAME_MARGIN,
+        .half_height = room_01.HEIGHT / 2.0 + room_kit.WALL + FRAME_MARGIN,
     };
 }
 
@@ -77,7 +78,7 @@ pub fn framing(center_x: f32) Framing {
 pub fn interior(id: RoomId) AABB {
     const center_x = roomCenterX(id);
     return .{
-        .min = vec3(center_x - room_01.WIDTH / 2.0, 0.0, -room_01.DEPTH),
+        .min = vec3(center_x - room_01.WIDTH / 2.0, 0.0, -room_kit.DEPTH),
         .max = vec3(center_x + room_01.WIDTH / 2.0, room_01.HEIGHT, 0.0),
     };
 }
@@ -107,20 +108,17 @@ pub const Deck = struct {
     pub fn init(context: core.Context, gpu: *GpuContext) !Self {
         const cube = try core.shapes.createCube(context.alloc, gpu, .{});
         const cylinder = try core.shapes.createCylinder(context.alloc, gpu, 0.5, 1.0, 24);
-        const builder: room_01.PartBuilder = .{ .cube = cube, .cylinder = cylinder };
+        const builder: room_kit.PartBuilder = .{ .cube = cube, .cylinder = cylinder };
 
         var parts: std.ArrayList(Part) = .empty;
         var tubes: std.ArrayList(Part) = .empty;
-        try builder.addShell(context.alloc, &parts);
-        try builder.addDoorway(context.alloc, &parts);
-        try room_02.addShell(builder, context.alloc, &parts);
-        try builder.addCeilingLights(context.alloc, &parts, &tubes, 0.0);
-        try builder.addCeilingLights(context.alloc, &parts, &tubes, room_02.CENTER_X);
+        try builder.addShell(context.alloc, &parts, room_01.shell);
+        try builder.addShell(context.alloc, &parts, room_02.shell);
+        try builder.addCeilingLights(context.alloc, &parts, &tubes, 0.0, room_01.HEIGHT);
+        try builder.addCeilingLights(context.alloc, &parts, &tubes, room_02.CENTER_X, room_02.HEIGHT);
 
         var greybox_01: std.ArrayList(Part) = .empty;
-        try builder.addConsole(context.alloc, &greybox_01);
-        try builder.addBackPanels(context.alloc, &greybox_01);
-        try builder.addPipes(context.alloc, &greybox_01);
+        try room_01.addGreybox(builder, context.alloc, &greybox_01);
         var greybox_02: std.ArrayList(Part) = .empty;
         try room_02.addGreybox(builder, context.alloc, &greybox_02);
 
@@ -135,10 +133,10 @@ pub const Deck = struct {
             },
             .alarm_lamp = .{
                 .shape = cylinder,
-                .model = room_01.cylinderModel(room_01.ALARM_LAMP_POSITION.sub(vec3(0.0, 0.0, 0.1)), .z, 0.3, 0.2),
+                .model = room_kit.cylinderModel(room_01.ALARM_LAMP_POSITION.sub(vec3(0.0, 0.0, 0.1)), .z, 0.3, 0.2),
                 .color = vec4(red.x, red.y, red.z, 1.0),
             },
-            .door = .{ .shape = cube, .model = Mat4.Identity, .color = room_01.grey(0.4) },
+            .door = .{ .shape = cube, .model = Mat4.Identity, .color = room_kit.grey(0.4) },
             .tubes = try tubes.toOwnedSlice(context.alloc),
         };
     }
@@ -146,7 +144,7 @@ pub const Deck = struct {
     /// `shader` draws the shapes, `model_shader` the equipment models.
     pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, state: DrawState) void {
         for (self.parts) |part| {
-            room_01.drawPart(frame, shader, part, hatching);
+            room_kit.drawPart(frame, shader, part, hatching);
         }
         for (self.equipment) |equipment| {
             equipment.draw(frame, shader, model_shader, hatching, state.use_greybox);
@@ -156,7 +154,7 @@ pub const Deck = struct {
         var lamp = self.alarm_lamp;
         lamp.color = ALARM_LENS_DULL.lerp(lamp.color, state.alarm_glow);
         lamp.emissive = state.alarm_glow;
-        room_01.drawPart(frame, shader, lamp, hatching);
+        room_kit.drawPart(frame, shader, lamp, hatching);
 
         for (self.tubes) |tube| {
             var lit = tube;
@@ -164,13 +162,13 @@ pub const Deck = struct {
                 lit.color = vec4(EMERGENCY_TINT.x, EMERGENCY_TINT.y, EMERGENCY_TINT.z, 1.0);
                 lit.emissive = state.light_glow;
             }
-            room_01.drawPart(frame, shader, lit, hatching);
+            room_kit.drawPart(frame, shader, lit, hatching);
         }
 
         var door = self.door;
-        const door_z = room_01.DOOR_CENTER_Z - room_01.DOOR_WIDTH * state.door_open;
-        door.model = room_01.box(vec3(room_01.LEFT_WALL_X, room_01.DOOR_HEIGHT / 2.0, door_z), vec3(0.08, room_01.DOOR_HEIGHT, room_01.DOOR_WIDTH));
-        room_01.drawPart(frame, shader, door, hatching);
+        const door_z = room_kit.DOOR_CENTER_Z - room_kit.DOOR_WIDTH * state.door_open;
+        door.model = room_kit.box(vec3(room_01.LEFT_WALL_X, room_kit.DOOR_HEIGHT / 2.0, door_z), vec3(0.08, room_kit.DOOR_HEIGHT, room_kit.DOOR_WIDTH));
+        room_kit.drawPart(frame, shader, door, hatching);
     }
 
     pub fn cleanUp(self: *const Self) void {
@@ -199,7 +197,7 @@ const Equipment = struct {
             }
         }
         for (self.greybox) |part| {
-            room_01.drawPart(frame, shader, part, hatching);
+            room_kit.drawPart(frame, shader, part, hatching);
         }
     }
 };

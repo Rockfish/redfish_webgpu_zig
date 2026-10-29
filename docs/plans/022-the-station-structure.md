@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phase A done; next: phase B)
+## Status: Active (written 2026-10-29; phases A-B done; next: phase C)
 
 ## Context
 
@@ -239,11 +239,11 @@ inventory, puzzle logic.
 - [x] Test step for the game's logic; `navigation.zig` tests first
 
 ### B. Room kit
-- [ ] `room_kit.zig` with the shared pieces from `room_01.zig`; room_02, robot, ink
+- [x] `room_kit.zig` with the shared pieces from `room_01.zig`; room_02, robot, ink
       import it, not room_01
-- [ ] The cell size and `roomSize(cells)`
-- [ ] `addShell(builder, size, openings)` for any room; Rooms 01 and 02 built through it
-- [ ] Check: both rooms look the same as before (captures before and after)
+- [x] The cell size and `roomSize(cells)`
+- [x] `addShell(builder, size, openings)` for any room; Rooms 01 and 02 built through it
+- [x] Check: both rooms look the same as before (captures before and after)
 
 ### C. Rooms as data
 - [ ] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
@@ -340,3 +340,19 @@ inventory, puzzle logic.
   hole, edges). Two expectations were wrong at first, not the code: the test doorway
   also touched the strip beside the hole, and a crossing is the shared edge's point
   nearest the next point (straight above the target, not the strip's corner).
+- 2026-10-29, phase B, as built: `room_kit.zig` holds the grid (`CELL_WIDTH` 2.8,
+  `CELL_HEIGHT` 3.4, `insideWidth` / `insideHeight` from cells, exact at compile time:
+  3 cells give 8.0), `DEPTH`, `WALL`, the door sizes and place, the deck below, the
+  facings, `Part`, `drawPart`, `Hatching`, `box`, `cylinderModel`, `grey`, `bounds`, and
+  `PartBuilder` with `addShell(shell)` and `addCeilingLights` (now given the room's
+  height). A `Shell` is the room's center, inside size, each side (`solid`, `doorway`
+  with its door `separate` or `locked` and whether it is framed outside, or `neighbor`:
+  the room beside builds the wall, and floor, ceiling, and back wall stop at it), and an
+  optional hole with its shaft. `room_01.shell` and `room_02.shell` replace
+  `addShell` / `addDoorway` and `addRoomBox` / `addLockedDoor` / `addShaft`; each room's
+  greybox is its `addGreybox`. robot, ink, deck, and main use the kit; room_02 still
+  imports room_01 for `HotspotKind` until phase D. The kit is in `tests.zig`
+  (`refAllDecls`, and a test of the grid).
+  Checked: captures of both rooms, models and greybox, before and after (temporary
+  edit: alarm off, emergency lights, door open, placeholder robot): identical except
+  the hover outline under wherever the mouse sat.

@@ -18,7 +18,7 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const room_01 = @import("room_01.zig");
+const room_kit = @import("room_kit.zig");
 const DrawUniforms = core.DrawUniforms;
 const Frame = core.Frame;
 const GpuContext = core.GpuContext;
@@ -88,7 +88,7 @@ pub const Style = struct {
     /// Meters between hatch lines.
     hatch_spacing: f32 = 0.14,
 
-    pub fn hatching(self: Style) room_01.Hatching {
+    pub fn hatching(self: Style) room_kit.Hatching {
         return .{
             .strength = if (self.show_hatching) self.hatch_strength else 0.0,
             .spacing = self.hatch_spacing,

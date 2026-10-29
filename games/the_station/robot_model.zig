@@ -17,7 +17,7 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const room_01 = @import("room_01.zig");
+const room_kit = @import("room_kit.zig");
 const robot_module = @import("robot.zig");
 const Robot = robot_module.Robot;
 const Frame = core.Frame;
@@ -71,7 +71,7 @@ pub const RobotModel = struct {
         try self.fsm.update(self.instance, dt);
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, robot: *const Robot, hatching: room_01.Hatching) void {
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, robot: *const Robot, hatching: room_kit.Hatching) void {
         const transform = Mat4.fromTranslation(robot.position).mulMat4(&Mat4.fromRotationY(robot.yaw));
         self.instance.drawWithParams(frame, shader, transform, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
     }

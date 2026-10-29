@@ -11,7 +11,7 @@ const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const room_01 = @import("room_01.zig");
+const room_kit = @import("room_kit.zig");
 const Action = @import("interaction.zig").Action;
 const Path = @import("navigation.zig").Path;
 const Frame = core.Frame;
@@ -212,7 +212,7 @@ pub const Robot = struct {
         return null;
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: room_01.PartBuilder, hatching: room_01.Hatching) void {
+    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: room_kit.PartBuilder, hatching: room_kit.Hatching) void {
         const root = Mat4.fromTranslation(self.position).mulMat4(&Mat4.fromRotationY(self.yaw));
         const leg_angle = @sin(self.walk_phase) * LEG_SWING;
         const bob = @abs(@sin(self.walk_phase)) * 0.03;
@@ -224,9 +224,9 @@ pub const Robot = struct {
         const left_raise: f32 = if (is_left_arm) arm_angle else 0.0;
         const right_raise: f32 = if (is_left_arm) 0.0 else arm_angle;
 
-        const body = room_01.grey(0.72);
-        const limbs = room_01.grey(0.35);
-        const parts = [_]room_01.Part{
+        const body = room_kit.grey(0.72);
+        const limbs = room_kit.grey(0.35);
+        const parts = [_]room_kit.Part{
             .{ .shape = shapes.cube, .model = limb(root, vec3(0.12, 0.6, 0.0), leg_angle, vec3(0.08, 0.6, 0.08)), .color = limbs },
             .{ .shape = shapes.cube, .model = limb(root, vec3(-0.12, 0.6, 0.0), -leg_angle, vec3(0.08, 0.6, 0.08)), .color = limbs },
             .{ .shape = shapes.cube, .model = foot(root, vec3(0.12, 0.6, 0.0), leg_angle), .color = limbs },
@@ -234,14 +234,14 @@ pub const Robot = struct {
             .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 0.84 + bob, 0.0), vec3(0.5, 0.45, 0.38)), .color = body },
             .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 1.1 + bob, 0.0), vec3(0.08, 0.08, 0.08)), .color = limbs },
             .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 1.28 + bob, 0.0), vec3(0.46, 0.3, 0.34)), .color = body },
-            .{ .shape = shapes.cylinder, .model = eye(root, vec3(0.1, 1.29 + bob, 0.16)), .color = room_01.grey(0.95), .emissive = 0.8 },
-            .{ .shape = shapes.cylinder, .model = eye(root, vec3(-0.1, 1.29 + bob, 0.16)), .color = room_01.grey(0.95), .emissive = 0.8 },
+            .{ .shape = shapes.cylinder, .model = eye(root, vec3(0.1, 1.29 + bob, 0.16)), .color = room_kit.grey(0.95), .emissive = 0.8 },
+            .{ .shape = shapes.cylinder, .model = eye(root, vec3(-0.1, 1.29 + bob, 0.16)), .color = room_kit.grey(0.95), .emissive = 0.8 },
             // Each arm swings opposite its leg; the one nearer the camera pushes
             .{ .shape = shapes.cube, .model = limb(root, vec3(0.3, 1.0 + bob, 0.0), -leg_angle * 0.6 - left_raise, vec3(0.07, 0.45, 0.07)), .color = limbs },
             .{ .shape = shapes.cube, .model = limb(root, vec3(-0.3, 1.0 + bob, 0.0), leg_angle * 0.6 - right_raise, vec3(0.07, 0.45, 0.07)), .color = limbs },
         };
         for (parts) |robot_part| {
-            room_01.drawPart(frame, shader, robot_part, hatching);
+            room_kit.drawPart(frame, shader, robot_part, hatching);
         }
     }
 
@@ -366,25 +366,25 @@ fn gestureFor(action: Action) Gesture {
 
 /// A box centered at `center` in the robot's space.
 fn part(root: Mat4, center: Vec3, size: Vec3) Mat4 {
-    return root.mulMat4(&room_01.box(center, size));
+    return root.mulMat4(&room_kit.box(center, size));
 }
 
 /// A box hanging from `joint`, turned about x by `angle` (positive swings it backward,
 /// negative forward and up).
 fn limb(root: Mat4, joint: Vec3, angle: f32, size: Vec3) Mat4 {
-    const hang = room_01.box(vec3(0.0, -size.y / 2.0, 0.0), size);
+    const hang = room_kit.box(vec3(0.0, -size.y / 2.0, 0.0), size);
     return root.mulMat4(&Mat4.fromTranslation(joint)).mulMat4(&Mat4.fromRotationX(angle)).mulMat4(&hang);
 }
 
 /// A flat foot at the bottom of the leg hanging from `hip`, a little forward.
 fn foot(root: Mat4, hip: Vec3, angle: f32) Mat4 {
-    const sole = room_01.box(vec3(0.0, -0.57, 0.04), vec3(0.14, 0.06, 0.24));
+    const sole = room_kit.box(vec3(0.0, -0.57, 0.04), vec3(0.14, 0.06, 0.24));
     return root.mulMat4(&Mat4.fromTranslation(hip)).mulMat4(&Mat4.fromRotationX(angle)).mulMat4(&sole);
 }
 
 /// A round eye on the head's front, looking along +z.
 fn eye(root: Mat4, base: Vec3) Mat4 {
-    return root.mulMat4(&room_01.cylinderModel(base, .z, 0.12, 0.04));
+    return root.mulMat4(&room_kit.cylinderModel(base, .z, 0.12, 0.04));
 }
 
 fn smoothstep(t: f32) f32 {
