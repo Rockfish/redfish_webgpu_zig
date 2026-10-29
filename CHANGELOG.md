@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: the station's state; plan 022 phase D
+- **games/the_station**: the station's state is one plain-data struct (`state.zig`: power, alarm, doors), held by `Game`; the lights, the door's power, the alarm lamp, and the remarks are derived from it. Each room has its own hotspot kinds and a `use` that changes the state (`room_01.use`, `room_02.use`); the door and the ladder stay the game's. Snapshots: the panel's "restart" and "back to room entry" (taken as the robot enters a room). The drawing struct is now `station.Scenery`. Tests for the state, rooms' uses, and restore
+
 ### 2026-10-29 - The Station: rooms as data; plan 022 phase C
 - **games/the_station**: `station.zig` (was `deck.zig`) holds the rooms, each described by its own file in its own coordinates (`room_01.room`, `room_02.room`: cell on the grid, size, model, shell, walk areas, hotspots, greybox) and placed at its origin on the room grid. The room a point is in comes from the rooms' spaces; only the rooms the camera sees are drawn and lit; the camera pans in x and y. `robot_placeholder.zig` draws the box robot (out of `robot.zig`). Tests for the station
 - **the-station**: Room 02 built and exported in its own coordinates (`build_room_02.py`)

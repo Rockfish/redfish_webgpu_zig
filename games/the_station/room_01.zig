@@ -20,6 +20,7 @@ const math = @import("math");
 const room_kit = @import("room_kit.zig");
 const station = @import("station.zig");
 const navigation = @import("navigation.zig");
+const Station = @import("state.zig").Station;
 const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
 const PartBuilder = room_kit.PartBuilder;
@@ -91,6 +92,19 @@ pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 /// Where the robot stands to use the door, in this room.
 pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
+/// The room's own hotspots (`use`); its door is the station's (`station.HotspotKind`).
+/// The console's buttons: red silences the alarm, the middle one opens and closes the
+/// door, the third switches on the emergency power.
+pub const HotspotKind = enum {
+    red_button,
+    door_button,
+    lights_button,
+    lever,
+    gauges,
+    screen,
+    breakers,
+};
+
 const hotspots = [_]Hotspot{
     .{
         .kind = .door,
@@ -101,7 +115,7 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
     .{
-        .kind = .red_button,
+        .kind = .{ .room_01 = .red_button },
         .name = "Red button",
         .bounds = bounds(vec3(3.33, 0.85, -1.62), vec3(3.57, 1.0, -1.38)),
         .stand_point = vec3(2.75, 0.0, -1.5),
@@ -110,7 +124,7 @@ const hotspots = [_]Hotspot{
         .mesh = "red_button",
     },
     .{
-        .kind = .door_button,
+        .kind = .{ .room_01 = .door_button },
         .name = "Button",
         .bounds = bounds(vec3(3.33, 0.85, -2.12), vec3(3.57, 1.0, -1.88)),
         .stand_point = vec3(2.75, 0.0, -2.0),
@@ -119,7 +133,7 @@ const hotspots = [_]Hotspot{
         .mesh = "door_button",
     },
     .{
-        .kind = .lights_button,
+        .kind = .{ .room_01 = .lights_button },
         .name = "Button",
         .bounds = bounds(vec3(3.33, 0.85, -2.62), vec3(3.57, 1.0, -2.38)),
         .stand_point = vec3(2.75, 0.0, -2.5),
@@ -128,7 +142,7 @@ const hotspots = [_]Hotspot{
         .mesh = "lights_button",
     },
     .{
-        .kind = .lever,
+        .kind = .{ .room_01 = .lever },
         .name = "Lever",
         .bounds = bounds(vec3(3.6, 0.9, -1.35), vec3(3.8, 1.35, -1.15)),
         .stand_point = vec3(2.75, 0.0, -1.0),
@@ -139,7 +153,7 @@ const hotspots = [_]Hotspot{
     // The back wall's hotspots are two-bay cabinets in the row (build_room.py), each
     // the cabinet's fittings, standing out from its front at z -3.65
     .{
-        .kind = .gauges,
+        .kind = .{ .room_01 = .gauges },
         .name = "Gauges",
         .bounds = bounds(vec3(-3.2, 0.62, -DEPTH), vec3(-1.6, 1.72, -3.55)),
         .stand_point = vec3(-2.4, 0.0, -3.2),
@@ -147,7 +161,7 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
     .{
-        .kind = .screen,
+        .kind = .{ .room_01 = .screen },
         .name = "Screen",
         .bounds = bounds(vec3(-0.5, 0.95, -DEPTH), vec3(0.5, 1.7, -3.5)),
         .stand_point = vec3(0.0, 0.0, -3.2),
@@ -155,7 +169,7 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
     .{
-        .kind = .breakers,
+        .kind = .{ .room_01 = .breakers },
         .name = "Breakers",
         .bounds = bounds(vec3(1.6, 0.9, -DEPTH), vec3(3.2, 1.65, -3.5)),
         .stand_point = vec3(2.4, 0.0, -3.2),
@@ -163,6 +177,38 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
 };
+
+/// What using `kind` does to the station; returns the robot's remark.
+pub fn use(state: *Station, kind: HotspotKind) []const u8 {
+    return switch (kind) {
+        .red_button => switch (state.alarm) {
+            .sounding => {
+                state.alarm = .silenced;
+                return "Alarm off. Quiet at last.";
+            },
+            .silenced => "Nothing more happens.",
+        },
+        .lights_button => switch (state.power.emergency) {
+            .off => {
+                state.power.emergency = .on;
+                return "Main power offline. Emergency lights only.";
+            },
+            .on => "Still only emergency power.",
+        },
+        // The robot presses it at the console, so it is never in the doorway as the
+        // door closes
+        .door_button => {
+            if (!state.toggleDoor(.room_01_left)) {
+                return "Click. No power to the door.";
+            }
+            return if (state.isDoorOpen(.room_01_left)) "A lock clicks. The door slides open." else "The door slides shut.";
+        },
+        .lever => "Stuck.",
+        .gauges => "Pressure in the reactor ring is falling.",
+        .screen => if (state.isAlarmSounding()) "ALARM: MAIN POWER LOST" else "MAIN POWER LOST (acknowledged)",
+        .breakers => "All breakers are on. The fault is somewhere else.",
+    };
+}
 
 /// Light falling on the room from the alarm, for point light `SceneLights.setPointLight`.
 pub fn alarmLightColor(intensity: f32) Vec3 {

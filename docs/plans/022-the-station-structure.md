@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C done; next: phase D)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D done; next: phase E)
 
 ## Context
 
@@ -320,12 +320,12 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
       (`robot_placeholder.zig`)
 
 ### D. The station's state
-- [ ] `Station` struct: power, alarm, lights, doors; `Game` holds one
-- [ ] Derived values for drawing (`DrawState` from `Station`), the lights from it
-- [ ] Per-room `HotspotKind` and `use`; the station routes a use to its room
-- [ ] Snapshot and restore (the panel's "restart" restores the start; a room-entry
+- [x] `Station` struct: power, alarm, lights, doors; `Game` holds one
+- [x] Derived values for drawing (`DrawState` from `Station`), the lights from it
+- [x] Per-room `HotspotKind` and `use`; the station routes a use to its room
+- [x] Snapshot and restore (the panel's "restart" restores the start; a room-entry
       snapshot for later deaths)
-- [ ] Tests: power, doors, derived values
+- [x] Tests: power, doors, derived values
 
 ### E. Connections, transitions, the generator room
 - [ ] `Connection` (door, ladder) with a gate; navigation stays inside a room
@@ -500,4 +500,34 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
     the same but the cursor and label under the real mouse; Room 02 the grid (now its
     own) and its equipment's hatch lines shifted a little: the model hatches in its
     mesh's coordinates, which moved 8.4 m.
-
+- 2026-10-29, phase D, as built:
+  - `state.zig`: `Station`, plain data: `power` (`emergency`, a `Switch`; main power
+    joins with the generator), `alarm` (`sounding`, `silenced`), `doors`
+    (`std.EnumArray(DoorId, DoorState)`: `room_01_left` closed, `room_02_left`
+    locked out). Derived: `lights()`, `isDoorPowered()`, `isDoorOpen(door)`,
+    `isAlarmSounding()`; `toggleDoor(door)` moves a powered door that isn't locked out.
+  - `Game.station` replaces `is_alarm_on`, `lights`, `is_door_open`; the door's slide
+    (`door_open`) stays in `Game`, as drawing, not state. main derives the alarm's
+    pulse, the tubes' glow (`lightGlow`), and the lights (`stationLights` takes the
+    `Station`) from it.
+  - `station.HotspotKind` is a union: the ways between rooms (`door`, `ladder`,
+    `ladder_hole`), which the game crosses, and `room_01` / `room_02`, each room's own
+    enum. Rooms write `.kind = .{ .room_01 = .red_button }`; each has
+    `use(state: *Station, kind) []const u8`, changing the state and returning the
+    robot's remark (no `item` until phase F; Room 02's changes nothing yet). `Game.use`
+    routes by the union's tag, so a new room is a compile error until it has an arm.
+    Hotspot indices stay station-wide (`station.hotspots`); `hotspot_rooms` still says
+    which room (the door is in both).
+  - The drawing struct `station.Station` is now `station.Scenery`, so `Station` names
+    the state.
+  - `Snapshot` (the `Station`, the robot's position and yaw; `.{}` is the start).
+    `Game.snapshot`, `Game.restore` (the robot standing, the door's slide set from the
+    state); `Game.room_entry` is taken when the robot's room changes. Panel: "restart"
+    (`restore(.{})`), "back to room entry", combos for the door, the emergency power,
+    and the alarm.
+  - Tests: `state.zig` (the start, a door only on the emergency circuit, a locked-out
+    door, a snapshot is a copy); `game.zig` (a room's use through its room, restore to a
+    snapshot and to the start, the room-entry snapshot). 148 pass.
+  - Checked with captures of both rooms (alarm silenced, emergency power, door open,
+    set through the `Station`): the same as phase C's but the cursor and label under
+    the real mouse.

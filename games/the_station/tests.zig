@@ -8,6 +8,7 @@ test {
     _ = @import("room_kit.zig");
     _ = @import("game.zig");
     _ = @import("station.zig");
+    _ = @import("state.zig");
     // Analyzes every declaration, called by the game yet or not
     std.testing.refAllDecls(@import("room_kit.zig"));
 }

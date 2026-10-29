@@ -1,10 +1,9 @@
-//! The station's state, the clicks that drive the robot, and what using each hotspot does
-//! (plan 021, phases B and G).
+//! The game: the robot, the station's state (`state.zig`), and the clicks that drive the
+//! robot (plan 021, phases B and G; plan 022, phase D). A room's own hotspot is used by
+//! its room (`room_01.use`, `room_02.use`); the door and the ladder are crossed here.
 //!
-//! The opening: main power is offline and the alarm is on. The red button stops the
-//! alarm; the console's third button turns on the lights, which give only the emergency
-//! light; the middle button opens and closes the door once there is that power. Through
-//! the door, Room 02 and its ladder down.
+//! The opening: main power is offline and the alarm sounds (`state.zig`). Through Room
+//! 01's door, Room 02 and its ladder down.
 
 const std = @import("std");
 const core = @import("core");
@@ -16,6 +15,7 @@ const navigation = @import("navigation.zig");
 const station = @import("station.zig");
 const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
+const Station = @import("state.zig").Station;
 const robot_module = @import("robot.zig");
 const Robot = robot_module.Robot;
 const Ray = core.Ray;
@@ -31,15 +31,21 @@ const MESSAGE_TIME: f32 = 4.0;
 /// most of the way in about 0.15 s.
 const HIGHLIGHT_RATE: f32 = 20.0;
 
-/// The deck's lights: off at the start; the emergency lights are all the power there is.
-pub const Lights = enum { off, emergency };
+/// What a restart goes back to: the station's state and where the robot stood. The
+/// default is the start.
+pub const Snapshot = struct {
+    station: Station = .{},
+    robot_position: Vec3 = station.place(.room_01, room_01.ROBOT_START),
+    robot_yaw: f32 = 0.0,
+};
 
 pub const Game = struct {
     robot: Robot = .{ .position = station.place(.room_01, room_01.ROBOT_START) },
-    is_alarm_on: bool = true,
-    lights: Lights = .off,
-    is_door_open: bool = false,
-    /// 0..1: how far the door has slid into the wall.
+    station: Station = .{},
+    /// The robot's room, and the game as the robot entered it, for going back there.
+    room: station.RoomId = .room_01,
+    room_entry: Snapshot = .{},
+    /// 0..1: how far Room 01's door has slid into the wall.
     door_open: f32 = 0.0,
     /// What the mouse is over this frame.
     hovered: Target = .nothing,
@@ -68,8 +74,13 @@ pub const Game = struct {
         if (self.robot.update(dt)) |hotspot| {
             self.use(station.hotspots[hotspot].kind);
         }
+        const room = self.robotRoom();
+        if (room != self.room) {
+            self.room = room;
+            self.room_entry = self.snapshot();
+        }
 
-        const door_target: f32 = if (self.is_door_open) 1.0 else 0.0;
+        const door_target: f32 = if (self.station.isDoorOpen(.room_01_left)) 1.0 else 0.0;
         const door_step = dt / DOOR_OPEN_TIME;
         self.door_open = std.math.clamp(door_target, self.door_open - door_step, self.door_open + door_step);
         self.message_time = @max(self.message_time - dt, 0.0);
@@ -101,6 +112,21 @@ pub const Game = struct {
         return if (self.message_time > 0.0) self.message else "";
     }
 
+    pub fn snapshot(self: *const Self) Snapshot {
+        return .{ .station = self.station, .robot_position = self.robot.position, .robot_yaw = self.robot.yaw };
+    }
+
+    /// The game as it was at `saved`, the robot standing still; `.{}` restarts it.
+    pub fn restore(self: *Self, saved: Snapshot) void {
+        self.* = .{
+            .robot = .{ .position = saved.robot_position, .yaw = saved.robot_yaw },
+            .station = saved.station,
+            .room = station.roomAt(saved.robot_position),
+            .room_entry = saved,
+            .door_open = if (saved.station.isDoorOpen(.room_01_left)) 1.0 else 0.0,
+        };
+    }
+
     /// Eases the highlight in on the hovered hotspot, and out after the mouse leaves it.
     /// Another hotspot under the mouse starts from unlit.
     fn updateHighlight(self: *Self, dt: f32) void {
@@ -124,7 +150,7 @@ pub const Game = struct {
     fn hotspotCursor(self: *const Self, index: usize) Cursor {
         const hotspot = station.hotspots[index];
         return switch (hotspot.kind) {
-            .door => if (self.is_door_open) self.exitCursor() else actionCursor(hotspot.action),
+            .door => if (self.station.isDoorOpen(.room_01_left)) self.exitCursor() else actionCursor(hotspot.action),
             .ladder => switch (self.robot.ladderPlace()) {
                 .off => .climb,
                 .top => .walk,
@@ -135,7 +161,7 @@ pub const Game = struct {
                 .top => .climb_down,
                 .below => .climb_up,
             },
-            .red_button, .door_button, .lights_button, .lever, .gauges, .screen, .breakers, .locked_door, .keypad, .power_cabinet => actionCursor(hotspot.action),
+            .room_01, .room_02 => actionCursor(hotspot.action),
         };
     }
 
@@ -162,10 +188,10 @@ pub const Game = struct {
         switch (hotspot.kind) {
             .ladder => return self.useLadder(false),
             .ladder_hole => return self.useLadder(true),
-            .door => if (self.is_door_open) {
+            .door => if (self.station.isDoorOpen(.room_01_left)) {
                 return self.walkTo(self.otherSideOfDoor(), .stand);
             },
-            .red_button, .door_button, .lights_button, .lever, .gauges, .screen, .breakers, .locked_door, .keypad, .power_cabinet => {},
+            .room_01, .room_02 => {},
         }
         self.walkTo(hotspot.stand_point, .{ .use = .{ .hotspot = index, .facing = hotspot.facing, .action = hotspot.action } });
     }
@@ -183,7 +209,7 @@ pub const Game = struct {
     /// A walk to the nearest point to `point` the robot can reach (the doorway only with
     /// the door open).
     fn walkTo(self: *Self, point: Vec3, then: robot_module.Arrival) void {
-        const path = navigation.findPath(&station.walk_areas, self.is_door_open, self.robot.walkStart(), point);
+        const path = navigation.findPath(&station.walk_areas, self.station.isDoorOpen(.room_01_left), self.robot.walkStart(), point);
         self.robot.walk(path, then);
     }
 
@@ -194,51 +220,21 @@ pub const Game = struct {
         };
     }
 
+    /// A room's own hotspot goes to its room; the door is crossed if it is open.
     fn use(self: *Self, kind: station.HotspotKind) void {
         switch (kind) {
-            .red_button => {
-                if (self.is_alarm_on) {
-                    self.is_alarm_on = false;
-                    self.say("Alarm off. Quiet at last.");
-                } else {
-                    self.say("Nothing more happens.");
-                }
-            },
-            .lights_button => {
-                if (self.lights == .off) {
-                    self.lights = .emergency;
-                    self.say("Main power offline. Emergency lights only.");
-                } else {
-                    self.say("Still only emergency power.");
-                }
-            },
-            .door_button => {
-                if (self.lights == .off) {
-                    self.say("Click. No power to the door.");
-                    return;
-                }
-                // The robot presses it at the console, so it is never in the doorway as
-                // the door closes
-                self.is_door_open = !self.is_door_open;
-                self.say(if (self.is_door_open) "A lock clicks. The door slides open." else "The door slides shut.");
-            },
             .door => {
-                if (self.is_door_open) {
+                if (self.station.isDoorOpen(.room_01_left)) {
                     // Opened while the robot was on its way to look
                     self.walkTo(self.otherSideOfDoor(), .stand);
                 } else {
                     self.say("Sealed tight.");
                 }
             },
-            .locked_door => self.say("Locked."),
-            .keypad => self.say("DOOR LOCKED OUT. The keypad doesn't respond."),
-            .power_cabinet => self.say("No voltage on any phase. The feed comes up the shaft."),
-            .lever => self.say("Stuck."),
-            .gauges => self.say("Pressure in the reactor ring is falling."),
-            .screen => self.say(if (self.is_alarm_on) "ALARM: MAIN POWER LOST" else "MAIN POWER LOST (acknowledged)"),
-            .breakers => self.say("All breakers are on. The fault is somewhere else."),
             // Climbed, not used (`useLadder`)
             .ladder, .ladder_hole => {},
+            .room_01 => |room_kind| self.say(room_01.use(&self.station, room_kind)),
+            .room_02 => |room_kind| self.say(room_02.use(&self.station, room_kind)),
         }
     }
 
@@ -266,7 +262,7 @@ const RoomFilter = struct {
 
 fn hotspotIndex(kind: station.HotspotKind) usize {
     for (station.hotspots, 0..) |hotspot, index| {
-        if (hotspot.kind == kind) {
+        if (std.meta.eql(hotspot.kind, kind)) {
             return index;
         }
     }
@@ -280,10 +276,10 @@ test "cursor: what a click does" {
     game.hovered = .{ .floor = room_01.ROBOT_START };
     try std.testing.expectEqual(Cursor.walk, game.cursor());
 
-    game.hovered = .{ .hotspot = hotspotIndex(.red_button) };
+    game.hovered = .{ .hotspot = hotspotIndex(.{ .room_01 = .red_button }) };
     try std.testing.expectEqual(Cursor.use, game.cursor());
 
-    game.hovered = .{ .hotspot = hotspotIndex(.screen) };
+    game.hovered = .{ .hotspot = hotspotIndex(.{ .room_01 = .screen }) };
     try std.testing.expectEqual(Cursor.look, game.cursor());
 }
 
@@ -292,7 +288,7 @@ test "cursor: an open door points to the next room" {
     game.hovered = .{ .hotspot = hotspotIndex(.door) };
     try std.testing.expectEqual(Cursor.look, game.cursor());
 
-    game.is_door_open = true;
+    game.station.doors.set(.room_01_left, .open);
     try std.testing.expectEqual(Cursor.exit_left, game.cursor());
 }
 
@@ -300,4 +296,48 @@ test "cursor: the ladder from the floor" {
     var game: Game = .{};
     game.hovered = .{ .hotspot = hotspotIndex(.ladder_hole) };
     try std.testing.expectEqual(Cursor.climb, game.cursor());
+}
+
+test "use: a room's hotspot changes the station through its room" {
+    var game: Game = .{};
+    game.use(.{ .room_01 = .door_button });
+    try std.testing.expectEqualStrings("Click. No power to the door.", game.remark());
+
+    game.use(.{ .room_01 = .lights_button });
+    game.use(.{ .room_01 = .door_button });
+    try std.testing.expect(game.station.isDoorOpen(.room_01_left));
+
+    game.use(.{ .room_01 = .red_button });
+    game.use(.{ .room_01 = .screen });
+    try std.testing.expectEqualStrings("MAIN POWER LOST (acknowledged)", game.remark());
+}
+
+test "restore: back to a snapshot, and to the start" {
+    var game: Game = .{};
+    game.use(.{ .room_01 = .lights_button });
+    const saved = game.snapshot();
+    game.use(.{ .room_01 = .red_button });
+    game.robot.position = station.place(.room_02, room_02.DOOR_STAND_POINT);
+
+    game.restore(saved);
+    try std.testing.expect(game.station.isAlarmSounding());
+    try std.testing.expect(game.station.isDoorPowered());
+    try std.testing.expectEqual(station.RoomId.room_01, game.robotRoom());
+
+    game.restore(.{});
+    try std.testing.expect(!game.station.isDoorPowered());
+    try std.testing.expectEqualStrings("", game.remark());
+}
+
+test "room entry: the game as the robot came in" {
+    var game: Game = .{};
+    game.use(.{ .room_01 = .lights_button });
+    game.robot.position = station.place(.room_02, room_02.DOOR_STAND_POINT);
+    game.update(null, false, 0.0);
+    try std.testing.expectEqual(station.RoomId.room_02, game.room);
+
+    game.use(.{ .room_01 = .red_button });
+    game.restore(game.room_entry);
+    try std.testing.expect(game.station.isAlarmSounding());
+    try std.testing.expectEqual(station.RoomId.room_02, game.robotRoom());
 }

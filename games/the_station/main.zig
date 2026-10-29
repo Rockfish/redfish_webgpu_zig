@@ -50,7 +50,8 @@ const gui = core.gui;
 const Framing = room_camera.Framing;
 const RoomCamera = room_camera.RoomCamera;
 const Settings = settings_file.Settings;
-const Station = station.Station;
+const Scenery = station.Scenery;
+const Station = @import("state.zig").Station;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 
@@ -71,18 +72,18 @@ const MAX_LINES = GRID_LINES + 12;
 
 /// What a frame draws, in each of its passes.
 const Scene = struct {
-    station: *const Station,
+    scenery: *const Scenery,
     robot: *const Robot,
     /// Null: the box placeholder.
     robot_model: ?*const RobotModel,
     state: station.DrawState,
 
     fn draw(self: Scene, frame: *const Frame, shaders: ink.SceneShaders, hatching: room_kit.Hatching) void {
-        self.station.draw(frame, shaders.room, shaders.model, hatching, self.state);
+        self.scenery.draw(frame, shaders.room, shaders.model, hatching, self.state);
         if (self.robot_model) |model| {
             model.draw(frame, shaders.model, self.robot, hatching);
         } else {
-            const shapes: room_kit.PartBuilder = .{ .cube = self.station.cube, .cylinder = self.station.cylinder };
+            const shapes: room_kit.PartBuilder = .{ .cube = self.scenery.cube, .cylinder = self.scenery.cylinder };
             robot_placeholder.draw(self.robot, frame, shaders.room, shapes, hatching);
         }
     }
@@ -119,8 +120,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     defer lines_shader.releaseGpuObjects();
     var lines = try Lines.init(context.alloc, lines_shader, 1.0, 0.6, MAX_LINES);
 
-    const the_station = try Station.init(context, gpu);
-    defer the_station.cleanUp();
+    const scenery = try Scenery.init(context, gpu);
+    defer scenery.cleanUp();
 
     var ink_pass = try ink.Ink.init(context, gpu);
     defer ink_pass.releaseGpuObjects();
@@ -170,24 +171,24 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
             try model.update(&game.robot, input.delta_time);
         }
 
-        const alarm_level = if (game.is_alarm_on) pulse(time, settings.alarm.rate) else 0.0;
+        const alarm_level = if (game.station.isAlarmSounding()) pulse(time, settings.alarm.rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
         try ink_pass.update(context.alloc, gpu);
 
         var uniforms = render_context.frameUniforms();
-        uniforms.lights = stationLights(settings, &game, alarm_level, visible).uniforms();
+        uniforms.lights = stationLights(settings, game.station, alarm_level, visible).uniforms();
         gpu.writeFrameUniforms(uniforms);
 
         // The scene twice: its normals and depth for the outlines, then in color
         const scene: Scene = .{
-            .station = &the_station,
+            .scenery = &scenery,
             .robot = &game.robot,
             .robot_model = if (settings.room.use_placeholder) null else if (robot_model) |*model| model else null,
             .state = .{
                 .visible = visible,
                 .alarm_glow = alarm_level,
-                .light_glow = if (game.lights == .emergency) EMERGENCY_GLOW else 0.0,
+                .light_glow = lightGlow(game.station),
                 .door_open = game.door_open,
                 .use_greybox = settings.room.use_greybox,
                 .highlight = highlight(&game, time, style.highlight_strength),
@@ -234,7 +235,10 @@ fn processKeys(input: *Input, window: *zglfw.Window, camera: *RoomCamera, game: 
         camera.view = .orthographic;
     }
     if (input.pressedOnce(.space)) {
-        game.is_alarm_on = !game.is_alarm_on;
+        game.station.alarm = switch (game.station.alarm) {
+            .sounding => .silenced,
+            .silenced => .sounding,
+        };
     }
 }
 
@@ -298,6 +302,14 @@ fn pulse(time: f32, rate: f32) f32 {
     return 0.5 - 0.5 * @cos(time * rate * std.math.tau);
 }
 
+/// How much the ceiling lights' tubes glow.
+fn lightGlow(state: Station) f32 {
+    return switch (state.lights()) {
+        .off => 0.0,
+        .emergency => EMERGENCY_GLOW,
+    };
+}
+
 /// The hovered control's highlight, `strength` at full, breathing a little while it is on.
 fn highlight(game: *const Game, time: f32, strength: f32) ?station.Highlight {
     const hotspot = game.highlighted orelse return null;
@@ -308,8 +320,8 @@ fn highlight(game: *const Game, time: f32, strength: f32) ?station.Highlight {
 /// Main power is out: no light from above, only a dim ambient, the alarm's red point
 /// light, and with the emergency lights on a yellowish light under each room's ceiling.
 /// Only the rooms the camera sees are lit (4 point lights at most).
-fn stationLights(settings: Settings, game: *const Game, alarm_level: f32, visible: std.EnumSet(station.RoomId)) SceneLights {
-    const is_emergency = game.lights == .emergency;
+fn stationLights(settings: Settings, state: Station, alarm_level: f32, visible: std.EnumSet(station.RoomId)) SceneLights {
+    const is_emergency = state.lights() == .emergency;
 
     var lights = SceneLights.init();
     lights.ambient = if (is_emergency)
@@ -323,7 +335,7 @@ fn stationLights(settings: Settings, game: *const Game, alarm_level: f32, visibl
         .constant = 1.0,
         .linear = 0.35,
         .quadratic = 0.15,
-        .enabled = game.is_alarm_on and visible.contains(.room_01),
+        .enabled = state.isAlarmSounding() and visible.contains(.room_01),
     });
     var index: usize = 1;
     var shown = visible.iterator();
@@ -444,18 +456,22 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.checkbox(.room, .show_hotspot_bounds, "hotspot bounds");
         panel.checkbox(.room, .use_placeholder, "placeholder robot");
         panel.checkbox(.room, .use_greybox, "greybox room");
-        _ = zgui.checkbox("door open", .{ .v = &game.is_door_open });
+        _ = zgui.comboFromEnum("door", game.station.doors.getPtr(.room_01_left));
         if (zgui.button("restart", .{})) {
-            game.* = .{};
+            game.restore(.{});
+        }
+        zgui.sameLine(.{});
+        if (zgui.button("back to room entry", .{})) {
+            game.restore(game.room_entry);
         }
 
         panel.section(.lights, "Lights");
-        _ = zgui.comboFromEnum("lights", &game.lights);
+        _ = zgui.comboFromEnum("emergency power", &game.station.power.emergency);
         panel.slider(.lights, .dark, "dark", 0.0, 0.3);
         panel.slider(.lights, .emergency, "emergency", 0.0, 4.0);
 
         panel.section(.alarm, "Alarm");
-        _ = zgui.checkbox("on", .{ .v = &game.is_alarm_on });
+        _ = zgui.comboFromEnum("alarm", &game.station.alarm);
         panel.slider(.alarm, .rate, "pulses per second", 0.2, 3.0);
         panel.slider(.alarm, .intensity, "intensity", 0.0, 12.0);
     }

@@ -23,6 +23,7 @@ const room_kit = @import("room_kit.zig");
 const station = @import("station.zig");
 const navigation = @import("navigation.zig");
 const Ladder = @import("robot.zig").Ladder;
+const Station = @import("state.zig").Station;
 const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
 const PartBuilder = room_kit.PartBuilder;
@@ -105,6 +106,10 @@ const walk_areas = [_]navigation.Area{
     .{ .min_x = HOLE_MAX_X + 0.35, .max_x = INNER_MAX_X - 0.4, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
 };
 
+/// The room's own hotspots (`use`); the door back to Room 01 and the ladder are the
+/// station's (`station.HotspotKind`).
+pub const HotspotKind = enum { locked_door, keypad, power_cabinet };
+
 const hotspots = [_]Hotspot{
     .{
         .kind = .door,
@@ -115,7 +120,7 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
     .{
-        .kind = .locked_door,
+        .kind = .{ .room_02 = .locked_door },
         .name = "Door",
         .bounds = bounds(vec3(INNER_MIN_X - 0.05, 0.0, DOOR_CENTER_Z - DOOR_WIDTH / 2.0), vec3(INNER_MIN_X + 0.2, DOOR_HEIGHT, DOOR_CENTER_Z + DOOR_WIDTH / 2.0)),
         .stand_point = vec3(INNER_MIN_X + 0.5, 0.0, DOOR_CENTER_Z),
@@ -124,7 +129,7 @@ const hotspots = [_]Hotspot{
     },
     // Beside the locked door's front edge; pressed from a step in front of it
     .{
-        .kind = .keypad,
+        .kind = .{ .room_02 = .keypad },
         .name = "Keypad",
         .bounds = bounds(vec3(INNER_MIN_X - 0.02, 1.07, KEYPAD_Z - 0.13), vec3(INNER_MIN_X + 0.13, 1.43, KEYPAD_Z + 0.13)),
         .stand_point = vec3(INNER_MIN_X + 0.6, 0.0, KEYPAD_Z),
@@ -134,7 +139,7 @@ const hotspots = [_]Hotspot{
     },
     // The deck's power cabinet right of the hole (build_room_02.py), 0.25 m deep
     .{
-        .kind = .power_cabinet,
+        .kind = .{ .room_02 = .power_cabinet },
         .name = "Power cabinet",
         .bounds = bounds(vec3(1.3, 0.6, -DEPTH), vec3(2.9, 2.0, -3.65)),
         .stand_point = vec3(2.1, 0.0, -3.4),
@@ -159,6 +164,17 @@ const hotspots = [_]Hotspot{
         .action = .look,
     },
 };
+
+/// What using `kind` does to the station; returns the robot's remark.
+pub fn use(state: *Station, kind: HotspotKind) []const u8 {
+    // Nothing here changes the station yet: the door stays locked out
+    _ = state;
+    return switch (kind) {
+        .locked_door => "Locked.",
+        .keypad => "DOOR LOCKED OUT. The keypad doesn't respond.",
+        .power_cabinet => "No voltage on any phase. The feed comes up the shaft.",
+    };
+}
 
 /// The equipment as boxes, drawn without the model: the ladder, the keypad, and stand-ins
 /// for the lockers and the power cabinet.

@@ -45,25 +45,16 @@ const ALARM_LENS_DULL = vec4(0.1, 0.012, 0.01, 1.0);
 /// The emergency lights glow yellowish.
 pub const EMERGENCY_TINT = vec3(1.0, 0.72, 0.3);
 
-/// What each hotspot on the station is, for the game to decide what using it does. The
-/// console's buttons: red stops the alarm, the middle one opens and closes the door, the
-/// third turns on the lights. Room 02 (`room_02.zig`): its locked door and the keypad
-/// beside it, the power cabinet, and the ladder, whose lower part (the hole) is a hotspot
-/// of its own. One list for every room until phase D gives each room its own.
-pub const HotspotKind = enum {
+/// What each hotspot on the station is: a way between rooms, which the game crosses
+/// (phase E makes them connections), or a room's own, which its `use` handles
+/// (`room_01.use`, `room_02.use`). Room 01's door to Room 02 is a hotspot in both rooms;
+/// Room 02's ladder above the floor and its lower part (the hole) are two.
+pub const HotspotKind = union(enum) {
     door,
-    red_button,
-    door_button,
-    lights_button,
-    lever,
-    gauges,
-    screen,
-    breakers,
-    locked_door,
-    keypad,
-    power_cabinet,
     ladder,
     ladder_hole,
+    room_01: room_01.HotspotKind,
+    room_02: room_02.HotspotKind,
 };
 
 pub const Hotspot = interaction.Hotspot(HotspotKind);
@@ -202,7 +193,8 @@ pub fn emergencyLightPosition(id: RoomId) Vec3 {
     return place(id, vec3(0.0, room(id).height() - 0.4, -room_kit.DEPTH / 2.0));
 }
 
-pub const Station = struct {
+/// The rooms' parts and models, drawn from the station's state (`DrawState`).
+pub const Scenery = struct {
     cube: *Shape,
     cylinder: *Shape,
     /// Each room's parts and equipment, by `RoomId`.
