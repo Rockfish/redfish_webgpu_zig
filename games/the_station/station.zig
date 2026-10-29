@@ -1,7 +1,8 @@
 //! The station (plan 022, phase C): its rooms on the room grid (`room_kit.zig`), each
 //! described by its own file in its own coordinates (`room_01.room`, `room_02.room`), and
-//! placed here at its origin. Where the robot can walk, every hotspot, which room a point
-//! is in, how to frame each room for the camera, and drawing the rooms the camera sees.
+//! placed here at its origin. The connections between rooms (phase E: doorways, the
+//! ladder), every hotspot, which room a point is in, how to frame each room for the
+//! camera, and drawing the rooms the camera sees.
 //!
 //! Room 02 is left of Room 01 through Room 01's door. The camera shows the robot's room
 //! and pans to the next; a neighbor shows at the frame's edge.
@@ -15,7 +16,10 @@ const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
 const navigation = @import("navigation.zig");
 const interaction = @import("interaction.zig");
-const Ladder = @import("robot.zig").Ladder;
+const robot = @import("robot.zig");
+const station_state = @import("state.zig");
+const Ladder = robot.Ladder;
+const LadderStop = robot.LadderStop;
 const Framing = @import("room_camera.zig").Framing;
 const AABB = core.AABB;
 const Frame = core.Frame;
@@ -45,12 +49,12 @@ const ALARM_LENS_DULL = vec4(0.1, 0.012, 0.01, 1.0);
 /// The emergency lights glow yellowish.
 pub const EMERGENCY_TINT = vec3(1.0, 0.72, 0.3);
 
-/// What each hotspot on the station is: a way between rooms, which the game crosses
-/// (phase E makes them connections), or a room's own, which its `use` handles
-/// (`room_01.use`, `room_02.use`). Room 01's door to Room 02 is a hotspot in both rooms;
-/// Room 02's ladder above the floor and its lower part (the hole) are two.
+/// What each hotspot on the station is: a connection, which the game crosses, or a
+/// room's own, which its `use` handles (`room_01.use`, `room_02.use`). A doorway is a
+/// hotspot in each of its rooms; the ladder is two in a room, its part above the floor
+/// (climbs up) and its part below (climbs down).
 pub const HotspotKind = union(enum) {
-    door,
+    doorway: DoorwayId,
     ladder,
     ladder_hole,
     room_01: room_01.HotspotKind,
@@ -114,16 +118,67 @@ pub fn place(id: RoomId, point: Vec3) Vec3 {
 pub const hotspots = placeHotspots();
 const hotspot_rooms = hotspotRooms();
 
-/// Every room's floor, and the doorway between Rooms 01 and 02 (with the door open).
-pub const walk_areas = placeWalkAreas();
+/// What must be so for the robot to go through a connection.
+pub const Gate = union(enum) {
+    always,
+    /// The door is open.
+    door: station_state.DoorId,
 
-/// Room 02's ladder down, on the station.
-pub const ladder: Ladder = .{
-    .top = place(.room_02, room_02.ladder.top),
-    .depth = room_02.ladder.depth,
-    .exit = place(.room_02, room_02.ladder.exit),
-    .facing = room_02.ladder.facing,
+    pub fn isOpen(self: Gate, station: station_state.Station) bool {
+        return switch (self) {
+            .always => true,
+            .door => |door| station.isDoorOpen(door),
+        };
+    }
 };
+
+/// A way through a side wall between two rooms: an end in each, where the robot stands,
+/// and a straight walk between them.
+pub const Doorway = struct {
+    rooms: [2]RoomId,
+    /// On the station, by `rooms`.
+    ends: [2]Vec3,
+    gate: Gate,
+
+    /// The end in room `id`.
+    pub fn end(self: Doorway, id: RoomId) Vec3 {
+        return if (self.rooms[0] == id) self.ends[0] else self.ends[1];
+    }
+
+    /// The end in the room on the other side from room `id`.
+    pub fn otherEnd(self: Doorway, id: RoomId) Vec3 {
+        return if (self.rooms[0] == id) self.ends[1] else self.ends[0];
+    }
+};
+
+pub const DoorwayId = enum { room_01_02 };
+
+/// By `DoorwayId`.
+const doorways = [_]Doorway{
+    .{
+        .rooms = .{ .room_01, .room_02 },
+        .ends = .{ place(.room_01, room_01.DOOR_STAND_POINT), place(.room_02, room_02.DOOR_STAND_POINT) },
+        .gate = .{ .door = .room_01_left },
+    },
+};
+
+pub fn doorway(id: DoorwayId) Doorway {
+    return doorways[@intFromEnum(id)];
+}
+
+/// Room 02's ladder, on the station.
+pub const ladder: Ladder = .{ .stops = &ladder_stops, .facing = room_02.LADDER_FACING };
+const ladder_stops = placeLadderStops();
+
+/// The ladder's stop in room `id` (the first, from the top), or null.
+pub fn ladderStopIn(id: RoomId) ?usize {
+    for (ladder_stops, 0..) |stop, index| {
+        if (roomAt(stop.position) == id) {
+            return index;
+        }
+    }
+    return null;
+}
 
 /// The room `position` is in: inside its walls (a shared wall's middle divides two
 /// rooms), from the deck below it to its ceiling. Outside every room, the nearest.
@@ -444,25 +499,10 @@ fn hotspotRooms() [hotspotCount()]RoomId {
     return placed;
 }
 
-fn placeWalkAreas() [room_01.room.walk_areas.len + 1 + room_02.room.walk_areas.len]navigation.Area {
-    // Phase E makes the doorway a connection between the rooms
-    const doorway: navigation.Area = .{
-        .min_x = place(.room_02, room_02.DOOR_STAND_POINT).x + 0.25,
-        .max_x = place(.room_01, vec3(room_01.WALK_MIN_X + 0.05, 0.0, 0.0)).x,
-        .min_z = room_kit.DOOR_CENTER_Z - 0.25,
-        .max_z = room_kit.DOOR_CENTER_Z + 0.25,
-        .needs_open_door = true,
-    };
-    return placeAreas(.room_01) ++ [_]navigation.Area{doorway} ++ placeAreas(.room_02);
-}
-
-fn placeAreas(comptime id: RoomId) [room(id).walk_areas.len]navigation.Area {
-    const x = room(id).origin().x;
-    var placed: [room(id).walk_areas.len]navigation.Area = undefined;
-    for (room(id).walk_areas, &placed) |area, *moved| {
-        moved.* = area;
-        moved.min_x += x;
-        moved.max_x += x;
+fn placeLadderStops() [room_02.ladder_stops.len]LadderStop {
+    var placed: [room_02.ladder_stops.len]LadderStop = undefined;
+    for (room_02.ladder_stops, &placed) |stop, *moved| {
+        moved.* = .{ .position = place(.room_02, stop.position), .exit = place(.room_02, stop.exit) };
     }
     return placed;
 }
@@ -507,19 +547,29 @@ test "roomAt: the shared wall's middle divides the rooms; the ladder's bottom is
     try testing.expectEqual(RoomId.room_01, roomAt(vec3(4.2, 0.0, -2.0)));
     try testing.expectEqual(RoomId.room_01, roomAt(vec3(0.1, 0.0, -2.0)));
     try testing.expectEqual(RoomId.room_02, roomAt(vec3(-0.1, 0.0, -2.0)));
-    try testing.expectEqual(RoomId.room_02, roomAt(ladder.top.sub(vec3(0.0, ladder.depth, 0.0))));
+    try testing.expectEqual(RoomId.room_02, roomAt(ladder.stops[ladder.stops.len - 1].position));
 }
 
-test "hotspots and walk areas are placed by their room's origin" {
+test "hotspots, doorways, and the ladder are placed by their room's origin" {
     for (hotspots, hotspot_rooms) |hotspot, id| {
         try testing.expect(roomAt(hotspot.stand_point) == id);
     }
-    for (walk_areas) |area| {
-        const middle = vec3((area.min_x + area.max_x) / 2.0, 0.0, (area.min_z + area.max_z) / 2.0);
-        if (!area.needs_open_door) {
-            try testing.expect(interior(roomAt(middle)).min.x < middle.x);
+    for (doorways) |each| {
+        for (each.rooms, each.ends) |id, end| {
+            try testing.expect(roomAt(end) == id);
         }
     }
+    try testing.expectEqual(@as(?usize, 0), ladderStopIn(.room_02));
+    try testing.expectEqual(@as(?usize, null), ladderStopIn(.room_01));
+}
+
+test "a doorway's gate: the door between Rooms 01 and 02 opens it" {
+    const between = doorway(.room_01_02);
+    var station: station_state.Station = .{};
+    try testing.expect(!between.gate.isOpen(station));
+    station.doors.set(.room_01_left, .open);
+    try testing.expect(between.gate.isOpen(station));
+    try expectPoint(place(.room_02, room_02.DOOR_STAND_POINT), between.otherEnd(.room_01));
 }
 
 test "isVisible: a room's neighbor shows at the edge; a far view shows neither" {

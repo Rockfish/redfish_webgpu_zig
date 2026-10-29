@@ -81,7 +81,7 @@ pub const ALARM_LIGHT_POSITION = vec3(0.0, 2.5, -DEPTH + 0.8);
 const ALARM_RED = vec3(1.0, 0.04, 0.02);
 
 /// The floor the robot can walk on: clear of the walls, the console, and the cabinets.
-pub const WALK_MIN_X: f32 = -3.4;
+const WALK_MIN_X: f32 = -3.4;
 const walk_areas = [_]navigation.Area{
     .{ .min_x = WALK_MIN_X, .max_x = 2.85, .min_z = -3.25, .max_z = -0.4 },
 };
@@ -92,7 +92,8 @@ pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 /// Where the robot stands to use the door, in this room.
 pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
-/// The room's own hotspots (`use`); its door is the station's (`station.HotspotKind`).
+/// The room's own hotspots (`use`); its doorway is the station's
+/// (`station.HotspotKind`).
 /// The console's buttons: red silences the alarm, the middle one opens and closes the
 /// door, the third switches on the emergency power.
 pub const HotspotKind = enum {
@@ -107,7 +108,7 @@ pub const HotspotKind = enum {
 
 const hotspots = [_]Hotspot{
     .{
-        .kind = .door,
+        .kind = .{ .doorway = .room_01_02 },
         .name = "Door",
         .bounds = bounds(vec3(-WIDTH / 2.0 - 0.05, 0.0, DOOR_CENTER_Z - DOOR_WIDTH / 2.0), vec3(-WIDTH / 2.0 + 0.15, DOOR_HEIGHT, DOOR_CENTER_Z + DOOR_WIDTH / 2.0)),
         .stand_point = DOOR_STAND_POINT,

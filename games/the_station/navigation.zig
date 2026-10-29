@@ -1,8 +1,9 @@
-//! Where the robot can walk (plan 021, phase G): rectangles of floor (`Area`), joined
-//! where they touch or overlap. Inside one rectangle any two points are a straight walk
-//! apart; between rectangles the robot goes through their shared edges. Enough for rooms
-//! with something in the way (Room 02's hole) and doorways between them (an area that
-//! needs the door open).
+//! Where the robot can walk in a room (plan 021, phase G): rectangles of floor (`Area`),
+//! joined where they touch or overlap, in the room's own coordinates (floor at y = 0).
+//! Inside one rectangle any two points are a straight walk apart; between rectangles the
+//! robot goes through their shared edges. Enough for a room with something in the way
+//! (Room 02's hole). Between rooms the robot goes by a connection (`station.zig`, plan
+//! 022 phase E).
 //!
 //! Areas are where the robot's center can go: they keep its body clear of walls and
 //! holes.
@@ -13,7 +14,7 @@ const math = @import("math");
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 
-/// Most areas a deck has; more needs a larger `MAX_AREAS`.
+/// Most areas a room has; more needs a larger `MAX_AREAS`.
 const MAX_AREAS = 16;
 /// Points in a path: one per area passed through, plus the target.
 pub const MAX_PATH_POINTS = MAX_AREAS + 1;
@@ -24,8 +25,6 @@ pub const Area = struct {
     max_x: f32,
     min_z: f32,
     max_z: f32,
-    /// A doorway: walkable only while the door is open.
-    needs_open_door: bool = false,
 
     pub fn contains(self: Area, point: Vec3) bool {
         const margin = 1e-3;
@@ -61,7 +60,7 @@ pub const Path = struct {
         return self.points[self.len - 1];
     }
 
-    fn append(self: *Path, point: Vec3) void {
+    pub fn append(self: *Path, point: Vec3) void {
         self.points[self.len] = point;
         self.len += 1;
     }
@@ -70,9 +69,9 @@ pub const Path = struct {
 /// The walk from `from` toward `wanted`: to the nearest point to `wanted` the robot can
 /// reach from where it is, through the areas between. `from` is in an area (or is moved
 /// into the nearest one).
-pub fn findPath(areas: []const Area, is_door_open: bool, from: Vec3, wanted: Vec3) Path {
+pub fn findPath(areas: []const Area, from: Vec3, wanted: Vec3) Path {
     std.debug.assert(areas.len <= MAX_AREAS);
-    const start = nearestArea(areas, is_door_open, from, null);
+    const start = nearestArea(areas, from, null);
 
     // Breadth-first over the areas, from the start: each reached area's previous one
     var previous: [MAX_AREAS]?usize = @splat(null);
@@ -85,7 +84,7 @@ pub fn findPath(areas: []const Area, is_door_open: bool, from: Vec3, wanted: Vec
     while (queue_start < queue_end) : (queue_start += 1) {
         const current = queue[queue_start];
         for (areas, 0..) |area, next| {
-            if (is_reached[next] or !isUsable(area, is_door_open) or areas[current].overlap(area) == null) {
+            if (is_reached[next] or areas[current].overlap(area) == null) {
                 continue;
             }
             is_reached[next] = true;
@@ -95,7 +94,7 @@ pub fn findPath(areas: []const Area, is_door_open: bool, from: Vec3, wanted: Vec
         }
     }
 
-    const goal = nearestArea(areas, is_door_open, wanted, &is_reached);
+    const goal = nearestArea(areas, wanted, &is_reached);
     const target = areas[goal].nearestPoint(wanted);
 
     // The areas from the goal back to the start, then a point on each shared edge: the
@@ -126,22 +125,15 @@ pub fn findPath(areas: []const Area, is_door_open: bool, from: Vec3, wanted: Vec
 }
 
 /// The point the robot would walk to for `wanted`, from `from` (`findPath`'s target).
-pub fn nearestReachable(areas: []const Area, is_door_open: bool, from: Vec3, wanted: Vec3) Vec3 {
-    return findPath(areas, is_door_open, from, wanted).last();
+pub fn nearestReachable(areas: []const Area, from: Vec3, wanted: Vec3) Vec3 {
+    return findPath(areas, from, wanted).last();
 }
 
-fn isUsable(area: Area, is_door_open: bool) bool {
-    return is_door_open or !area.needs_open_door;
-}
-
-/// The usable area (among `allowed`, if given) nearest `point`.
-fn nearestArea(areas: []const Area, is_door_open: bool, point: Vec3, allowed: ?*const [MAX_AREAS]bool) usize {
+/// The area (among `allowed`, if given) nearest `point`.
+fn nearestArea(areas: []const Area, point: Vec3, allowed: ?*const [MAX_AREAS]bool) usize {
     var best: usize = 0;
     var best_distance = std.math.inf(f32);
     for (areas, 0..) |area, i| {
-        if (!isUsable(area, is_door_open)) {
-            continue;
-        }
         if (allowed) |is_allowed| {
             if (!is_allowed[i]) {
                 continue;
@@ -158,11 +150,8 @@ fn nearestArea(areas: []const Area, is_door_open: bool, point: Vec3, allowed: ?*
 
 const testing = std.testing;
 
-/// A room joined by a doorway to a room with a hole: a front strip and a strip either
-/// side of the hole behind it; the doorway opens onto the right one.
+/// A room with a hole: a strip in front, and a strip either side of the hole behind it.
 const test_areas = [_]Area{
-    .{ .min_x = 0.0, .max_x = 4.0, .min_z = -4.0, .max_z = 0.0 },
-    .{ .min_x = -1.0, .max_x = 0.0, .min_z = -2.5, .max_z = -1.5, .needs_open_door = true },
     .{ .min_x = -5.0, .max_x = -1.0, .min_z = -1.0, .max_z = 0.0 },
     .{ .min_x = -5.0, .max_x = -4.0, .min_z = -4.0, .max_z = -1.0 },
     .{ .min_x = -2.0, .max_x = -1.0, .min_z = -4.0, .max_z = -1.0 },
@@ -175,34 +164,26 @@ fn expectPoint(expected: Vec3, actual: Vec3) !void {
 }
 
 test "findPath: inside one area, straight to the target" {
-    const path = findPath(&test_areas, false, vec3(1.0, 0.0, -1.0), vec3(3.0, 0.0, -3.0));
+    const path = findPath(&test_areas, vec3(-4.5, 0.0, -0.5), vec3(-1.5, 0.0, -0.2));
     try testing.expectEqual(1, path.len);
-    try expectPoint(vec3(3.0, 0.0, -3.0), path.last());
+    try expectPoint(vec3(-1.5, 0.0, -0.2), path.last());
 }
 
 test "findPath: a point outside every area goes to the nearest point in one" {
-    const path = findPath(&test_areas, false, vec3(1.0, 0.0, -1.0), vec3(6.0, 1.5, -2.0));
+    const path = findPath(&test_areas, vec3(-4.5, 0.0, -0.5), vec3(1.0, 1.5, -0.5));
     try testing.expectEqual(1, path.len);
-    try expectPoint(vec3(4.0, 0.0, -2.0), path.last());
+    try expectPoint(vec3(-1.0, 0.0, -0.5), path.last());
 }
 
-test "findPath: through the doorway when the door is open" {
-    const path = findPath(&test_areas, true, vec3(2.0, 0.0, -2.0), vec3(-3.0, 0.0, -0.5));
-    try testing.expectEqual(4, path.len);
-    // Into the doorway, out of it into the strip beside the hole, into the front strip
-    try expectPoint(vec3(0.0, 0.0, -1.5), path.points[0]);
-    try expectPoint(vec3(-1.0, 0.0, -1.5), path.points[1]);
-    try expectPoint(vec3(-2.0, 0.0, -1.0), path.points[2]);
-    try expectPoint(vec3(-3.0, 0.0, -0.5), path.points[3]);
-}
-
-test "findPath: a closed door keeps the robot in its room" {
-    const target = nearestReachable(&test_areas, false, vec3(2.0, 0.0, -2.0), vec3(-3.0, 0.0, -0.5));
-    try expectPoint(vec3(0.0, 0.0, -0.5), target);
+test "findPath: into the strip beside the hole through the edge they share" {
+    const path = findPath(&test_areas, vec3(-3.0, 0.0, -0.5), vec3(-1.5, 0.0, -3.0));
+    try testing.expectEqual(2, path.len);
+    try expectPoint(vec3(-1.5, 0.0, -1.0), path.points[0]);
+    try expectPoint(vec3(-1.5, 0.0, -3.0), path.last());
 }
 
 test "findPath: around the hole's front, from one side behind it to the other" {
-    const path = findPath(&test_areas, false, vec3(-4.5, 0.0, -3.0), vec3(-1.5, 0.0, -3.0));
+    const path = findPath(&test_areas, vec3(-4.5, 0.0, -3.0), vec3(-1.5, 0.0, -3.0));
     try testing.expectEqual(3, path.len);
     // Each crossing is the point of the shared edge nearest the next point
     try expectPoint(vec3(-4.0, 0.0, -1.0), path.points[0]);
@@ -211,6 +192,6 @@ test "findPath: around the hole's front, from one side behind it to the other" {
 }
 
 test "Area.contains allows a point on the edge" {
-    try testing.expect(test_areas[0].contains(vec3(4.0, 0.0, 0.0)));
-    try testing.expect(!test_areas[0].contains(vec3(4.1, 0.0, 0.0)));
+    try testing.expect(test_areas[0].contains(vec3(-1.0, 0.0, 0.0)));
+    try testing.expect(!test_areas[0].contains(vec3(-0.9, 0.0, 0.0)));
 }

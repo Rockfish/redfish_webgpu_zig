@@ -51,7 +51,8 @@ pub const Target = union(enum) {
 /// The nearest hotspot the ray hits among those `filter.allows(index)`, else the floor
 /// under where it meets the room's inside (`room`: floor, walls, ceiling; the ray comes
 /// in through the open front): a click on a wall walks to the foot of the wall, not to
-/// the floor beyond it. Nothing when the ray misses the room.
+/// the floor beyond it. The floor point is at the room's floor (`room.min.y`). Nothing
+/// when the ray misses the room.
 pub fn pick(hotspots: anytype, filter: anytype, ray: Ray, room: AABB) Target {
     var nearest: ?usize = null;
     var nearest_distance = std.math.inf(f32);
@@ -71,7 +72,7 @@ pub fn pick(hotspots: anytype, filter: anytype, ray: Ray, room: AABB) Target {
     }
 
     if (exitPoint(room, ray)) |point| {
-        return .{ .floor = vec3(point.x, 0.0, point.z) };
+        return .{ .floor = vec3(point.x, room.min.y, point.z) };
     }
     return .nothing;
 }

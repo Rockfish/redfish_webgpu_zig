@@ -70,24 +70,45 @@ pub const Use = struct {
     action: Action,
 };
 
-/// A ladder down through a hole in the floor.
+/// A ladder through the floors, with a stop on each floor it passes: where the robot
+/// gets on and off.
 pub const Ladder = struct {
-    /// Where the robot stands on the top rung, over the hole.
-    top: Vec3,
-    /// How far below `top` it climbs to, out of sight under the floor.
-    depth: f32,
-    /// The floor beside the hole, where it steps on from and off to.
-    exit: Vec3,
+    /// From the top down.
+    stops: []const LadderStop,
     /// The robot's yaw on the ladder, facing it.
     facing: f32,
 };
+
+pub const LadderStop = struct {
+    /// Where the robot stands on the ladder: on the rung at the floor, over a hole in it,
+    /// or at the ladder's foot.
+    position: Vec3,
+    /// The floor beside it, where it steps on from and off to.
+    exit: Vec3,
+};
+
+/// A ladder and one of its stops: where the robot gets on, climbs to, or gets off.
+pub const AtStop = struct {
+    ladder: Ladder,
+    stop: usize,
+
+    fn position(self: AtStop) Vec3 {
+        return self.ladder.stops[self.stop].position;
+    }
+
+    fn exit(self: AtStop) Vec3 {
+        return self.ladder.stops[self.stop].exit;
+    }
+};
+
+pub const Direction = enum { up, down };
 
 /// What the robot does when a walk ends.
 pub const Arrival = union(enum) {
     stand,
     use: Use,
-    /// Step onto the ladder (the walk ends at its exit).
-    mount: Ladder,
+    /// Step onto the ladder at the stop (the walk ends at its exit).
+    mount: AtStop,
 };
 
 /// Walking a path (`navigation.findPath`), toward `path.points[next]`.
@@ -104,16 +125,13 @@ pub const Task = union(enum) {
     turn: Use,
     /// The gesture, `time` seconds in.
     act: struct { use: Use, time: f32 },
-    /// Stepping from the floor onto the ladder's top, then turning to face it.
-    mount: Ladder,
-    /// On the ladder: climbing toward `target_y`, or holding on there.
-    ladder: struct { ladder: Ladder, target_y: f32 },
-    /// Stepping off the ladder to its exit; then the pending walk.
-    dismount: Ladder,
+    /// Stepping from the floor onto the ladder at the stop, then turning to face it.
+    mount: AtStop,
+    /// On the ladder: climbing toward the stop, or holding on there.
+    ladder: AtStop,
+    /// Stepping off the ladder at the stop to its exit; then the pending walk.
+    dismount: AtStop,
 };
-
-/// Where the robot is on a ladder, for what a click on the ladder does.
-pub const LadderPlace = enum { off, top, below };
 
 pub const Robot = struct {
     position: Vec3,
@@ -128,16 +146,12 @@ pub const Robot = struct {
     const Self = @This();
 
     /// Walks `path`, then does `then`. During a gesture, after it, so a use isn't cut off
-    /// before its effect; on the ladder, after climbing up and stepping off (the path
-    /// starts at the ladder's exit: `walkStart`).
+    /// before its effect; on the ladder, after reaching its stop (`climbTo`) and stepping
+    /// off (the path starts at the stop's exit: `walkStart`).
     pub fn walk(self: *Self, path: Path, then: Arrival) void {
         const next: Walk = .{ .path = path, .then = then };
         switch (self.task) {
-            .act, .mount, .dismount => self.pending = next,
-            .ladder => |on| {
-                self.pending = next;
-                self.task = .{ .ladder = .{ .ladder = on.ladder, .target_y = on.ladder.top.y } };
-            },
+            .act, .mount, .dismount, .ladder => self.pending = next,
             .idle, .walk, .turn => {
                 self.pending = null;
                 self.task = .{ .walk = next };
@@ -145,30 +159,62 @@ pub const Robot = struct {
         }
     }
 
-    /// Where a walk asked for now starts from: the ladder's exit while on the ladder.
+    /// Where a walk asked for now starts from: the stop's exit while on the ladder.
     pub fn walkStart(self: *const Self) Vec3 {
-        if (self.currentLadder()) |ladder| {
-            return ladder.exit;
+        if (self.currentLadder()) |at| {
+            return at.exit();
         }
         return self.position;
     }
 
-    pub fn ladderPlace(self: *const Self) LadderPlace {
+    /// The ladder and the stop it is getting on at, climbing to, or getting off at; null
+    /// off the ladder.
+    pub fn currentLadder(self: *const Self) ?AtStop {
         return switch (self.task) {
-            .mount => .top,
-            .ladder => |on| if (on.target_y < on.ladder.top.y) .below else .top,
-            .idle, .walk, .turn, .act, .dismount => .off,
+            .mount, .ladder, .dismount => |at| at,
+            .idle, .walk, .turn, .act => null,
         };
     }
 
-    /// Climbs down out of sight (`down`), or back up to the top. Only on the ladder.
-    pub fn climb(self: *Self, down: bool) void {
-        switch (self.task) {
-            .ladder => |on| {
-                self.pending = null;
-                const target_y = if (down) on.ladder.top.y - on.ladder.depth else on.ladder.top.y;
-                self.task = .{ .ladder = .{ .ladder = on.ladder, .target_y = target_y } };
+    /// The next stop up or down from where the robot is on the ladder, or null (the end
+    /// of the ladder, or off it).
+    pub fn nextStop(self: *const Self, direction: Direction) ?usize {
+        const at = switch (self.task) {
+            .ladder => |at| at,
+            .idle, .walk, .turn, .act, .mount, .dismount => return null,
+        };
+        const y = self.position.y;
+        return switch (direction) {
+            // Stops go from the top down: the last one above, the first one below
+            .up => {
+                var found: ?usize = null;
+                for (at.ladder.stops, 0..) |stop, index| {
+                    if (stop.position.y > y) {
+                        found = index;
+                    }
+                }
+                return found;
             },
+            .down => for (at.ladder.stops, 0..) |stop, index| {
+                if (stop.position.y < y) {
+                    break index;
+                }
+            } else null,
+        };
+    }
+
+    /// Climbs to the next stop up or down, if there is one. Only on the ladder.
+    pub fn climb(self: *Self, direction: Direction) void {
+        if (self.nextStop(direction)) |stop| {
+            self.pending = null;
+            self.climbTo(stop);
+        }
+    }
+
+    /// Climbs to `stop` (where a walk asked for meanwhile steps off). Only on the ladder.
+    pub fn climbTo(self: *Self, stop: usize) void {
+        switch (self.task) {
+            .ladder => |at| self.task = .{ .ladder = .{ .ladder = at.ladder, .stop = stop } },
             .idle, .walk, .turn, .act, .mount, .dismount => {},
         }
     }
@@ -176,7 +222,7 @@ pub const Robot = struct {
     /// On the ladder and moving up or down it.
     pub fn isClimbing(self: *const Self) bool {
         return switch (self.task) {
-            .ladder => |on| self.position.y != on.target_y,
+            .ladder => |at| self.position.y != at.position().y,
             .idle, .walk, .turn, .act, .mount, .dismount => false,
         };
     }
@@ -197,9 +243,9 @@ pub const Robot = struct {
                 }
             },
             .act => |act| return self.updateAct(act.use, act.time, dt),
-            .mount => |ladder| self.updateMount(ladder, dt),
-            .ladder => |on| self.updateLadder(on.ladder, on.target_y, dt),
-            .dismount => |ladder| self.updateDismount(ladder, dt),
+            .mount => |at| self.updateMount(at, dt),
+            .ladder => |at| self.updateLadder(at, dt),
+            .dismount => |at| self.updateDismount(at, dt),
         }
         return null;
     }
@@ -220,38 +266,38 @@ pub const Robot = struct {
         self.task = switch (walk_task.then) {
             .stand => .idle,
             .use => |use| .{ .turn = use },
-            .mount => |ladder| .{ .mount = ladder },
+            .mount => |at| .{ .mount = at },
         };
     }
 
-    /// Onto the top rung, then turns to the ladder; steps straight off again if a walk
+    /// Onto the ladder at the stop, then turns to it; steps straight off again if a walk
     /// was asked for meanwhile.
-    fn updateMount(self: *Self, ladder: Ladder, dt: f32) void {
-        if (!self.stepToward(ladder.top, dt)) {
+    fn updateMount(self: *Self, at: AtStop, dt: f32) void {
+        if (!self.stepToward(at.position(), dt)) {
             return;
         }
         self.walk_phase = 0.0;
         if (self.pending != null) {
-            self.task = .{ .dismount = ladder };
+            self.task = .{ .dismount = at };
             return;
         }
-        self.yaw = motion.moveTowardAngle(self.yaw, ladder.facing, TURN_SPEED, dt);
-        if (@abs(motion.wrapAngle(ladder.facing - self.yaw)) < 1e-4) {
-            self.task = .{ .ladder = .{ .ladder = ladder, .target_y = ladder.top.y } };
+        self.yaw = motion.moveTowardAngle(self.yaw, at.ladder.facing, TURN_SPEED, dt);
+        if (@abs(motion.wrapAngle(at.ladder.facing - self.yaw)) < 1e-4) {
+            self.task = .{ .ladder = at };
         }
     }
 
-    /// Climbs toward `target_y`; back at the top with a walk waiting, steps off.
-    fn updateLadder(self: *Self, ladder: Ladder, target_y: f32, dt: f32) void {
-        self.position = motion.moveToward(self.position, vec3(ladder.top.x, target_y, ladder.top.z), CLIMB_SPEED, dt);
-        const is_at_top = self.position.y == ladder.top.y;
-        if (is_at_top and self.pending != null) {
-            self.task = .{ .dismount = ladder };
+    /// Climbs toward the stop; there, with a walk waiting, steps off.
+    fn updateLadder(self: *Self, at: AtStop, dt: f32) void {
+        self.position = motion.moveToward(self.position, at.position(), CLIMB_SPEED, dt);
+        const is_at_stop = self.position.y == at.position().y;
+        if (is_at_stop and self.pending != null) {
+            self.task = .{ .dismount = at };
         }
     }
 
-    fn updateDismount(self: *Self, ladder: Ladder, dt: f32) void {
-        if (!self.stepToward(ladder.exit, dt)) {
+    fn updateDismount(self: *Self, at: AtStop, dt: f32) void {
+        if (!self.stepToward(at.exit(), dt)) {
             return;
         }
         self.walk_phase = 0.0;
@@ -289,14 +335,6 @@ pub const Robot = struct {
         }
         const is_effect_frame = time < gesture.effect and next_time >= gesture.effect;
         return if (is_effect_frame) use.hotspot else null;
-    }
-
-    fn currentLadder(self: *const Self) ?Ladder {
-        return switch (self.task) {
-            .mount, .dismount => |ladder| ladder,
-            .ladder => |on| on.ladder,
-            .idle, .walk, .turn, .act => null,
-        };
     }
 
     /// The placeholder's pushing arm, raised from hanging, in radians

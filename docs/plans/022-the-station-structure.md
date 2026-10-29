@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D done; next: phase E)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1 done; next: phase E2)
 
 ## Context
 
@@ -328,17 +328,41 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
 - [x] Tests: power, doors, derived values
 
 ### E. Connections, transitions, the generator room
-- [ ] `Connection` (door, ladder) with a gate; navigation stays inside a room
-- [ ] `Mode` with `explore` and `transition`; the pan between Rooms 01 and 02 becomes
-      a transition; a fade for the rest
-- [ ] Rooms 03 and 04 (greybox, 3 x 1) below Room 02: the shaft through Room 03,
-      ending in Room 04's ceiling; a ladder with a stop at Room 03's floor
-- [ ] The generator room (greybox, 6 x 2, under Room 01), entered through a doorway
-      from Room 04
+
+In sub-phases, each checked and committed on its own (John, 2026-10-29):
+
+#### E1. Connections
+- [x] A doorway connection (the door between Rooms 01 and 02): an end in each room and
+      a gate on the station's state; the robot walks to its end, then through
+- [x] Navigation inside one room, in the room's coordinates (no doorway area, no
+      `needs_open_door`); floor points at the room's floor height
+- [x] The ladder with a stop per floor (`LadderStop`): climb to the next stop up or
+      down; a walk asked for on the ladder steps off at the shown room's stop. Room 02's
+      ladder keeps its stop out of sight below until E3
+- [x] Tests: the doorway's gate, the walk through it, the ladder's stops
+
+#### E2. Modes
+- [ ] `Mode` with `explore` and `transition`; no input during a transition
+- [ ] The room shown changes by a transition: a pan between rooms side by side (the
+      doorway), a fade between floors (the ladder); a fill drawn by `overlay.zig`
+- [ ] Tests: a transition starts when the robot leaves the shown room, and ends
+
+#### E3. Rooms 03 and 04
+- [ ] The shell for stacked rooms: a room with a room below builds no floor; a hole in
+      the ceiling; `roomAt` and visibility by rows
+- [ ] Rooms 03 and 04 (greybox, 3 x 1) below Room 02: the shaft through Room 03, ending
+      in Room 04's ceiling; the ladder's stops at Room 03's and Room 04's floors
+- [ ] The camera's eye height above the shown floor (`Framing.floor_y`)
+- [ ] Tests: rooms on rows, the ladder's stops in their rooms
+
+#### E4. The generator room
+- [ ] Greybox, 6 x 2, under Room 01, entered through a doorway from Room 04
 - [ ] Camera in a large room: a window of at most 3 x 1 cells following the robot
       (x and y); the whole-room framing kept as an option; compare on screen
-- [ ] Check with a scripted run: down two floors, through the doorway into the
-      generator room, and back up to Room 02
+
+#### E5. Check
+- [ ] A scripted run (a test): down two floors, through the doorway into the generator
+      room, and back up to Room 02
 
 ### F. Inventory
 - [ ] `Item`, `Inventory` with counts; tests
@@ -531,3 +555,28 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
   - Checked with captures of both rooms (alarm silenced, emergency power, door open,
     set through the `Station`): the same as phase C's but the cursor and label under
     the real mouse.
+- 2026-10-29 (John): phase E in sub-phases, E1-E5, each checked and committed.
+- 2026-10-29, phase E1, as built:
+  - `station.Doorway`: its two rooms, an end in each (the rooms' `DOOR_STAND_POINT`s),
+    and a `Gate` (`always`, or a door open in the `Station`); `DoorwayId.room_01_02`.
+    `HotspotKind.doorway` replaces `door`. Clicking an open doorway walks to this room's
+    end and on to the other (`Game.walkThrough`); shut, the robot looks and says "Sealed
+    tight." The exit cursor points toward the other end. `Game.otherSideOfDoor` gone.
+  - Navigation is one room's floor in its own coordinates: `findPath(areas, from,
+    wanted)` without `is_door_open`; `Area.needs_open_door` and the station's
+    `walk_areas` table gone. `Game.findPath` moves points into the robot's room and
+    back. A floor point under the mouse is at the room's floor height
+    (`interaction.pick`).
+  - The ladder (`robot.Ladder`): `stops` from the top down (`LadderStop`: on the
+    ladder, and the exit beside it) and its facing; tasks `mount`, `ladder`, `dismount`
+    carry an `AtStop`. `Robot.climb(.up / .down)` goes to the next stop that way,
+    `climbTo(stop)`, `nextStop`, `currentLadder`; a walk asked for on the ladder waits
+    until the robot is at its stop (the game sets the shown room's: `findPath`), then
+    steps off. Room 02's stops: the top rung, and out of sight 1.9 m below (until E3;
+    its exit unused). `station.ladderStopIn(room)`. On the ladder, the part above the
+    floor climbs up and the hole climbs down, if there is a stop that way (else the
+    walk cursor): at the bottom stop the hole does nothing (it climbed up before).
+  - Tests: navigation's without the doorway; the doorway's gate and placement; the
+    walk through (shut: a look, open: into Room 02); the ladder (on, down a stop, a walk
+    climbs back up and steps off).
+  - Checked with captures of both rooms: the same as phase D's but the cursor.

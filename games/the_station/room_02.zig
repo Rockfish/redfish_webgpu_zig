@@ -22,7 +22,7 @@ const math = @import("math");
 const room_kit = @import("room_kit.zig");
 const station = @import("station.zig");
 const navigation = @import("navigation.zig");
-const Ladder = @import("robot.zig").Ladder;
+const LadderStop = @import("robot.zig").LadderStop;
 const Station = @import("state.zig").Station;
 const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
@@ -73,14 +73,16 @@ const LADDER_Z = HOLE_MIN_Z + 0.06;
 const RAIL_TOP: f32 = 1.2;
 const RAIL_GAP: f32 = 0.5;
 
-/// Standing on the top rung over the hole, facing the ladder; it steps on from the floor
-/// right of the hole.
-pub const ladder: Ladder = .{
-    .top = vec3(0.0, -0.05, -3.5),
-    .depth = 1.9,
-    .exit = vec3(HOLE_MAX_X + 0.35, 0.0, -3.5),
-    .facing = room_kit.FACE_BACK_WALL,
+/// The ladder's stops: on the top rung over the hole, stepped onto from the floor right
+/// of the hole; and out of sight below the floor (until Rooms 03 and 04, plan 022 phase
+/// E3; its exit is never used).
+pub const ladder_stops = [_]LadderStop{
+    .{ .position = vec3(0.0, -0.05, -3.5), .exit = LADDER_EXIT },
+    .{ .position = vec3(0.0, -1.95, -3.5), .exit = LADDER_EXIT },
 };
+const LADDER_EXIT = vec3(HOLE_MAX_X + 0.35, 0.0, -3.5);
+/// Facing the ladder, on it.
+pub const LADDER_FACING = room_kit.FACE_BACK_WALL;
 
 /// The shell: a locked door in the left wall; the right wall is Room 01's, with the
 /// doorway; the hole in the floor and its shaft.
@@ -106,13 +108,13 @@ const walk_areas = [_]navigation.Area{
     .{ .min_x = HOLE_MAX_X + 0.35, .max_x = INNER_MAX_X - 0.4, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
 };
 
-/// The room's own hotspots (`use`); the door back to Room 01 and the ladder are the
-/// station's (`station.HotspotKind`).
+/// The room's own hotspots (`use`); the doorway back to Room 01 and the ladder are the
+/// station's connections (`station.HotspotKind`).
 pub const HotspotKind = enum { locked_door, keypad, power_cabinet };
 
 const hotspots = [_]Hotspot{
     .{
-        .kind = .door,
+        .kind = .{ .doorway = .room_01_02 },
         .name = "Door",
         .bounds = bounds(vec3(INNER_MAX_X - 0.2, 0.0, DOOR_CENTER_Z - DOOR_WIDTH / 2.0), vec3(INNER_MAX_X + 0.05, DOOR_HEIGHT, DOOR_CENTER_Z + DOOR_WIDTH / 2.0)),
         .stand_point = DOOR_STAND_POINT,
@@ -151,7 +153,7 @@ const hotspots = [_]Hotspot{
         .kind = .ladder,
         .name = "Ladder",
         .bounds = bounds(vec3(-0.32, 0.3, LADDER_Z - 0.06), vec3(0.32, RAIL_TOP + 0.05, LADDER_Z + 0.1)),
-        .stand_point = ladder.exit,
+        .stand_point = LADDER_EXIT,
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
     },
@@ -159,7 +161,7 @@ const hotspots = [_]Hotspot{
         .kind = .ladder_hole,
         .name = "Ladder",
         .bounds = bounds(vec3(HOLE_MIN_X, -0.6, HOLE_MIN_Z), vec3(HOLE_MAX_X, 0.3, HOLE_MAX_Z)),
-        .stand_point = ladder.exit,
+        .stand_point = LADDER_EXIT,
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
     },

@@ -22,6 +22,7 @@ const Ray = core.Ray;
 const motion = core.motion;
 const Target = interaction.Target;
 const Vec3 = math.Vec3;
+const vec3 = math.vec3;
 
 /// Seconds the door takes to slide open.
 const DOOR_OPEN_TIME: f32 = 1.2;
@@ -144,32 +145,37 @@ pub const Game = struct {
         self.highlight = std.math.lerp(self.highlight, target, motion.dampAlpha(HIGHLIGHT_RATE, dt));
     }
 
-    /// An open door shows the way to the next room, the ladder what a click on it does
-    /// (`useLadder`), anything else its action. The ladder's upper part does nothing
-    /// while the robot stands at its top.
+    /// An open doorway shows the way to the next room, the ladder what a click on it does
+    /// (`useLadder`), anything else its action.
     fn hotspotCursor(self: *const Self, index: usize) Cursor {
         const hotspot = station.hotspots[index];
         return switch (hotspot.kind) {
-            .door => if (self.station.isDoorOpen(.room_01_left)) self.exitCursor() else actionCursor(hotspot.action),
-            .ladder => switch (self.robot.ladderPlace()) {
-                .off => .climb,
-                .top => .walk,
-                .below => .climb_up,
-            },
-            .ladder_hole => switch (self.robot.ladderPlace()) {
-                .off => .climb,
-                .top => .climb_down,
-                .below => .climb_up,
-            },
+            .doorway => |id| if (station.doorway(id).gate.isOpen(self.station)) self.exitCursor(id) else actionCursor(hotspot.action),
+            .ladder => self.ladderCursor(.up),
+            .ladder_hole => self.ladderCursor(.down),
             .room_01, .room_02 => actionCursor(hotspot.action),
         };
     }
 
-    /// Room 02 is left of Room 01.
-    fn exitCursor(self: *const Self) Cursor {
-        return switch (self.robotRoom()) {
-            .room_01 => .exit_left,
-            .room_02 => .exit_right,
+    /// Toward the doorway's other end.
+    fn exitCursor(self: *const Self, id: station.DoorwayId) Cursor {
+        const between = station.doorway(id);
+        const room = self.robotRoom();
+        return if (between.otherEnd(room).x < between.end(room).x) .exit_left else .exit_right;
+    }
+
+    /// From the floor, onto the ladder; on it, climbing on toward `direction`, or nothing
+    /// at the ladder's end.
+    fn ladderCursor(self: *const Self, direction: robot_module.Direction) Cursor {
+        if (self.robot.currentLadder() == null) {
+            return .climb;
+        }
+        if (self.robot.nextStop(direction) == null) {
+            return .walk;
+        }
+        return switch (direction) {
+            .up => .climb_up,
+            .down => .climb_down,
         };
     }
 
@@ -181,52 +187,67 @@ pub const Game = struct {
         }
     }
 
-    /// Walks to the hotspot and uses it; through the open door to the other room; or on
-    /// the ladder (`useLadder`).
+    /// Walks to the hotspot and uses it; through an open doorway to the other room; or
+    /// on the ladder (`useLadder`).
     fn sendToHotspot(self: *Self, index: usize) void {
         const hotspot = station.hotspots[index];
         switch (hotspot.kind) {
-            .ladder => return self.useLadder(false),
-            .ladder_hole => return self.useLadder(true),
-            .door => if (self.station.isDoorOpen(.room_01_left)) {
-                return self.walkTo(self.otherSideOfDoor(), .stand);
+            .ladder => return self.useLadder(.up),
+            .ladder_hole => return self.useLadder(.down),
+            .doorway => |id| if (station.doorway(id).gate.isOpen(self.station)) {
+                return self.walkThrough(id);
             },
             .room_01, .room_02 => {},
         }
         self.walkTo(hotspot.stand_point, .{ .use = .{ .hotspot = index, .facing = hotspot.facing, .action = hotspot.action } });
     }
 
-    /// From the floor, onto the ladder; at the top, its lower part climbs down; below,
-    /// any part of it climbs back up.
-    fn useLadder(self: *Self, is_lower_part: bool) void {
-        switch (self.robot.ladderPlace()) {
-            .off => self.walkTo(station.ladder.exit, .{ .mount = station.ladder }),
-            .top => if (is_lower_part) self.robot.climb(true),
-            .below => self.robot.climb(false),
+    /// From the floor, onto the ladder at this room's stop; on it, on to the next stop
+    /// toward `direction`.
+    fn useLadder(self: *Self, direction: robot_module.Direction) void {
+        if (self.robot.currentLadder() != null) {
+            return self.robot.climb(direction);
         }
+        const stop = station.ladderStopIn(self.robotRoom()) orelse return;
+        self.walkTo(station.ladder.stops[stop].exit, .{ .mount = .{ .ladder = station.ladder, .stop = stop } });
     }
 
-    /// A walk to the nearest point to `point` the robot can reach (the doorway only with
-    /// the door open).
+    /// To the doorway's end in this room, then straight through to the other end.
+    fn walkThrough(self: *Self, id: station.DoorwayId) void {
+        const between = station.doorway(id);
+        const room = self.robotRoom();
+        var path = self.findPath(between.end(room));
+        path.append(between.otherEnd(room));
+        self.robot.walk(path, .stand);
+    }
+
+    /// A walk to the nearest point to `point` the robot can reach in its room.
     fn walkTo(self: *Self, point: Vec3, then: robot_module.Arrival) void {
-        const path = navigation.findPath(&station.walk_areas, self.station.isDoorOpen(.room_01_left), self.robot.walkStart(), point);
-        self.robot.walk(path, then);
+        self.robot.walk(self.findPath(point), then);
     }
 
-    fn otherSideOfDoor(self: *const Self) Vec3 {
-        return switch (self.robotRoom()) {
-            .room_01 => station.place(.room_02, room_02.DOOR_STAND_POINT),
-            .room_02 => station.place(.room_01, room_01.DOOR_STAND_POINT),
-        };
+    /// The path to `point` on the robot's room's floor, on the station. On the ladder,
+    /// it climbs to this room's stop first and the path starts at the stop's exit.
+    fn findPath(self: *Self, point: Vec3) navigation.Path {
+        const id = self.robotRoom();
+        if (station.ladderStopIn(id)) |stop| {
+            self.robot.climbTo(stop);
+        }
+        const origin = station.room(id).origin();
+        var path = navigation.findPath(station.room(id).walk_areas, self.robot.walkStart().sub(origin), point.sub(origin));
+        for (path.points[0..path.len]) |*each| {
+            each.* = each.add(origin);
+        }
+        return path;
     }
 
-    /// A room's own hotspot goes to its room; the door is crossed if it is open.
+    /// A room's own hotspot goes to its room; a doorway is gone through if it is open.
     fn use(self: *Self, kind: station.HotspotKind) void {
         switch (kind) {
-            .door => {
-                if (self.station.isDoorOpen(.room_01_left)) {
+            .doorway => |id| {
+                if (station.doorway(id).gate.isOpen(self.station)) {
                     // Opened while the robot was on its way to look
-                    self.walkTo(self.otherSideOfDoor(), .stand);
+                    self.walkThrough(id);
                 } else {
                     self.say("Sealed tight.");
                 }
@@ -285,7 +306,7 @@ test "cursor: what a click does" {
 
 test "cursor: an open door points to the next room" {
     var game: Game = .{};
-    game.hovered = .{ .hotspot = hotspotIndex(.door) };
+    game.hovered = .{ .hotspot = hotspotIndex(.{ .doorway = .room_01_02 }) };
     try std.testing.expectEqual(Cursor.look, game.cursor());
 
     game.station.doors.set(.room_01_left, .open);
@@ -340,4 +361,47 @@ test "room entry: the game as the robot came in" {
     game.restore(game.room_entry);
     try std.testing.expect(game.station.isAlarmSounding());
     try std.testing.expectEqual(station.RoomId.room_02, game.robotRoom());
+}
+
+/// Runs the game `seconds` with no mouse, at 60 frames a second.
+fn runFor(game: *Game, seconds: f32) void {
+    const dt = 1.0 / 60.0;
+    var time: f32 = 0.0;
+    while (time < seconds) : (time += dt) {
+        game.update(null, false, dt);
+    }
+}
+
+test "doorway: shut, the robot looks at the door; open, it walks through" {
+    var game: Game = .{};
+    game.sendToHotspot(hotspotIndex(.{ .doorway = .room_01_02 }));
+    runFor(&game, 10.0);
+    try std.testing.expectEqualStrings("Sealed tight.", game.message);
+    try std.testing.expectEqual(station.RoomId.room_01, game.robotRoom());
+
+    game.station.doors.set(.room_01_left, .open);
+    game.sendToHotspot(hotspotIndex(.{ .doorway = .room_01_02 }));
+    runFor(&game, 10.0);
+    try std.testing.expectEqual(station.RoomId.room_02, game.robotRoom());
+    try std.testing.expect(game.robot.position.sub(station.place(.room_02, room_02.DOOR_STAND_POINT)).length() < 1e-3);
+}
+
+test "ladder: on at Room 02's stop, down to the next, back up and off to a walk" {
+    var game: Game = .{};
+    game.robot.position = station.place(.room_02, room_02.DOOR_STAND_POINT);
+    game.sendToHotspot(hotspotIndex(.ladder_hole));
+    runFor(&game, 10.0);
+    try std.testing.expectEqual(@as(?usize, 1), game.robot.nextStop(.down));
+    try std.testing.expectEqual(Cursor.walk, game.ladderCursor(.up));
+
+    game.useLadder(.down);
+    runFor(&game, 10.0);
+    try std.testing.expectEqual(station.ladder.stops[1].position.y, game.robot.position.y);
+    try std.testing.expectEqual(Cursor.climb_up, game.ladderCursor(.up));
+
+    const target = station.place(.room_02, vec3(2.0, 0.0, -1.0));
+    game.walkTo(target, .stand);
+    runFor(&game, 20.0);
+    try std.testing.expect(game.robot.currentLadder() == null);
+    try std.testing.expect(game.robot.position.sub(target).length() < 1e-3);
 }

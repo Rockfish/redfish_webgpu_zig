@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: connections; plan 022 phase E1
+- **games/the_station**: the door between Rooms 01 and 02 is a doorway connection with a gate (the door open); the robot walks to its end and through. Walking stays inside one room, in the room's coordinates. The ladder has a stop per floor: click to climb to the next stop up or down; a walk asked for on the ladder steps off at the room's stop. Tests for the doorway and the ladder. Plan 022's phase E split into E1-E5
+
 ### 2026-10-29 - The Station: the station's state; plan 022 phase D
 - **games/the_station**: the station's state is one plain-data struct (`state.zig`: power, alarm, doors), held by `Game`; the lights, the door's power, the alarm lamp, and the remarks are derived from it. Each room has its own hotspot kinds and a `use` that changes the state (`room_01.use`, `room_02.use`); the door and the ladder stay the game's. Snapshots: the panel's "restart" and "back to room entry" (taken as the robot enters a room). The drawing struct is now `station.Scenery`. Tests for the state, rooms' uses, and restore
 
