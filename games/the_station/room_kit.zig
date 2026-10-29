@@ -3,13 +3,15 @@
 //! door sizes, parts (`Part`, `PartBuilder`, `box`, `grey`), and the shell of any room
 //! (`Shell`: floor, ceiling, walls, doorways, a hole in the floor, the deck below).
 //!
-//! Room layout, 1 unit = 1 m: x runs left to right across a room, y up from the floor,
-//! z out of the room toward the camera. A room's inside spans y 0..height and
-//! z -DEPTH..0; the front (z = 0) is open. The shell is WALL thick, and its faces at
+//! A room's own coordinates, 1 unit = 1 m: x runs left to right across the room from its
+//! middle, y up from the floor, z out of the room toward the camera. Its inside spans
+//! x -width/2..width/2, y 0..height, z -DEPTH..0; the front (z = 0) is open. The station
+//! (`station.zig`) places each room at its origin on the grid. The shell is WALL thick, and its faces at
 //! z = 0 are the cut through the station, drawn dark.
 //!
 //! The room grid: rooms are whole cells, 2.8 m wide and 3.4 m high wall center to wall
 //! center, so a room `w` cells wide is `w * 2.8 - WALL` wide inside. Room 01 is 3 x 1.
+//! A cell's walls are shared with the cells around it.
 
 const std = @import("std");
 const core = @import("core");
@@ -48,14 +50,17 @@ pub const FACE_LEFT_WALL = -std.math.pi / 2.0;
 pub const FACE_RIGHT_WALL = std.math.pi / 2.0;
 pub const FACE_BACK_WALL = std.math.pi;
 
-/// The inside width of a room `cells` cells wide.
-pub fn insideWidth(comptime cells: comptime_int) f32 {
-    return cells * CELL_WIDTH - WALL;
+/// The inside width of a room `cells` cells wide. In f64 first, so 3 cells give exactly
+/// 8 m.
+pub fn insideWidth(cells: u32) f32 {
+    const cells_f64: f64 = @floatFromInt(cells);
+    return @floatCast(cells_f64 * CELL_WIDTH - WALL);
 }
 
 /// The inside height of a room `cells` cells high.
-pub fn insideHeight(comptime cells: comptime_int) f32 {
-    return cells * CELL_HEIGHT - WALL;
+pub fn insideHeight(cells: u32) f32 {
+    const cells_f64: f64 = @floatFromInt(cells);
+    return @floatCast(cells_f64 * CELL_HEIGHT - WALL);
 }
 
 /// Ink hatching for a draw (`room.wgsl` params z and w); see `ink.Style`.
@@ -83,10 +88,9 @@ pub fn drawPart(frame: *const Frame, shader: *const Shader, part: Part, hatching
     part.shape.draw(frame, shader, uniforms);
 }
 
-/// A room's shell, from which `PartBuilder.addShell` builds its parts.
+/// A room's shell, from which `PartBuilder.addShell` builds its parts, in the room's own
+/// coordinates.
 pub const Shell = struct {
-    /// The room's middle on x.
-    center_x: f32,
     /// Inside width and height.
     width: f32,
     height: f32,
@@ -96,11 +100,11 @@ pub const Shell = struct {
     hole: ?Hole = null,
 
     fn innerMinX(self: Shell) f32 {
-        return self.center_x - self.width / 2.0;
+        return -self.width / 2.0;
     }
 
     fn innerMaxX(self: Shell) f32 {
-        return self.center_x + self.width / 2.0;
+        return self.width / 2.0;
     }
 };
 
@@ -120,7 +124,7 @@ pub const Doorway = struct {
     is_framed_outside: bool,
 };
 
-/// A hole in the floor, in world x and z.
+/// A hole in the floor, on x and z.
 pub const Hole = struct {
     min_x: f32,
     max_x: f32,
@@ -168,20 +172,18 @@ pub const PartBuilder = struct {
         try parts.append(allocator, .{ .shape = self.cube, .model = box(hole_center, vec3(hole.max_x - hole.min_x, 0.1, hole.max_z - hole.min_z)), .color = grey(0.12) });
     }
 
-    /// Two ceiling tube fittings in the room centered on `center_x`, running front to
-    /// back: each a housing (into `housings`) and its tube (into `tubes`, lit per draw).
+    /// Two ceiling tube fittings, running front to back: each a housing (into
+    /// `housings`) and its tube (into `tubes`, lit per draw).
     pub fn addCeilingLights(
         self: PartBuilder,
         allocator: std.mem.Allocator,
         housings: *std.ArrayList(Part),
         tubes: *std.ArrayList(Part),
-        center_x: f32,
         height: f32,
     ) !void {
         const length = 2.6;
         const back_z = -3.4;
-        for ([_]f32{ -1.8, 1.8 }) |offset| {
-            const x = center_x + offset;
+        for ([_]f32{ -1.8, 1.8 }) |x| {
             try housings.append(allocator, .{ .shape = self.cube, .model = box(vec3(x, height - 0.03, back_z + length / 2.0), vec3(0.22, 0.06, length + 0.1)), .color = grey(0.45) });
             try tubes.append(allocator, .{ .shape = self.cylinder, .model = cylinderModel(vec3(x, height - 0.1, back_z), .z, 0.07, length), .color = grey(0.7) });
         }
@@ -279,6 +281,14 @@ pub const PartBuilder = struct {
 
 pub fn bounds(min: Vec3, max: Vec3) AABB {
     return .{ .min = min, .max = max };
+}
+
+/// `parts` moved by `offset`: from a room's coordinates to the station's.
+pub fn placeParts(parts: []Part, offset: Vec3) void {
+    const move = Mat4.fromTranslation(offset);
+    for (parts) |*part| {
+        part.model = move.mulMat4(&part.model);
+    }
 }
 
 /// A unit cube scaled to `size`, centered at `center`.

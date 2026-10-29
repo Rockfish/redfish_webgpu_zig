@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: rooms as data; plan 022 phase C
+- **games/the_station**: `station.zig` (was `deck.zig`) holds the rooms, each described by its own file in its own coordinates (`room_01.room`, `room_02.room`: cell on the grid, size, model, shell, walk areas, hotspots, greybox) and placed at its origin on the room grid. The room a point is in comes from the rooms' spaces; only the rooms the camera sees are drawn and lit; the camera pans in x and y. `robot_placeholder.zig` draws the box robot (out of `robot.zig`). Tests for the station
+- **the-station**: Room 02 built and exported in its own coordinates (`build_room_02.py`)
+
 ### 2026-10-29 - The Station: the game's own cursors; plan 022 phase B3
 - **games/the_station**: cursors drawn by the game in the ink look, saying what a click does: an arrow to walk, a hand on controls, an eye on things looked at, exit arrows on open doors, a ladder and climb arrows on the ladder (`cursor.zig`, `Game.cursor`; the OS cursor hidden over the game, shown over the panel). `overlay.zig` and `shaders/overlay.wgsl` draw sprites in screen space (the inventory bar will use them). Tests for `Game.cursor`
 - **the-station**: `ui/build_cursors.py`, the cursor sheet (`ui/cursors.svg`, `ui/cursors.png`)

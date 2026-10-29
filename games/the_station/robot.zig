@@ -1,23 +1,17 @@
-//! The placeholder robot (plan 021, phase B): stacked boxes in the shape of the drawing
-//! (box head with two round eyes, box body, thin arms and legs, flat feet), and what it
-//! is doing: standing, walking a path, turning to a hotspot, using it, or on a ladder
-//! (stepping on, climbing, stepping off).
+//! The robot (plan 021, phase B): what it is doing: standing, walking a path, turning to
+//! a hotspot, using it, or on a ladder (stepping on, climbing, stepping off). Drawn as the
+//! Blender model (`robot_model.zig`) or the box placeholder (`robot_placeholder.zig`).
 //!
 //! The robot's space: it faces +z at yaw 0 (toward the camera), its right hand is on -x,
-//! y up from the floor. The parts are rigid, each turned about a joint (hips, shoulders),
-//! as the Blender model will be.
+//! y up from the floor.
 
 const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
-const room_kit = @import("room_kit.zig");
 const Action = @import("interaction.zig").Action;
 const Path = @import("navigation.zig").Path;
-const Frame = core.Frame;
-const Shader = core.Shader;
 const motion = core.motion;
-const Mat4 = math.Mat4;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
 
@@ -31,8 +25,6 @@ const WALK_TURN_RATE: f32 = 10.0;
 const TURN_SPEED: f32 = 6.0;
 /// Steps per second (each leg swings once per two steps).
 const STEP_RATE: f32 = 3.5;
-/// Leg swing either way, in radians.
-const LEG_SWING: f32 = 0.45;
 
 /// The push gesture: the arm rises, holds, and lowers. The hotspot's effect happens at
 /// `effect`, when the hand is on the button.
@@ -212,39 +204,6 @@ pub const Robot = struct {
         return null;
     }
 
-    pub fn draw(self: *const Self, frame: *const Frame, shader: *const Shader, shapes: room_kit.PartBuilder, hatching: room_kit.Hatching) void {
-        const root = Mat4.fromTranslation(self.position).mulMat4(&Mat4.fromRotationY(self.yaw));
-        const leg_angle = @sin(self.walk_phase) * LEG_SWING;
-        const bob = @abs(@sin(self.walk_phase)) * 0.03;
-        const arm_angle = self.armAngle();
-        const is_left_arm = switch (self.task) {
-            .act => |act| usesLeftArm(act.use.facing),
-            .idle, .walk, .turn, .mount, .ladder, .dismount => false,
-        };
-        const left_raise: f32 = if (is_left_arm) arm_angle else 0.0;
-        const right_raise: f32 = if (is_left_arm) 0.0 else arm_angle;
-
-        const body = room_kit.grey(0.72);
-        const limbs = room_kit.grey(0.35);
-        const parts = [_]room_kit.Part{
-            .{ .shape = shapes.cube, .model = limb(root, vec3(0.12, 0.6, 0.0), leg_angle, vec3(0.08, 0.6, 0.08)), .color = limbs },
-            .{ .shape = shapes.cube, .model = limb(root, vec3(-0.12, 0.6, 0.0), -leg_angle, vec3(0.08, 0.6, 0.08)), .color = limbs },
-            .{ .shape = shapes.cube, .model = foot(root, vec3(0.12, 0.6, 0.0), leg_angle), .color = limbs },
-            .{ .shape = shapes.cube, .model = foot(root, vec3(-0.12, 0.6, 0.0), -leg_angle), .color = limbs },
-            .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 0.84 + bob, 0.0), vec3(0.5, 0.45, 0.38)), .color = body },
-            .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 1.1 + bob, 0.0), vec3(0.08, 0.08, 0.08)), .color = limbs },
-            .{ .shape = shapes.cube, .model = part(root, vec3(0.0, 1.28 + bob, 0.0), vec3(0.46, 0.3, 0.34)), .color = body },
-            .{ .shape = shapes.cylinder, .model = eye(root, vec3(0.1, 1.29 + bob, 0.16)), .color = room_kit.grey(0.95), .emissive = 0.8 },
-            .{ .shape = shapes.cylinder, .model = eye(root, vec3(-0.1, 1.29 + bob, 0.16)), .color = room_kit.grey(0.95), .emissive = 0.8 },
-            // Each arm swings opposite its leg; the one nearer the camera pushes
-            .{ .shape = shapes.cube, .model = limb(root, vec3(0.3, 1.0 + bob, 0.0), -leg_angle * 0.6 - left_raise, vec3(0.07, 0.45, 0.07)), .color = limbs },
-            .{ .shape = shapes.cube, .model = limb(root, vec3(-0.3, 1.0 + bob, 0.0), leg_angle * 0.6 - right_raise, vec3(0.07, 0.45, 0.07)), .color = limbs },
-        };
-        for (parts) |robot_part| {
-            room_kit.drawPart(frame, shader, robot_part, hatching);
-        }
-    }
-
     /// Steps along the path, turning to face the way it goes; at its end does what
     /// `then` says.
     fn updateWalk(self: *Self, walk_task: Walk, dt: f32) void {
@@ -340,7 +299,9 @@ pub const Robot = struct {
         };
     }
 
-    fn armAngle(self: *const Self) f32 {
+    /// The placeholder's pushing arm, raised from hanging, in radians
+    /// (`robot_placeholder.zig`; the model's clips have their own).
+    pub fn armAngle(self: *const Self) f32 {
         return switch (self.task) {
             .act => |act| gestureFor(act.use.action).armAngle(act.time),
             .idle, .walk, .turn, .mount, .ladder, .dismount => 0.0,
@@ -362,29 +323,6 @@ fn gestureFor(action: Action) Gesture {
         .push_high => PUSH_HIGH,
         .look => LOOK,
     };
-}
-
-/// A box centered at `center` in the robot's space.
-fn part(root: Mat4, center: Vec3, size: Vec3) Mat4 {
-    return root.mulMat4(&room_kit.box(center, size));
-}
-
-/// A box hanging from `joint`, turned about x by `angle` (positive swings it backward,
-/// negative forward and up).
-fn limb(root: Mat4, joint: Vec3, angle: f32, size: Vec3) Mat4 {
-    const hang = room_kit.box(vec3(0.0, -size.y / 2.0, 0.0), size);
-    return root.mulMat4(&Mat4.fromTranslation(joint)).mulMat4(&Mat4.fromRotationX(angle)).mulMat4(&hang);
-}
-
-/// A flat foot at the bottom of the leg hanging from `hip`, a little forward.
-fn foot(root: Mat4, hip: Vec3, angle: f32) Mat4 {
-    const sole = room_kit.box(vec3(0.0, -0.57, 0.04), vec3(0.14, 0.06, 0.24));
-    return root.mulMat4(&Mat4.fromTranslation(hip)).mulMat4(&Mat4.fromRotationX(angle)).mulMat4(&sole);
-}
-
-/// A round eye on the head's front, looking along +z.
-fn eye(root: Mat4, base: Vec3) Mat4 {
-    return root.mulMat4(&room_kit.cylinderModel(base, .z, 0.12, 0.04));
 }
 
 fn smoothstep(t: f32) f32 {

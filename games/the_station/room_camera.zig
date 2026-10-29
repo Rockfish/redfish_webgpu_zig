@@ -88,6 +88,15 @@ pub const RoomCamera = struct {
         return std.math.radiansToDegrees(2.0 * std.math.atan(framing.half_height / self.distance));
     }
 
+    /// How much smaller something `depth` behind the opening looks than the opening: 1 in
+    /// the orthographic view. Exact for `shifted`; close for `aimed`.
+    pub fn depthScale(self: Self, depth: f32) f32 {
+        return switch (self.view) {
+            .shifted, .aimed => self.distance / (self.distance + depth),
+            .orthographic => 1.0,
+        };
+    }
+
     /// The framing's edges, seen from the eye, scaled from the opening's distance back to
     /// the near plane.
     fn shiftedProjection(self: Self, framing: Framing) Mat4 {

@@ -1,4 +1,4 @@
-//! The deck's state, the clicks that drive the robot, and what using each hotspot does
+//! The station's state, the clicks that drive the robot, and what using each hotspot does
 //! (plan 021, phases B and G).
 //!
 //! The opening: main power is offline and the alarm is on. The red button stops the
@@ -13,7 +13,7 @@ const math = @import("math");
 const interaction = @import("interaction.zig");
 const Cursor = @import("cursor.zig").Cursor;
 const navigation = @import("navigation.zig");
-const deck = @import("deck.zig");
+const station = @import("station.zig");
 const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
 const robot_module = @import("robot.zig");
@@ -35,7 +35,7 @@ const HIGHLIGHT_RATE: f32 = 20.0;
 pub const Lights = enum { off, emergency };
 
 pub const Game = struct {
-    robot: Robot = .{ .position = room_01.ROBOT_START },
+    robot: Robot = .{ .position = station.place(.room_01, room_01.ROBOT_START) },
     is_alarm_on: bool = true,
     lights: Lights = .off,
     is_door_open: bool = false,
@@ -59,14 +59,14 @@ pub const Game = struct {
     pub fn update(self: *Self, ray: ?Ray, clicked: bool, dt: f32) void {
         const shown = self.robotRoom();
         const filter: RoomFilter = .{ .room = shown };
-        self.hovered = if (ray) |mouse_ray| interaction.pick(&deck.hotspots, filter, mouse_ray, deck.interior(shown)) else .nothing;
+        self.hovered = if (ray) |mouse_ray| interaction.pick(&station.hotspots, filter, mouse_ray, station.interior(shown)) else .nothing;
         if (clicked) {
             self.sendRobot();
         }
         self.updateHighlight(dt);
 
         if (self.robot.update(dt)) |hotspot| {
-            self.use(deck.hotspots[hotspot].kind);
+            self.use(station.hotspots[hotspot].kind);
         }
 
         const door_target: f32 = if (self.is_door_open) 1.0 else 0.0;
@@ -76,14 +76,14 @@ pub const Game = struct {
     }
 
     /// The room the robot is in, which the camera shows.
-    pub fn robotRoom(self: *const Self) deck.RoomId {
-        return deck.roomAt(self.robot.position.x);
+    pub fn robotRoom(self: *const Self) station.RoomId {
+        return station.roomAt(self.robot.position);
     }
 
     /// The name of the hotspot under the mouse, or "".
     pub fn hoveredName(self: *const Self) []const u8 {
         return switch (self.hovered) {
-            .hotspot => |index| deck.hotspots[index].name,
+            .hotspot => |index| station.hotspots[index].name,
             .floor, .nothing => "",
         };
     }
@@ -122,7 +122,7 @@ pub const Game = struct {
     /// (`useLadder`), anything else its action. The ladder's upper part does nothing
     /// while the robot stands at its top.
     fn hotspotCursor(self: *const Self, index: usize) Cursor {
-        const hotspot = deck.hotspots[index];
+        const hotspot = station.hotspots[index];
         return switch (hotspot.kind) {
             .door => if (self.is_door_open) self.exitCursor() else actionCursor(hotspot.action),
             .ladder => switch (self.robot.ladderPlace()) {
@@ -158,7 +158,7 @@ pub const Game = struct {
     /// Walks to the hotspot and uses it; through the open door to the other room; or on
     /// the ladder (`useLadder`).
     fn sendToHotspot(self: *Self, index: usize) void {
-        const hotspot = deck.hotspots[index];
+        const hotspot = station.hotspots[index];
         switch (hotspot.kind) {
             .ladder => return self.useLadder(false),
             .ladder_hole => return self.useLadder(true),
@@ -174,7 +174,7 @@ pub const Game = struct {
     /// any part of it climbs back up.
     fn useLadder(self: *Self, is_lower_part: bool) void {
         switch (self.robot.ladderPlace()) {
-            .off => self.walkTo(room_02.ladder.exit, .{ .mount = room_02.ladder }),
+            .off => self.walkTo(station.ladder.exit, .{ .mount = station.ladder }),
             .top => if (is_lower_part) self.robot.climb(true),
             .below => self.robot.climb(false),
         }
@@ -183,18 +183,18 @@ pub const Game = struct {
     /// A walk to the nearest point to `point` the robot can reach (the doorway only with
     /// the door open).
     fn walkTo(self: *Self, point: Vec3, then: robot_module.Arrival) void {
-        const path = navigation.findPath(&deck.walk_areas, self.is_door_open, self.robot.walkStart(), point);
+        const path = navigation.findPath(&station.walk_areas, self.is_door_open, self.robot.walkStart(), point);
         self.robot.walk(path, then);
     }
 
     fn otherSideOfDoor(self: *const Self) Vec3 {
         return switch (self.robotRoom()) {
-            .room_01 => room_02.DOOR_STAND_POINT,
-            .room_02 => room_01.DOOR_STAND_POINT,
+            .room_01 => station.place(.room_02, room_02.DOOR_STAND_POINT),
+            .room_02 => station.place(.room_01, room_01.DOOR_STAND_POINT),
         };
     }
 
-    fn use(self: *Self, kind: room_01.HotspotKind) void {
+    fn use(self: *Self, kind: station.HotspotKind) void {
         switch (kind) {
             .red_button => {
                 if (self.is_alarm_on) {
@@ -257,15 +257,15 @@ fn actionCursor(action: interaction.Action) Cursor {
 
 /// Picks only the hotspots in one room.
 const RoomFilter = struct {
-    room: deck.RoomId,
+    room: station.RoomId,
 
     pub fn allows(self: RoomFilter, index: usize) bool {
-        return deck.isHotspotIn(index, self.room);
+        return station.isHotspotIn(index, self.room);
     }
 };
 
-fn hotspotIndex(kind: room_01.HotspotKind) usize {
-    for (deck.hotspots, 0..) |hotspot, index| {
+fn hotspotIndex(kind: station.HotspotKind) usize {
+    for (station.hotspots, 0..) |hotspot, index| {
         if (hotspot.kind == kind) {
             return index;
         }

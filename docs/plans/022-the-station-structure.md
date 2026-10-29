@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3 done; next: phase C)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C done; next: phase D)
 
 ## Context
 
@@ -310,13 +310,13 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
 - [x] Check: captures of each cursor over its hotspots
 
 ### C. Rooms as data
-- [ ] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
-- [ ] `station.zig` (from `deck.zig`): the table of rooms; build, draw, `roomAt` by
+- [x] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
+- [x] `station.zig` (from `deck.zig`): the table of rooms; build, draw, `roomAt` by
       containment, framing, lights from the rooms
-- [ ] Draw and light only the shown room (and the next during a pan)
-- [ ] `the-station`: room scripts export at the room's own origin; Room 02's glb
+- [x] Draw and light only the shown room (and the next during a pan)
+- [x] `the-station`: room scripts export at the room's own origin; Room 02's glb
       re-exported
-- [ ] `robot.zig` split: the task state machine, and the placeholder's drawing
+- [x] `robot.zig` split: the task state machine, and the placeholder's drawing
       (`robot_placeholder.zig`)
 
 ### D. The station's state
@@ -470,4 +470,34 @@ Our own cursors, drawn by the game, saying what a click does (Design, "Game curs
   - Checked with captures (temporary edit setting the mouse): hand on the red button (lit
     amber), eye on the screen, left arrow on Room 01's open door, right on Room 02's,
     ladder on the ladder, arrow on the floor.
+- 2026-10-29, phase C, as built:
+  - `station.zig` (was `deck.zig`): `Room` (name, lower-left cell, size in cells, model
+    path, shell, walk areas, hotspots, `addGreybox`; `origin`, `width`, `height`), `RoomId`,
+    `rooms`, `place(id, point)`. Built at compile time from the rooms: `hotspots` and the
+    room each is in, `walk_areas` (with the doorway between Rooms 01 and 02 until phase
+    E), `ladder`. `roomAt(position)`: inside a room's walls (to their middles) from the
+    deck below to its ceiling, else the nearest. `framing(id)`, `interior(id)`,
+    `isVisible` (the room's opening, or its back seen from the eye, overlaps the view;
+    `RoomCamera.depthScale`), `emergencyLightPosition`. `HotspotKind` and `Hotspot` live
+    here until phase D.
+  - A room's origin is on the grid: x `(column + cells_wide / 2) * 2.8`, y `row * 3.4`,
+    so Room 01's center is x 4.2 and Room 02's -4.2 (they were 0 and -8.4); nothing on
+    screen changes, as the camera follows the rooms. `room_kit.insideWidth` takes a
+    runtime count, in f64 first so 3 cells are exactly 8 m. `Shell` lost its center;
+    `placeParts` moves a room's parts onto the station; the models draw at the room's
+    origin.
+  - Rooms 01 and 02 export `room` in their own coordinates; Room 02's numbers moved by
+    +8.4 (`build_room_02.py` too: `CENTER_X` 0; every mesh's bounds moved by exactly 8.4).
+  - Drawing and lighting: only the visible rooms (`DrawState.visible`); point light 0 the
+    alarm (Room 01 visible), then one emergency light per visible room, up to 4.
+  - The camera pans a `Framing` (`main.panTo`, center x and y), so a room on another
+    row will pan too. The floor grid follows the robot's room (it was Room 01's always).
+  - `robot_placeholder.zig`: the box robot's drawing, out of `robot.zig` (now the tasks
+    only; `Robot.armAngle` public for it).
+  - Tests: the rooms' origins, `roomAt` (the shared wall, the ladder's bottom), placed
+    hotspots in their rooms, `isVisible` (the neighbor at the edge; a far view).
+  - Checked with captures of both rooms before and after (models and greybox): Room 01
+    the same but the cursor and label under the real mouse; Room 02 the grid (now its
+    own) and its equipment's hatch lines shifted a little: the model hatches in its
+    mesh's coordinates, which moved 8.4 m.
 

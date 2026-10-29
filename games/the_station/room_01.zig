@@ -1,5 +1,5 @@
-//! Room 01, the control room (plan 021), 3 x 1 cells. The deck (`deck.zig`) puts it next
-//! to Room 02.
+//! Room 01, the control room (plan 021), 3 x 1 cells at column 0, row 0 of the station
+//! (`station.zig`), right of Room 02.
 //!
 //! The shell (floor, ceiling, walls, the doorway and its door, the alarm lamp, the
 //! ceiling lights) is boxes and cylinders (`room_kit.zig`): its cut faces, the sliding
@@ -8,8 +8,8 @@
 //! `MODEL_PATH`, built by `the-station/blender/build_room.py`; without it, or with the
 //! panel's "greybox room", the greybox equipment draws instead.
 //!
-//! The room's inside spans x -WIDTH/2..WIDTH/2, y 0..HEIGHT, z -DEPTH..0 (the layout is
-//! in `room_kit.zig`). Left wall: a doorway to Room 02 with a door that slides into the
+//! In the room's own coordinates: its inside spans x -WIDTH/2..WIDTH/2, y 0..HEIGHT,
+//! z -DEPTH..0 (`room_kit.zig`). Left wall: a doorway to Room 02 with a door that slides into the
 //! wall. Right wall: the control console. Back wall: the cabinets (among them the gauges,
 //! the screen, and the breakers) and the alarm lamp above the middle. The things the
 //! robot can use are `hotspots`.
@@ -18,7 +18,9 @@ const std = @import("std");
 const math = @import("math");
 
 const room_kit = @import("room_kit.zig");
-const Hotspot = @import("interaction.zig").Hotspot;
+const station = @import("station.zig");
+const navigation = @import("navigation.zig");
+const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
 const PartBuilder = room_kit.PartBuilder;
 const bounds = room_kit.bounds;
@@ -39,13 +41,27 @@ const FACE_BACK_WALL = room_kit.FACE_BACK_WALL;
 
 pub const MODEL_PATH = "the-station/models/room_01/room_01.glb";
 
-pub const WIDTH = room_kit.insideWidth(3);
-pub const HEIGHT = room_kit.insideHeight(1);
+const CELLS_WIDE = 3;
+const CELLS_HIGH = 1;
+pub const WIDTH = room_kit.insideWidth(CELLS_WIDE);
+pub const HEIGHT = room_kit.insideHeight(CELLS_HIGH);
+
+pub const room: station.Room = .{
+    .name = "Room 01",
+    .column = 0,
+    .row = 0,
+    .cells_wide = CELLS_WIDE,
+    .cells_high = CELLS_HIGH,
+    .model_path = MODEL_PATH,
+    .shell = shell,
+    .walk_areas = &walk_areas,
+    .hotspots = &hotspots,
+    .addGreybox = addGreybox,
+};
 
 /// The shell: a doorway to Room 02 in the left wall, framed on both sides, its door drawn
 /// on its own (it slides); a solid right wall.
-pub const shell: room_kit.Shell = .{
-    .center_x = 0.0,
+const shell: room_kit.Shell = .{
     .width = WIDTH,
     .height = HEIGHT,
     .left = .{ .doorway = .{ .door = .separate, .is_framed_outside = true } },
@@ -65,9 +81,9 @@ const ALARM_RED = vec3(1.0, 0.04, 0.02);
 
 /// The floor the robot can walk on: clear of the walls, the console, and the cabinets.
 pub const WALK_MIN_X: f32 = -3.4;
-pub const WALK_MAX_X: f32 = 2.85;
-pub const WALK_MIN_Z: f32 = -3.25;
-pub const WALK_MAX_Z: f32 = -0.4;
+const walk_areas = [_]navigation.Area{
+    .{ .min_x = WALK_MIN_X, .max_x = 2.85, .min_z = -3.25, .max_z = -0.4 },
+};
 
 /// Where the robot starts.
 pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
@@ -75,28 +91,7 @@ pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 /// Where the robot stands to use the door, in this room.
 pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
-/// What each hotspot on the deck is, for the game to decide what using it does. The
-/// console's buttons: red stops the alarm, the middle one opens and closes the door, the
-/// third turns on the lights. Room 02 (`room_02.zig`): its locked door and the keypad
-/// beside it, the power cabinet, and the ladder, whose lower part (the hole) is a hotspot
-/// of its own.
-pub const HotspotKind = enum {
-    door,
-    red_button,
-    door_button,
-    lights_button,
-    lever,
-    gauges,
-    screen,
-    breakers,
-    locked_door,
-    keypad,
-    power_cabinet,
-    ladder,
-    ladder_hole,
-};
-
-pub const hotspots = [_]Hotspot(HotspotKind){
+const hotspots = [_]Hotspot{
     .{
         .kind = .door,
         .name = "Door",
@@ -176,7 +171,7 @@ pub fn alarmLightColor(intensity: f32) Vec3 {
 
 /// The equipment as boxes, drawn without the model: the console, the back wall's panels,
 /// and pipes.
-pub fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) std.mem.Allocator.Error!void {
     try addConsole(builder, allocator, parts);
     try addBackPanels(builder, allocator, parts);
     try addPipes(builder, allocator, parts);

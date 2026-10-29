@@ -3,27 +3,27 @@
 //! toward the back center (the robot walks around the hole's front), the deck's power
 //! cabinet and lockers on the back wall.
 //!
-//! 3 x 1 cells. As Room 01, the shell (floor around the hole, walls, the locked door, the
-//! deck below) is boxes (`shell`, built by `room_kit.zig`), and the equipment (ladder, rim, keypad, cabinet, lockers, signs,
-//! pipes) is the model `MODEL_PATH`, built by `the-station/blender/build_room_02.py`;
-//! without it, or with the panel's "greybox room", the greybox equipment draws instead.
-//! The hole's and the ladder's sizes here are the script's too.
+//! As Room 01, the shell (floor around the hole, walls, the locked door, the deck below)
+//! is boxes (`shell`, built by `room_kit.zig`), and the equipment (ladder, rim, keypad,
+//! cabinet, lockers, signs, pipes) is the model `MODEL_PATH`, built by
+//! `the-station/blender/build_room_02.py`; without it, or with the panel's "greybox room",
+//! the greybox equipment draws instead. The hole's and the ladder's sizes here are the
+//! script's too.
 //!
-//! Same size and layout as Room 01 (`room_01.zig`), centered on `CENTER_X`; its right wall is
-//! Room 01's left wall, with the doorway. Below the hole a shaft through the deck below
-//! (solid, as Room 01's); the robot climbs down into it out of sight (the floor in front
-//! of the hole hides it).
+//! 3 x 1 cells at column -3, row 0 of the station (`station.zig`), in its own coordinates
+//! as Room 01 (`room_01.zig`); its right wall is Room 01's left wall, with the doorway.
+//! Below the hole a shaft through the deck below (solid, as Room 01's); the robot climbs
+//! down into it out of sight (the floor in front of the hole hides it).
 
 const std = @import("std");
 const core = @import("core");
 const math = @import("math");
 
 const room_kit = @import("room_kit.zig");
+const station = @import("station.zig");
 const navigation = @import("navigation.zig");
-const Hotspot = @import("interaction.zig").Hotspot;
 const Ladder = @import("robot.zig").Ladder;
-// Until each room has its own (plan 022, phase D)
-const HotspotKind = @import("room_01.zig").HotspotKind;
+const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
 const PartBuilder = room_kit.PartBuilder;
 const bounds = room_kit.bounds;
@@ -40,16 +40,29 @@ const DOOR_HEIGHT = room_kit.DOOR_HEIGHT;
 
 pub const MODEL_PATH = "the-station/models/room_02/room_02.glb";
 
-pub const WIDTH = room_kit.insideWidth(3);
-pub const HEIGHT = room_kit.insideHeight(1);
-/// The room's middle on x: three cells left of Room 01's.
-pub const CENTER_X: f32 = -3 * room_kit.CELL_WIDTH;
-const INNER_MIN_X = CENTER_X - WIDTH / 2.0;
-const INNER_MAX_X = CENTER_X + WIDTH / 2.0;
+const CELLS_WIDE = 3;
+const CELLS_HIGH = 1;
+const WIDTH = room_kit.insideWidth(CELLS_WIDE);
+const HEIGHT = room_kit.insideHeight(CELLS_HIGH);
+const INNER_MIN_X = -WIDTH / 2.0;
+const INNER_MAX_X = WIDTH / 2.0;
+
+pub const room: station.Room = .{
+    .name = "Room 02",
+    .column = -3,
+    .row = 0,
+    .cells_wide = CELLS_WIDE,
+    .cells_high = CELLS_HIGH,
+    .model_path = MODEL_PATH,
+    .shell = shell,
+    .walk_areas = &walk_areas,
+    .hotspots = &hotspots,
+    .addGreybox = addGreybox,
+};
 
 /// The hole in the floor, and the shaft below it.
-const HOLE_MIN_X = CENTER_X - 0.6;
-const HOLE_MAX_X = CENTER_X + 0.6;
+const HOLE_MIN_X = -0.6;
+const HOLE_MAX_X = 0.6;
 const HOLE_MIN_Z: f32 = -3.85;
 const HOLE_MAX_Z: f32 = -2.85;
 const SHAFT_DEPTH: f32 = WALL + room_kit.BELOW_DEPTH;
@@ -62,7 +75,7 @@ const RAIL_GAP: f32 = 0.5;
 /// Standing on the top rung over the hole, facing the ladder; it steps on from the floor
 /// right of the hole.
 pub const ladder: Ladder = .{
-    .top = vec3(CENTER_X, -0.05, -3.5),
+    .top = vec3(0.0, -0.05, -3.5),
     .depth = 1.9,
     .exit = vec3(HOLE_MAX_X + 0.35, 0.0, -3.5),
     .facing = room_kit.FACE_BACK_WALL,
@@ -70,8 +83,7 @@ pub const ladder: Ladder = .{
 
 /// The shell: a locked door in the left wall; the right wall is Room 01's, with the
 /// doorway; the hole in the floor and its shaft.
-pub const shell: room_kit.Shell = .{
-    .center_x = CENTER_X,
+const shell: room_kit.Shell = .{
     .width = WIDTH,
     .height = HEIGHT,
     .left = .{ .doorway = .{ .door = .locked, .is_framed_outside = false } },
@@ -87,13 +99,13 @@ pub const DOOR_STAND_POINT = vec3(INNER_MAX_X - 0.7, 0.0, DOOR_CENTER_Z);
 
 /// The floor the robot can walk on: in front of the hole, and either side of it. The
 /// robot's center keeps 0.35 m from the hole and 0.4 m from the walls.
-pub const walk_areas = [_]navigation.Area{
+const walk_areas = [_]navigation.Area{
     .{ .min_x = INNER_MIN_X + 0.4, .max_x = INNER_MAX_X - 0.4, .min_z = HOLE_MAX_Z + 0.35, .max_z = -0.4 },
     .{ .min_x = INNER_MIN_X + 0.4, .max_x = HOLE_MIN_X - 0.35, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
     .{ .min_x = HOLE_MAX_X + 0.35, .max_x = INNER_MAX_X - 0.4, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
 };
 
-pub const hotspots = [_]Hotspot(HotspotKind){
+const hotspots = [_]Hotspot{
     .{
         .kind = .door,
         .name = "Door",
@@ -124,8 +136,8 @@ pub const hotspots = [_]Hotspot(HotspotKind){
     .{
         .kind = .power_cabinet,
         .name = "Power cabinet",
-        .bounds = bounds(vec3(-7.1, 0.6, -DEPTH), vec3(-5.5, 2.0, -3.65)),
-        .stand_point = vec3(-6.3, 0.0, -3.4),
+        .bounds = bounds(vec3(1.3, 0.6, -DEPTH), vec3(2.9, 2.0, -3.65)),
+        .stand_point = vec3(2.1, 0.0, -3.4),
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
     },
@@ -133,7 +145,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
     .{
         .kind = .ladder,
         .name = "Ladder",
-        .bounds = bounds(vec3(CENTER_X - 0.32, 0.3, LADDER_Z - 0.06), vec3(CENTER_X + 0.32, RAIL_TOP + 0.05, LADDER_Z + 0.1)),
+        .bounds = bounds(vec3(-0.32, 0.3, LADDER_Z - 0.06), vec3(0.32, RAIL_TOP + 0.05, LADDER_Z + 0.1)),
         .stand_point = ladder.exit,
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
@@ -150,7 +162,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
 
 /// The equipment as boxes, drawn without the model: the ladder, the keypad, and stand-ins
 /// for the lockers and the power cabinet.
-pub fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
+fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) std.mem.Allocator.Error!void {
     try addLadder(builder, allocator, parts);
     try addKeypad(builder, allocator, parts);
     try addBackWall(builder, allocator, parts);
@@ -161,11 +173,11 @@ pub fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *st
 fn addLadder(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
     const color = grey(0.4);
     for ([_]f32{ -RAIL_GAP / 2.0, RAIL_GAP / 2.0 }) |offset| {
-        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(CENTER_X + offset, -SHAFT_DEPTH, LADDER_Z), .y, 0.05, SHAFT_DEPTH + RAIL_TOP), .color = color });
+        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(offset, -SHAFT_DEPTH, LADDER_Z), .y, 0.05, SHAFT_DEPTH + RAIL_TOP), .color = color });
     }
     var y: f32 = RAIL_TOP - 0.1;
     while (y > -SHAFT_DEPTH) : (y -= 0.3) {
-        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(CENTER_X - RAIL_GAP / 2.0, y, LADDER_Z), .x, 0.035, RAIL_GAP), .color = color });
+        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(-RAIL_GAP / 2.0, y, LADDER_Z), .x, 0.035, RAIL_GAP), .color = color });
     }
 }
 
@@ -183,7 +195,7 @@ fn addBackWall(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.A
     const wall_z = -DEPTH;
     const cube = builder.cube;
     try parts.appendSlice(allocator, &.{
-        .{ .shape = cube, .model = box(vec3(-11.4, 0.98, wall_z + 0.12), vec3(1.4, 1.95, 0.24)), .color = grey(0.48) },
-        .{ .shape = cube, .model = box(vec3(-6.3, 1.05, wall_z + 0.12), vec3(1.6, 1.9, 0.24)), .color = grey(0.48) },
+        .{ .shape = cube, .model = box(vec3(-3.0, 0.98, wall_z + 0.12), vec3(1.4, 1.95, 0.24)), .color = grey(0.48) },
+        .{ .shape = cube, .model = box(vec3(2.1, 1.05, wall_z + 0.12), vec3(1.6, 1.9, 0.24)), .color = grey(0.48) },
     });
 }
