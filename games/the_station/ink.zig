@@ -87,6 +87,9 @@ pub const Style = struct {
     hatch_strength: f32 = 0.8,
     /// Meters between hatch lines.
     hatch_spacing: f32 = 0.14,
+    /// How strongly the hovered control lights up (ink_common.wgsl `highlighted`): 1 is
+    /// the shader's amber tint, rim, and thinned hatching in full.
+    highlight_strength: f32 = 1.0,
 
     pub fn hatching(self: Style) room_kit.Hatching {
         return .{

@@ -118,6 +118,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .stand_point = vec3(INNER_MIN_X + 0.6, 0.0, KEYPAD_Z),
         .facing = room_kit.FACE_LEFT_WALL,
         .action = .push_high,
+        .mesh = "keypad",
     },
     // The deck's power cabinet right of the hole (build_room_02.py), 0.25 m deep
     .{

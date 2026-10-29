@@ -2,6 +2,11 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: hovered controls light up; plan 022 phase B2
+- **core.ModelInstance**: `drawWithMeshParams` gives listed meshes their own params (`core.MeshParams`; live, baked, or no animator), `findMesh(name)`; test
+- **games/the_station**: a control under the mouse (the console's buttons and lever, Room 02's keypad) lights up in amber instead of a white box: thinner hatching, an amber tint, a brighter rim, easing in and out with a faint pulse (`Hotspot.mesh`, `ink_common.wgsl`); a hand cursor over every hotspot; panel: highlight strength, "hotspot bounds" for the old box
+- **the-station**: the console's buttons and lever are meshes of their own, and every joined mesh is named for its group
+
 ### 2026-10-29 - The Station: the room kit; plan 022 phase B
 - **games/the_station**: `room_kit.zig`, what every room is built with: the room grid (cells 2.8 x 3.4 m; Rooms 01 and 02 are 3 x 1), door sizes, parts, and `PartBuilder.addShell`, which builds any room's shell from a `Shell` (sides solid, with a doorway, or the neighbor's; a hole with its shaft). Rooms 01 and 02 describe their shells instead of building them (they were near copies); they look the same as before
 

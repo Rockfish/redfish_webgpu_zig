@@ -18,6 +18,7 @@ const room_02 = @import("room_02.zig");
 const robot_module = @import("robot.zig");
 const Robot = robot_module.Robot;
 const Ray = core.Ray;
+const motion = core.motion;
 const Target = interaction.Target;
 const Vec3 = math.Vec3;
 
@@ -25,6 +26,9 @@ const Vec3 = math.Vec3;
 const DOOR_OPEN_TIME: f32 = 1.2;
 /// Seconds a message stays on screen.
 const MESSAGE_TIME: f32 = 4.0;
+/// How fast the hovered control's highlight eases in and out (`motion.dampAlpha` rate):
+/// most of the way in about 0.15 s.
+const HIGHLIGHT_RATE: f32 = 20.0;
 
 /// The deck's lights: off at the start; the emergency lights are all the power there is.
 pub const Lights = enum { off, emergency };
@@ -38,6 +42,10 @@ pub const Game = struct {
     door_open: f32 = 0.0,
     /// What the mouse is over this frame.
     hovered: Target = .nothing,
+    /// The hotspot last under the mouse, and how lit its highlight is (0..1): it fades
+    /// out after the mouse leaves.
+    highlighted: ?usize = null,
+    highlight: f32 = 0.0,
     /// The robot's last remark, shown for `message_time` more seconds.
     message: []const u8 = "",
     message_time: f32 = 0.0,
@@ -54,6 +62,7 @@ pub const Game = struct {
         if (clicked) {
             self.sendRobot();
         }
+        self.updateHighlight(dt);
 
         if (self.robot.update(dt)) |hotspot| {
             self.use(deck.hotspots[hotspot].kind);
@@ -81,6 +90,23 @@ pub const Game = struct {
     /// The robot's last remark while it lasts, or "".
     pub fn remark(self: *const Self) []const u8 {
         return if (self.message_time > 0.0) self.message else "";
+    }
+
+    /// Eases the highlight in on the hovered hotspot, and out after the mouse leaves it.
+    /// Another hotspot under the mouse starts from unlit.
+    fn updateHighlight(self: *Self, dt: f32) void {
+        const hovered: ?usize = switch (self.hovered) {
+            .hotspot => |index| index,
+            .floor, .nothing => null,
+        };
+        if (hovered) |index| {
+            if (self.highlighted != index) {
+                self.highlighted = index;
+                self.highlight = 0.0;
+            }
+        }
+        const target: f32 = if (hovered != null) 1.0 else 0.0;
+        self.highlight = std.math.lerp(self.highlight, target, motion.dampAlpha(HIGHLIGHT_RATE, dt));
     }
 
     fn sendRobot(self: *Self) void {

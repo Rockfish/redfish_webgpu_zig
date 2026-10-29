@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; next: phase C)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; next: phase C)
 
 ## Context
 
@@ -135,6 +135,24 @@ lights. Only the shown room is drawn and lit (plus the next one during a pan): t
 engine has 4 point lights (`MAX_POINT_LIGHTS`). The Blender scripts export each room at
 its own origin, so room_02's world numbers (`-11.4`, `-7.1`) become local ones.
 
+### Hotspot highlight
+
+As an ink drawing would show it: the hovered control looks as if a small lamp caught it.
+Its hatching thins, it takes an **amber** tint (red is kept for dramatic things: the
+alarm, danger), and its edges turned from the camera brighten a little, so it glows at
+its outline without a box. It eases in and out over about 0.15 s (`motion.dampAlpha`)
+with a faint pulse. Only controls highlight (buttons, the lever, the keypad, later the
+panels' switches and valves); doors, the ladder, and things looked at show the name and
+a hand cursor.
+
+A control is its own mesh in the room's model, named for the hotspot, so it can be drawn
+with its own params (`ModelInstance.drawWithMeshParams`). Meshes keep their origin at
+the room's, which models drawn without an animator need. This is the first slice of
+phase G's part lookup and per-part params; the panels use the same.
+
+The greybox doesn't highlight: `room.wgsl`'s four params are all used (emissive, cut,
+hatch strength and spacing), and the greybox is a fallback.
+
 ### Connections
 
 A door, a ladder, or a hatch joins two rooms: `Connection` with an end in each room
@@ -244,6 +262,25 @@ inventory, puzzle logic.
 - [x] The cell size and `roomSize(cells)`
 - [x] `addShell(builder, size, openings)` for any room; Rooms 01 and 02 built through it
 - [x] Check: both rooms look the same as before (captures before and after)
+
+### B2. Hotspot highlight (added 2026-10-29)
+The hovered hotspot showed as a white box, out of place in the ink look. Controls now
+light up themselves instead (Design, "Hotspot highlight").
+- [x] Engine: `ModelInstance.findMesh(name)`, `drawWithMeshParams` (one mesh's params in
+      place of the model's; live, baked, and no animator)
+- [x] `the-station`: controls are their own meshes, named for the hotspot (`red_button`,
+      `door_button`, `lights_button`, `lever`; Room 02's `keypad`); every joined mesh
+      takes its group's name; both rooms re-exported
+- [x] `Hotspot.mesh`: the room model's mesh that lights up, or null (doors, the ladder,
+      the hole, cabinets looked at)
+- [x] Shader: the highlight in `model.wgsl` (`params.x`): amber tint, lighter hatching,
+      a rim on edges turned from the camera; eased in and out, a faint pulse
+- [x] Hand cursor over any hotspot (`zgui.setMouseCursor`); the white box only with the
+      panel's "hotspot bounds"
+- [ ] Option to compare, if the tint isn't right on screen: an amber ink outline around
+      the hovered control only (a mask pass the outline pass reads, a second texture in
+      ink_edges.wgsl); keep the one John picks, the other as a setting
+- [x] Check: captures hovering each control; the rooms otherwise unchanged
 
 ### C. Rooms as data
 - [ ] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
@@ -356,3 +393,29 @@ inventory, puzzle logic.
   Checked: captures of both rooms, models and greybox, before and after (temporary
   edit: alarm off, emergency lights, door open, placeholder robot): identical except
   the hover outline under wherever the mouse sat.
+- 2026-10-29 (John): the hotspots' white boxes are out of place; controls should light
+  up themselves, subtly, in a way that fits them; doorways and the ladder need no
+  highlight. Amber, saving red for dramatic things. Added as phase B2, before C.
+- 2026-10-29, phase B2, as built:
+  - Engine: `core.MeshParams` and `ModelInstance.drawWithMeshParams` (the meshes listed
+    get their own params; live, baked, and no animator; `drawWithParams` passes none),
+    `ModelInstance.findMesh(name)` by glTF mesh name; test of `meshParams`. draw_test and
+    angrybot checked on screen.
+  - the-station: `room_kit.join_groups` names each joined mesh for its group; the console's
+    buttons (`lights_button`, `door_button`, `red_button`) and `lever` are groups of their
+    own in `build_room.py`; Room 02's `keypad` already was. Both rooms re-exported.
+  - Game: `Hotspot.mesh` (the four console controls, the keypad); `Deck` finds each at
+    init (`highlight_meshes`, a warning for a missing name) and draws the hovered one with
+    `params.x` = the highlight; `Game.highlighted` / `highlight` ease in and out
+    (`HIGHLIGHT_RATE` 20, `motion.dampAlpha`), a hotspot newly under the mouse starts
+    unlit; the highlight breathes 20% at 0.8 Hz (`main.highlight`).
+  - Shader (`ink_common.wgsl`): `highlighted` adds amber (1.0, 0.55, 0.12 linear) at 0.12
+    over the control plus 0.5 times a rim (`(1 - n.v)^2`); `highlightedInk` thins its
+    hatching by up to 70%. Panel: Ink "highlight" (strength, 0..2, default 1), Room
+    "hotspot bounds" (the old white box, off).
+  - Hand cursor over every hotspot through ImGui (`zgui.setMouseCursor`; its GLFW backend
+    sets the cursor each frame, so a GLFW cursor would be overwritten).
+  - Checked with captures (temporary edit forcing the highlight): the red button turns
+    amber-orange, the black lever amber-tan, the keypad amber. Strong on dark parts; the
+    strength slider is for tuning it.
+

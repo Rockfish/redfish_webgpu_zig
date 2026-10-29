@@ -9,7 +9,7 @@ How these files work, including parking and resuming plans: [README.md](README.m
   style fixes, a room kit and rooms as data on a grid of base cells, the station's state
   as one typed struct, connections and transitions between rooms, the generator room
   below the ladder, an inventory with counts, model nodes in the engine, and the first
-  3D puzzle panel. Phases A (style fixes, tests) and B (room kit) done. Next: phase C (rooms as data).
+  3D puzzle panel. Phases A (style fixes, tests), B (room kit), and B2 (hovered controls light up) done. Next: phase C (rooms as data).
 
 ## ⏸️ Parked
 

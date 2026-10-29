@@ -33,6 +33,14 @@ pub const AnimatorImpl = union(enum) {
     baked_animator: *BakedAnimator,
 };
 
+/// One mesh's params in place of the model's (`ModelInstance.drawWithMeshParams`): a
+/// highlighted control, a lit lamp.
+pub const MeshParams = struct {
+    /// Index into the model's meshes (`ModelInstance.findMesh`).
+    mesh: usize,
+    params: Vec4,
+};
+
 pub const ModelConfig = struct {
     name: []const u8,
     file_path: []const u8,
@@ -169,6 +177,18 @@ pub const ModelInstance = struct {
     /// `draw`, with `params` in each draw's `DrawUniforms.params`, for a shader that reads
     /// them (shader-specific; PBR shaders don't).
     pub fn drawWithParams(self: *Self, frame: *const Frame, shader: *const Shader, model_transform: Mat4, params: Vec4) void {
+        self.drawWithMeshParams(frame, shader, model_transform, params, &.{});
+    }
+
+    /// `drawWithParams`, with the meshes in `overrides` given their own params.
+    pub fn drawWithMeshParams(
+        self: *Self,
+        frame: *const Frame,
+        shader: *const Shader,
+        model_transform: Mat4,
+        params: Vec4,
+        overrides: []const MeshParams,
+    ) void {
         switch (self.animator_impl) {
             .live_animator => |animator| {
                 const skin: ?skinning.SkinBinding = if (self.joint_buffer) |*joint_buffer|
@@ -179,18 +199,40 @@ pub const ModelInstance = struct {
                 for (self.gltf_asset.meshes, 0..) |mesh, index| {
                     const node_index = animator.meshToNode[index];
                     const transform = animator.nodes[node_index].calculated_transform.?;
-                    mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin, params);
+                    mesh.drawAt(frame, shader, model_transform, transform.toMatrix(), skin, meshParams(index, params, overrides));
                 }
             },
-            .baked_animator => |baked| baked.draw(self, frame, shader, model_transform, params),
+            .baked_animator => |baked| baked.draw(self, frame, shader, model_transform, params, overrides),
             .null_animator => {
-                for (self.gltf_asset.meshes) |mesh| {
-                    mesh.drawAt(frame, shader, model_transform, Mat4.Identity, null, params);
+                for (self.gltf_asset.meshes, 0..) |mesh, index| {
+                    mesh.drawAt(frame, shader, model_transform, Mat4.Identity, null, meshParams(index, params, overrides));
                 }
             },
         }
     }
+
+    /// The index of the mesh named `name` (its glTF mesh name), or null.
+    pub fn findMesh(self: *const Self, name: []const u8) ?usize {
+        for (self.gltf_asset.meshes, 0..) |mesh, index| {
+            if (mesh.name) |mesh_name| {
+                if (std.mem.eql(u8, mesh_name, name)) {
+                    return index;
+                }
+            }
+        }
+        return null;
+    }
 };
+
+/// Mesh `index`'s params: its override, if it has one, else the model's.
+pub fn meshParams(index: usize, params: Vec4, overrides: []const MeshParams) Vec4 {
+    for (overrides) |override| {
+        if (override.mesh == index) {
+            return override.params;
+        }
+    }
+    return params;
+}
 
 /// A live animator on a skinned model needs its own joint buffer.
 fn jointBufferFor(animator_impl: AnimatorImpl, gltf_asset: *GltfAsset) ?skinning.JointBuffer {
@@ -198,4 +240,13 @@ fn jointBufferFor(animator_impl: AnimatorImpl, gltf_asset: *GltfAsset) ?skinning
         .live_animator => |animator| if (animator.skin_index != null) skinning.JointBuffer.init(gltf_asset.gpu) else null,
         else => null,
     };
+}
+
+test "meshParams: a mesh's override, else the model's params" {
+    const params = Vec4.init(1.0, 0.0, 0.0, 0.0);
+    const highlighted = Vec4.init(2.0, 0.0, 0.0, 0.0);
+    const overrides = [_]MeshParams{.{ .mesh = 3, .params = highlighted }};
+    try std.testing.expectEqual(highlighted, meshParams(3, params, &overrides));
+    try std.testing.expectEqual(params, meshParams(2, params, &overrides));
+    try std.testing.expectEqual(params, meshParams(3, params, &.{}));
 }

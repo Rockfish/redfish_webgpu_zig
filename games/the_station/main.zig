@@ -52,6 +52,9 @@ const vec3 = math.vec3;
 const PAN_RATE: f32 = 3.0;
 /// How much the ceiling lights' tubes glow with the emergency lights on.
 const EMERGENCY_GLOW: f32 = 0.6;
+/// The hovered control's highlight breathes this much below full, this often a second.
+const HIGHLIGHT_PULSE_DEPTH: f32 = 0.2;
+const HIGHLIGHT_PULSE_RATE: f32 = 0.8;
 
 /// The space outside the station.
 const CLEAR_COLOR = [4]f64{ 0.01, 0.01, 0.012, 1.0 };
@@ -150,7 +153,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
             try model.update(&game.robot, input.delta_time);
         }
 
-        const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm.rate) else 0.0;
+        const alarm_level = if (game.is_alarm_on) pulse(time, settings.alarm.rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
         try ink_pass.update(context.alloc, gpu);
@@ -169,6 +172,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
                 .light_glow = if (game.lights == .emergency) EMERGENCY_GLOW else 0.0,
                 .door_open = game.door_open,
                 .use_greybox = settings.room.use_greybox,
+                .highlight = highlight(&game, time, style.highlight_strength),
             },
         };
         if (style.show_outlines) {
@@ -180,9 +184,13 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         frame.beginSurfacePass(CLEAR_COLOR);
         scene.draw(&frame, scene_shaders, style.hatching());
         ink_pass.drawOutlines(&frame, style.*);
-        drawLines(&frame, &lines, settings.room.show_grid, game.hovered);
+        drawLines(&frame, &lines, settings.room, game.hovered);
 
         gui.newFrame();
+        // After newFrame: ImGui's backend sets the cursor every frame
+        if (game.hovered == .hotspot) {
+            zgui.setMouseCursor(.hand);
+        }
         drawLabel("remark", game.remark(), .{ zgui.io.getDisplaySize()[0] / 2.0, 24.0 }, 0.5);
         drawLabel("hovered", game.hoveredName(), .{ input.mouse_x + 18.0, input.mouse_y + 8.0 }, 0.0);
         drawPanel(.{ .file = &saved_settings, .values = &settings }, &game, aspect);
@@ -228,8 +236,15 @@ fn mouseRay(input: *const Input, render_context: RenderContext) ?Ray {
 }
 
 /// 0..1, a smooth rise and fall `rate` times a second.
-fn alarmPulse(time: f32, rate: f32) f32 {
+fn pulse(time: f32, rate: f32) f32 {
     return 0.5 - 0.5 * @cos(time * rate * std.math.tau);
+}
+
+/// The hovered control's highlight, `strength` at full, breathing a little while it is on.
+fn highlight(game: *const Game, time: f32, strength: f32) ?deck.Highlight {
+    const hotspot = game.highlighted orelse return null;
+    const breath = 1.0 - HIGHLIGHT_PULSE_DEPTH * pulse(time, HIGHLIGHT_PULSE_RATE);
+    return .{ .hotspot = hotspot, .amount = game.highlight * breath * strength };
 }
 
 /// Main power is out: no light from above, only a dim ambient, the alarm's red point
@@ -264,15 +279,16 @@ fn deckLights(settings: Settings, game: *const Game, alarm_level: f32) SceneLigh
     return lights;
 }
 
-/// The floor grid, if on, and an outline around the hotspot under the mouse.
-fn drawLines(frame: *const Frame, lines: *Lines, show_grid: bool, hovered: interaction.Target) void {
+/// The floor grid and the bounds of the hotspot under the mouse, if on (for checking a
+/// hotspot's box; the game shows a hotspot by lighting it up).
+fn drawLines(frame: *const Frame, lines: *Lines, room: settings_file.RoomSettings, hovered: interaction.Target) void {
     var segments: [MAX_LINES]LineSegment = undefined;
     var count: usize = 0;
-    if (show_grid) {
+    if (room.show_grid) {
         count += floorGrid(segments[0..GRID_LINES]);
     }
     switch (hovered) {
-        .hotspot => |index| {
+        .hotspot => |index| if (room.show_hotspot_bounds) {
             const outline = interaction.outline(deck.hotspots[index].bounds);
             @memcpy(segments[count..][0..outline.len], &outline);
             count += outline.len;
@@ -356,9 +372,11 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.checkbox(.ink, .show_hatching, "hatching");
         panel.slider(.ink, .hatch_strength, "hatch strength", 0.0, 1.0);
         panel.slider(.ink, .hatch_spacing, "hatch spacing", 0.02, 0.2);
+        panel.slider(.ink, .highlight_strength, "highlight", 0.0, 2.0);
 
         panel.section(.room, "Room");
         panel.checkbox(.room, .show_grid, "floor grid");
+        panel.checkbox(.room, .show_hotspot_bounds, "hotspot bounds");
         panel.checkbox(.room, .use_placeholder, "placeholder robot");
         panel.checkbox(.room, .use_greybox, "greybox room");
         _ = zgui.checkbox("door open", .{ .v = &game.is_door_open });

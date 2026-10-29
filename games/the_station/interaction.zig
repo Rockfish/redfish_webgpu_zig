@@ -34,6 +34,9 @@ pub fn Hotspot(comptime Kind: type) type {
         /// The robot's yaw at the stand point, 0 toward the camera (+z).
         facing: f32,
         action: Action,
+        /// The mesh in the room's model that lights up while the mouse is over it (a
+        /// control); null for things that don't (doors, the ladder, cabinets looked at).
+        mesh: ?[]const u8 = null,
     };
 }
 

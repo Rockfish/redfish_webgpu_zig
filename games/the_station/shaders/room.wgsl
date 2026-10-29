@@ -62,6 +62,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Hatched in world axes, relative to the part's origin: room parts don't turn, and
     // their models are unit shapes scaled to size, so their own coordinates aren't meters
     let part_position = in.world_position - draw.model[3].xyz;
-    let surface = inked(color, light, part_position, normal, section_lines);
+    let surface = inked(color, light, part_position, normal, draw.params.z, section_lines);
     return vec4f(mix(surface, draw.color.rgb, emissive), draw.color.a);
 }

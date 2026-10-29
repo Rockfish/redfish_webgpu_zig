@@ -112,6 +112,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .stand_point = vec3(2.75, 0.0, -1.5),
         .facing = FACE_RIGHT_WALL,
         .action = .push,
+        .mesh = "red_button",
     },
     .{
         .kind = .door_button,
@@ -120,6 +121,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .stand_point = vec3(2.75, 0.0, -2.0),
         .facing = FACE_RIGHT_WALL,
         .action = .push,
+        .mesh = "door_button",
     },
     .{
         .kind = .lights_button,
@@ -128,6 +130,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .stand_point = vec3(2.75, 0.0, -2.5),
         .facing = FACE_RIGHT_WALL,
         .action = .push,
+        .mesh = "lights_button",
     },
     .{
         .kind = .lever,
@@ -136,6 +139,7 @@ pub const hotspots = [_]Hotspot(HotspotKind){
         .stand_point = vec3(2.75, 0.0, -1.0),
         .facing = FACE_RIGHT_WALL,
         .action = .push,
+        .mesh = "lever",
     },
     // The back wall's hotspots are two-bay cabinets in the row (build_room.py), each
     // the cabinet's fittings, standing out from its front at z -3.65

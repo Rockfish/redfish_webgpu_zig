@@ -29,6 +29,8 @@ pub const Settings = struct {
 
 pub const RoomSettings = struct {
     show_grid: bool = false,
+    /// A box around the hotspot under the mouse.
+    show_hotspot_bounds: bool = false,
     /// Draw the box robot even when the Blender model is loaded.
     use_placeholder: bool = false,
     /// Draw the room's equipment as boxes even when the Blender model is loaded.

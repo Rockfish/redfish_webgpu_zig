@@ -11,7 +11,9 @@ const c = wgpu.c;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-const ModelInstance = @import("model_instance.zig").ModelInstance;
+const model_instance = @import("model_instance.zig");
+const ModelInstance = model_instance.ModelInstance;
+const MeshParams = model_instance.MeshParams;
 const Context = @import("context.zig").Context;
 const GltfAsset = @import("gltf_asset.zig").GltfAsset;
 
@@ -140,7 +142,16 @@ pub const BakedAnimator = struct {
     /// joints from the storage buffer. Replaces the `frameId` / `numMeshes` /
     /// `animationOffset` uniforms of redfish's pbr_anim_baked.vert.
     /// `params` goes to each draw's `DrawUniforms.params` (see `Mesh.drawAt`).
-    pub fn draw(self: *Self, model: *ModelInstance, frame: *const Frame, shader: *const Shader, model_transform: Mat4, params: math.Vec4) void {
+    /// `overrides` give some meshes their own params (`ModelInstance.drawWithMeshParams`).
+    pub fn draw(
+        self: *Self,
+        model: *ModelInstance,
+        frame: *const Frame,
+        shader: *const Shader,
+        model_transform: Mat4,
+        params: math.Vec4,
+        overrides: []const MeshParams,
+    ) void {
         const header = self.headers[self.anim_id];
         const row_start = header.animation_offset + self.current_frame * (header.num_meshes + header.num_joints);
         const skin: SkinBinding = .{
@@ -150,7 +161,7 @@ pub const BakedAnimator = struct {
 
         for (0..header.num_meshes) |index| {
             const mesh = model.gltf_asset.meshes[index];
-            mesh.drawAt(frame, shader, model_transform, self.data[row_start + index], skin, params);
+            mesh.drawAt(frame, shader, model_transform, self.data[row_start + index], skin, model_instance.meshParams(index, params, overrides));
         }
     }
 

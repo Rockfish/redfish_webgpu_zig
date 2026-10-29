@@ -5,7 +5,10 @@
 // mesh draws bind their glTF material at group 1; only the base color (factor and
 // texture) and the emissive factor are used.
 //
-// draw.params: z, w are the hatch strength and spacing (ink_common.wgsl); x, y unused.
+// draw.params:
+//   x: the hover highlight, 0..1 (a control under the mouse; ink_common.wgsl).
+//   z, w: hatch strength and spacing (ink_common.wgsl).
+//   y: unused.
 //
 // With NORMAL_DEPTH set, the fragment writes the normal-depth target for the outline pass
 // instead of a color.
@@ -59,8 +62,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let emissive = clamp(max(material.emissive_factor.r, max(material.emissive_factor.g, material.emissive_factor.b)), 0.0, 1.0);
 
     let light = lighting(normal, in.world_position);
+    let highlight = draw.params.x;
     // Hatched in the part's own coordinates, so the lines turn with it: in world axes they
     // slid and flickered as the parts moved, even in idle
-    let surface = inked(color, light, in.part_position, normalize(in.part_normal), -1.0);
-    return vec4f(mix(surface, color, emissive), 1.0);
+    let surface = inked(color, light, in.part_position, normalize(in.part_normal), highlightedInk(highlight), -1.0);
+    let shown = mix(surface, color, emissive);
+    return vec4f(highlighted(shown, normal, in.world_position, highlight), 1.0);
 }
