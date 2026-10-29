@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: transitions; plan 022 phase E2
+- **games/the_station**: the game explores the room shown or is in a transition to the next, which takes no input: the camera pans to a room beside, or the screen fades out and in to another floor (`Game.mode`; `Overlay.fill`). Going back to a room's entry restores the robot mid-task. Tests for both transitions
+
 ### 2026-10-29 - The Station: connections; plan 022 phase E1
 - **games/the_station**: the door between Rooms 01 and 02 is a doorway connection with a gate (the door open); the robot walks to its end and through. Walking stays inside one room, in the room's coordinates. The ladder has a stop per floor: click to climb to the next stop up or down; a walk asked for on the ladder steps off at the room's stop. Tests for the doorway and the ladder. Plan 022's phase E split into E1-E5
 

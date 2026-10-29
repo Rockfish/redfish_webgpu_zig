@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1 done; next: phase E2)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1, E2 done; next: phase E3)
 
 ## Context
 
@@ -342,10 +342,10 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
 - [x] Tests: the doorway's gate, the walk through it, the ladder's stops
 
 #### E2. Modes
-- [ ] `Mode` with `explore` and `transition`; no input during a transition
-- [ ] The room shown changes by a transition: a pan between rooms side by side (the
+- [x] `Mode` with `explore` and `transition`; no input during a transition
+- [x] The room shown changes by a transition: a pan between rooms side by side (the
       doorway), a fade between floors (the ladder); a fill drawn by `overlay.zig`
-- [ ] Tests: a transition starts when the robot leaves the shown room, and ends
+- [x] Tests: a transition starts when the robot leaves the shown room, and ends
 
 #### E3. Rooms 03 and 04
 - [ ] The shell for stacked rooms: a room with a room below builds no floor; a hole in
@@ -580,3 +580,24 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
     walk through (shut: a look, open: into Room 02); the ladder (on, down a stop, a walk
     climbs back up and steps off).
   - Checked with captures of both rooms: the same as phase D's but the cursor.
+- 2026-10-29, phase E2, as built:
+  - `Game.mode`: `explore` or `transition` (`Transition`: the room it goes to, `pan` or
+    `fade`, its time). `Game.room` is the room shown; the hotspots picked and the
+    camera's framing are its. A transition starts when the robot's room
+    (`robotRoom`: where its middle is, 0.7 m above its feet, so it changes floors
+    halfway through a floor) isn't the room shown: a pan for a room in the same row of
+    cells (`station.areSideBySide`), showing the new room at once and ending as the
+    robot stops; a fade for another floor, 0.35 s out, the room changing when black,
+    0.35 s in. No hover and no clicks during a transition; the robot goes on with its
+    task.
+  - The room-entry snapshot is taken as the room shown changes, and a `Snapshot` now
+    holds the whole `Robot` (its task too): going back to a room's entry resumes a walk
+    through a doorway or a climb.
+  - main: the camera pans to the room shown, or cuts to it while fading (`isCut`); the
+    fade is `Overlay.fill` (`shaders/overlay_fill.wgsl`) in black at `Game.fade()`,
+    before the cursor. The floor grid is the room shown's.
+  - Only the pan happens in the game until E3 (the ladder's lower stop is in Room 02).
+  - Tests: through the doorway, a pan with the room shown changed at once and an end;
+    a fade black at its middle, changing the room there. 153 pass.
+  - Checked on screen: the game held mid-fade (temporary edit) darkens to about half,
+    the cursor over it.

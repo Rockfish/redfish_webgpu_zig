@@ -2,6 +2,10 @@
 //! robot (plan 021, phases B and G; plan 022, phase D). A room's own hotspot is used by
 //! its room (`room_01.use`, `room_02.use`); the door and the ladder are crossed here.
 //!
+//! The game explores the room shown, or is in a transition to the next (`Mode`, plan
+//! 022 phase E2): when the robot leaves the room shown, the camera pans to a room beside
+//! it, or the screen fades to one above or below. A transition takes no input.
+//!
 //! The opening: main power is offline and the alarm sounds (`state.zig`). Through Room
 //! 01's door, Room 02 and its ladder down.
 
@@ -31,19 +35,40 @@ const MESSAGE_TIME: f32 = 4.0;
 /// How fast the hovered control's highlight eases in and out (`motion.dampAlpha` rate):
 /// most of the way in about 0.15 s.
 const HIGHLIGHT_RATE: f32 = 20.0;
+/// Seconds to fade out, and again to fade in.
+const FADE_TIME: f32 = 0.35;
+/// The robot's middle above its feet: the room it is in is the room its middle is in,
+/// so it changes floors about halfway through the floor on a ladder.
+const ROBOT_MIDDLE: f32 = 0.7;
 
-/// What a restart goes back to: the station's state and where the robot stood. The
-/// default is the start.
+/// What a restart goes back to: the station's state and the robot, doing what it was
+/// doing. The default is the start.
 pub const Snapshot = struct {
     station: Station = .{},
-    robot_position: Vec3 = station.place(.room_01, room_01.ROBOT_START),
-    robot_yaw: f32 = 0.0,
+    robot: Robot = .{ .position = station.place(.room_01, room_01.ROBOT_START) },
+};
+
+pub const Mode = union(enum) {
+    /// Input drives the robot in the room shown.
+    explore,
+    transition: Transition,
+};
+
+/// From the room shown to room `to`: a pan for a room beside it, which ends as the robot
+/// stops (through the doorway); a fade for another floor, out and in again, the room
+/// changing between.
+pub const Transition = struct {
+    to: station.RoomId,
+    kind: enum { pan, fade },
+    /// Seconds since it started.
+    time: f32 = 0.0,
 };
 
 pub const Game = struct {
     robot: Robot = .{ .position = station.place(.room_01, room_01.ROBOT_START) },
     station: Station = .{},
-    /// The robot's room, and the game as the robot entered it, for going back there.
+    mode: Mode = .explore,
+    /// The room shown, and the game as the robot entered it, for going back there.
     room: station.RoomId = .room_01,
     room_entry: Snapshot = .{},
     /// 0..1: how far Room 01's door has slid into the wall.
@@ -61,25 +86,25 @@ pub const Game = struct {
     const Self = @This();
 
     /// `ray` is the mouse ray, null while the mouse is over a panel; `clicked` is true on
-    /// the frame the left button goes down. Only the robot's room's hotspots are picked:
-    /// the camera shows that room.
+    /// the frame the left button goes down. Only the room shown's hotspots are picked,
+    /// and none during a transition.
     pub fn update(self: *Self, ray: ?Ray, clicked: bool, dt: f32) void {
-        const shown = self.robotRoom();
-        const filter: RoomFilter = .{ .room = shown };
-        self.hovered = if (ray) |mouse_ray| interaction.pick(&station.hotspots, filter, mouse_ray, station.interior(shown)) else .nothing;
-        if (clicked) {
-            self.sendRobot();
+        switch (self.mode) {
+            .explore => {
+                const filter: RoomFilter = .{ .room = self.room };
+                self.hovered = if (ray) |mouse_ray| interaction.pick(&station.hotspots, filter, mouse_ray, station.interior(self.room)) else .nothing;
+                if (clicked) {
+                    self.sendRobot();
+                }
+            },
+            .transition => self.hovered = .nothing,
         }
         self.updateHighlight(dt);
 
         if (self.robot.update(dt)) |hotspot| {
             self.use(station.hotspots[hotspot].kind);
         }
-        const room = self.robotRoom();
-        if (room != self.room) {
-            self.room = room;
-            self.room_entry = self.snapshot();
-        }
+        self.updateMode(dt);
 
         const door_target: f32 = if (self.station.isDoorOpen(.room_01_left)) 1.0 else 0.0;
         const door_step = dt / DOOR_OPEN_TIME;
@@ -87,9 +112,29 @@ pub const Game = struct {
         self.message_time = @max(self.message_time - dt, 0.0);
     }
 
-    /// The room the robot is in, which the camera shows.
+    /// The room the robot is in: the room shown, but during a transition.
     pub fn robotRoom(self: *const Self) station.RoomId {
-        return station.roomAt(self.robot.position);
+        return station.roomAt(self.robot.position.add(vec3(0.0, ROBOT_MIDDLE, 0.0)));
+    }
+
+    /// 0..1, how far the screen has faded to black.
+    pub fn fade(self: *const Self) f32 {
+        const transition = switch (self.mode) {
+            .transition => |transition| transition,
+            .explore => return 0.0,
+        };
+        return switch (transition.kind) {
+            .pan => 0.0,
+            .fade => 1.0 - @abs(transition.time - FADE_TIME) / FADE_TIME,
+        };
+    }
+
+    /// Whether the camera cuts to the room shown rather than panning: while fading.
+    pub fn isCut(self: *const Self) bool {
+        return switch (self.mode) {
+            .transition => |transition| transition.kind == .fade,
+            .explore => false,
+        };
     }
 
     /// The name of the hotspot under the mouse, or "".
@@ -114,18 +159,55 @@ pub const Game = struct {
     }
 
     pub fn snapshot(self: *const Self) Snapshot {
-        return .{ .station = self.station, .robot_position = self.robot.position, .robot_yaw = self.robot.yaw };
+        return .{ .station = self.station, .robot = self.robot };
     }
 
-    /// The game as it was at `saved`, the robot standing still; `.{}` restarts it.
+    /// The game as it was at `saved`; `.{}` restarts it.
     pub fn restore(self: *Self, saved: Snapshot) void {
         self.* = .{
-            .robot = .{ .position = saved.robot_position, .yaw = saved.robot_yaw },
+            .robot = saved.robot,
             .station = saved.station,
-            .room = station.roomAt(saved.robot_position),
             .room_entry = saved,
             .door_open = if (saved.station.isDoorOpen(.room_01_left)) 1.0 else 0.0,
         };
+        self.room = self.robotRoom();
+    }
+
+    /// A transition starts as the robot leaves the room shown; a pan shows its room at
+    /// once and ends as the robot stops, a fade changes the room when the screen is
+    /// black.
+    fn updateMode(self: *Self, dt: f32) void {
+        switch (self.mode) {
+            .explore => {
+                const room = self.robotRoom();
+                if (room == self.room) {
+                    return;
+                }
+                const is_beside = station.areSideBySide(self.room, room);
+                self.mode = .{ .transition = .{ .to = room, .kind = if (is_beside) .pan else .fade } };
+                if (is_beside) {
+                    self.enterRoom(room);
+                }
+            },
+            .transition => |transition| {
+                var next = transition;
+                next.time += dt;
+                const is_over = switch (transition.kind) {
+                    .pan => self.robot.task == .idle,
+                    .fade => next.time >= 2.0 * FADE_TIME,
+                };
+                if (transition.kind == .fade and transition.time < FADE_TIME and next.time >= FADE_TIME) {
+                    self.enterRoom(transition.to);
+                }
+                self.mode = if (is_over) .explore else .{ .transition = next };
+            },
+        }
+    }
+
+    /// Shows room `id`, and remembers the game as the robot entered it.
+    fn enterRoom(self: *Self, id: station.RoomId) void {
+        self.room = id;
+        self.room_entry = self.snapshot();
     }
 
     /// Eases the highlight in on the hovered hotspot, and out after the mouse leaves it.
@@ -356,6 +438,7 @@ test "room entry: the game as the robot came in" {
     game.robot.position = station.place(.room_02, room_02.DOOR_STAND_POINT);
     game.update(null, false, 0.0);
     try std.testing.expectEqual(station.RoomId.room_02, game.room);
+    try std.testing.expect(game.mode == .transition);
 
     game.use(.{ .room_01 = .red_button });
     game.restore(game.room_entry);
@@ -404,4 +487,31 @@ test "ladder: on at Room 02's stop, down to the next, back up and off to a walk"
     runFor(&game, 20.0);
     try std.testing.expect(game.robot.currentLadder() == null);
     try std.testing.expect(game.robot.position.sub(target).length() < 1e-3);
+}
+
+test "transition: through the doorway, a pan to Room 02 with no input until the robot stops" {
+    var game: Game = .{};
+    game.station.doors.set(.room_01_left, .open);
+    game.sendToHotspot(hotspotIndex(.{ .doorway = .room_01_02 }));
+    var frames: usize = 0;
+    while (game.mode == .explore and frames < 1000) : (frames += 1) {
+        game.update(null, false, 1.0 / 60.0);
+    }
+    try std.testing.expectEqual(station.RoomId.room_02, game.mode.transition.to);
+    try std.testing.expectEqual(station.RoomId.room_02, game.room);
+    try std.testing.expectEqual(@as(f32, 0.0), game.fade());
+
+    runFor(&game, 5.0);
+    try std.testing.expect(game.mode == .explore);
+}
+
+test "transition: a fade is black halfway, where the room shown changes" {
+    var game: Game = .{};
+    game.mode = .{ .transition = .{ .to = .room_02, .kind = .fade, .time = FADE_TIME - 0.01 } };
+    try std.testing.expect(game.isCut());
+    try std.testing.expect(game.fade() > 0.9);
+    game.update(null, false, 0.02);
+    try std.testing.expectEqual(station.RoomId.room_02, game.room);
+    game.update(null, false, FADE_TIME);
+    try std.testing.expect(game.mode == .explore);
 }

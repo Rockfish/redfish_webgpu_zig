@@ -54,6 +54,7 @@ const Scenery = station.Scenery;
 const Station = @import("state.zig").Station;
 const Vec3 = math.Vec3;
 const vec3 = math.vec3;
+const vec4 = math.vec4;
 
 /// How fast the camera pans to the robot's room (`motion.dampAlpha` rate).
 const PAN_RATE: f32 = 3.0;
@@ -146,8 +147,8 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     const camera = &settings.camera;
     const style = &settings.ink;
     var game: Game = .{};
-    // The robot's room's framing; its center eases there as the robot changes rooms
-    var view = station.framing(game.robotRoom());
+    // The shown room's framing; its center eases there as the room shown changes
+    var view = station.framing(game.room);
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
@@ -161,7 +162,9 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
 
         const time = input.total_time;
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
-        view = panTo(view, station.framing(game.robotRoom()), input.delta_time);
+        // A pan to a room beside; a cut while the screen fades to another floor
+        const target = station.framing(game.room);
+        view = if (game.isCut()) target else panTo(view, target, input.delta_time);
         const render_context = camera.renderContext(view, aspect, time);
         const visible = visibleRooms(camera, view, aspect);
 
@@ -203,7 +206,11 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         frame.beginSurfacePass(CLEAR_COLOR);
         scene.draw(&frame, scene_shaders, style.hatching());
         ink_pass.drawOutlines(&frame, style.*);
-        drawLines(&frame, &lines, settings.room, game.robotRoom(), game.hovered);
+        drawLines(&frame, &lines, settings.room, game.room, game.hovered);
+        const fade = game.fade();
+        if (fade > 0.0) {
+            sprites.fill(&frame, vec4(0.0, 0.0, 0.0, fade));
+        }
         if (cursor_sheet) |sheet| {
             if (!input.gui_has_mouse) {
                 sheet.draw(&frame, &sprites, game.cursor(), input.mouse_x, input.mouse_y, input.window_width, input.window_height);
@@ -355,13 +362,13 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, visible: 
     return lights;
 }
 
-/// The floor grid and the bounds of the hotspot under the mouse, if on (for checking a
-/// hotspot's box; the game shows a hotspot by lighting it up).
-fn drawLines(frame: *const Frame, lines: *Lines, room: settings_file.RoomSettings, robot_room: station.RoomId, hovered: interaction.Target) void {
+/// The room shown's floor grid and the bounds of the hotspot under the mouse, if on (for
+/// checking a hotspot's box; the game shows a hotspot by lighting it up).
+fn drawLines(frame: *const Frame, lines: *Lines, room: settings_file.RoomSettings, shown: station.RoomId, hovered: interaction.Target) void {
     var segments: [MAX_LINES]LineSegment = undefined;
     var count: usize = 0;
     if (room.show_grid) {
-        count += floorGrid(segments[0..GRID_LINES], robot_room);
+        count += floorGrid(segments[0..GRID_LINES], shown);
     }
     switch (hovered) {
         .hotspot => |index| if (room.show_hotspot_bounds) {

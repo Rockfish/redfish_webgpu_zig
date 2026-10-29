@@ -199,6 +199,16 @@ pub fn roomAt(position: Vec3) RoomId {
     return nearest;
 }
 
+/// Whether rooms `a` and `b` share a row of cells: beside each other, not on other
+/// floors.
+pub fn areSideBySide(a: RoomId, b: RoomId) bool {
+    const first = room(a);
+    const second = room(b);
+    const first_top = first.row + @as(i32, @intCast(first.cells_high));
+    const second_top = second.row + @as(i32, @intCast(second.cells_high));
+    return first.row < second_top and second.row < first_top;
+}
+
 /// A room's opening and the cut edges around it, on the opening's plane (z = 0).
 pub fn framing(id: RoomId) Framing {
     const shown = room(id);
@@ -561,6 +571,11 @@ test "hotspots, doorways, and the ladder are placed by their room's origin" {
     }
     try testing.expectEqual(@as(?usize, 0), ladderStopIn(.room_02));
     try testing.expectEqual(@as(?usize, null), ladderStopIn(.room_01));
+}
+
+test "areSideBySide: Rooms 01 and 02 share row 0" {
+    try testing.expect(areSideBySide(.room_01, .room_02));
+    try testing.expect(areSideBySide(.room_02, .room_02));
 }
 
 test "a doorway's gate: the door between Rooms 01 and 02 opens it" {

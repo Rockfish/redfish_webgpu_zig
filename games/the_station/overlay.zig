@@ -1,6 +1,7 @@
 //! Sprites drawn over the frame in screen space (plan 022, phase B3): the cursor first,
 //! later phase F's inventory bar and remarks. Each is a rectangle of a sprite sheet drawn
 //! at a rectangle of the window, alpha blended, last in the window pass (before ImGui).
+//! And a fill of the whole window in one color, for a fade (phase E2).
 //!
 //! Positions and sizes are in window units, as the mouse is (`Input.mouse_x`), with the
 //! origin at the top-left; `draw` turns them into the framebuffer's clip space.
@@ -30,6 +31,7 @@ pub const Rect = struct {
 
 pub const Overlay = struct {
     shader: *Shader,
+    fill_shader: *Shader,
     quad: *Shape,
 
     const Self = @This();
@@ -39,6 +41,9 @@ pub const Overlay = struct {
             .vertex_buffers = &Shape.vertex_buffer_layouts,
             .material = .texture,
         });
+        const fill_shader = try Shader.init(context.io, context.alloc, gpu, "games/the_station/shaders/overlay_fill.wgsl", .{
+            .vertex_buffers = &Shape.vertex_buffer_layouts,
+        });
 
         // Over everything in the window pass, blended
         const quad = try core.shapes.createSquare(context.alloc, gpu);
@@ -47,7 +52,7 @@ pub const Overlay = struct {
         quad.is_depth_write = false;
         quad.is_transparent = true;
 
-        return .{ .shader = shader, .quad = quad };
+        return .{ .shader = shader, .fill_shader = fill_shader, .quad = quad };
     }
 
     /// Draws `sprite` (in the sheet's uv, 0..1 from its top-left) of `sheet` at `place` in
@@ -74,8 +79,16 @@ pub const Overlay = struct {
         self.quad.draw(frame, self.shader, uniforms);
     }
 
+    /// The whole window in `color`, blended by its alpha.
+    pub fn fill(self: *const Self, frame: *const Frame, color: Vec4) void {
+        // The square's -0.5..0.5 to clip space's -1..1
+        const model = Mat4.fromScale(vec3(2.0, 2.0, 1.0));
+        self.quad.draw(frame, self.fill_shader, DrawUniforms.init(model, color));
+    }
+
     pub fn releaseGpuObjects(self: *const Self) void {
         self.quad.releaseGpuObjects();
+        self.fill_shader.releaseGpuObjects();
         self.shader.releaseGpuObjects();
     }
 };
