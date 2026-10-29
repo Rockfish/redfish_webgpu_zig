@@ -34,7 +34,7 @@ pub const VertexAttr = struct {
 };
 
 pub const MAX_JOINTS = 100;
-pub const MAX_POINT_LIGHTS = 4;
+pub const MAX_POINT_LIGHTS = 8;
 /// Lights with a shadow map layer in a `ShadowMapArray`.
 pub const MAX_SHADOW_LAYERS = 4;
 
@@ -91,6 +91,11 @@ pub const PointLightUniforms = extern struct {
     quadratic: f32,
     enabled: u32,
     _pad: [2]u32 = .{ 0, 0 },
+    /// With `is_bounded`, the light reaches only points inside `bounds_min..bounds_max`.
+    bounds_min: Vec3 = Vec3.init(0.0, 0.0, 0.0),
+    is_bounded: u32 = 0,
+    bounds_max: Vec3 = Vec3.init(0.0, 0.0, 0.0),
+    _pad1: f32 = 0.0,
 };
 
 /// Mirrors `Lights` in shaders/common.wgsl. Filled by `SceneLights.uniforms()`; all zero
@@ -187,10 +192,10 @@ pub const MaterialUniforms = extern struct {
 comptime {
     std.debug.assert(@sizeOf(MaterialUniforms) == 48);
     std.debug.assert(@sizeOf(DirectionLightUniforms) == 32);
-    std.debug.assert(@sizeOf(PointLightUniforms) == 48);
-    std.debug.assert(@sizeOf(LightsUniforms) == 256);
-    std.debug.assert(@sizeOf(FrameUniforms) == 528);
-    std.debug.assert(@offsetOf(FrameUniforms, "light_space") == 464);
+    std.debug.assert(@sizeOf(PointLightUniforms) == 80);
+    std.debug.assert(@sizeOf(LightsUniforms) == 704);
+    std.debug.assert(@sizeOf(FrameUniforms) == 976);
+    std.debug.assert(@offsetOf(FrameUniforms, "light_space") == 912);
     std.debug.assert(@sizeOf(DrawUniforms) == 176);
     std.debug.assert(@sizeOf(ShadowLayerUniforms) == 256);
     std.debug.assert(@offsetOf(DrawUniforms, "params") == 160);

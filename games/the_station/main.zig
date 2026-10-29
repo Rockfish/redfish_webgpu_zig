@@ -60,6 +60,9 @@ const vec4 = math.vec4;
 const PAN_RATE: f32 = 3.0;
 /// How much the ceiling lights' tubes glow with the emergency lights on.
 const EMERGENCY_GLOW: f32 = 0.6;
+/// Each tube's share of the emergency light (`LightSettings.emergency`): a room has a
+/// light at each tube, two in a room 3 cells wide, where it had one in its middle.
+const EMERGENCY_PER_TUBE: f32 = 0.6;
 /// The hovered control's highlight breathes this much below full, this often a second.
 const HIGHLIGHT_PULSE_DEPTH: f32 = 0.2;
 const HIGHLIGHT_PULSE_RATE: f32 = 0.8;
@@ -68,8 +71,8 @@ const HIGHLIGHT_PULSE_RATE: f32 = 0.8;
 const CLEAR_COLOR = [4]f64{ 0.01, 0.01, 0.012, 1.0 };
 /// One line per meter across and along the floor, for a room up to 20 m wide.
 const GRID_LINES = 20 + @as(usize, @intFromFloat(room_kit.DEPTH)) + 2;
-/// The floor grid plus one hover outline.
-const MAX_LINES = GRID_LINES + 12;
+/// The floor grid (a line may be split around a hole) plus one hover outline.
+const MAX_LINES = 2 * GRID_LINES + 12;
 
 /// What a frame draws, in each of its passes.
 const Scene = struct {
@@ -147,8 +150,9 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
     const camera = &settings.camera;
     const style = &settings.ink;
     var game: Game = .{};
-    // The shown room's framing; its center eases there as the room shown changes
-    var view = station.framing(game.room);
+    // The shown room's framing; its center eases there as the room shown changes or, in a
+    // large room, as the robot walks
+    var view = station.cameraFraming(game.room, game.robot.position, settings.room.frame_whole_room);
 
     // Before gui.init: ImGui's GLFW backend chains to Input's callbacks
     const input = Input.init(window);
@@ -163,7 +167,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const time = input.total_time;
         const aspect = @as(f32, @floatFromInt(gpu.width)) / @as(f32, @floatFromInt(gpu.height));
         // A pan to a room beside; a cut while the screen fades to another floor
-        const target = station.framing(game.room);
+        const target = station.cameraFraming(game.room, game.robot.position, settings.room.frame_whole_room);
         view = if (game.isCut()) target else panTo(view, target, input.delta_time);
         const render_context = camera.renderContext(view, aspect, time);
         const visible = visibleRooms(camera, view, aspect);
@@ -280,8 +284,8 @@ fn setOsCursor(input: *const Input, has_game_cursor: bool, hovered: interaction.
     }
 }
 
-/// `view` with its center eased toward `target`'s, and `target`'s size: the camera pans
-/// to the robot's room.
+/// `view` with its center and floor eased toward `target`'s, and `target`'s size: the
+/// camera pans to the robot's room, and follows it in a large one.
 fn panTo(view: Framing, target: Framing, dt: f32) Framing {
     const alpha = core.motion.dampAlpha(PAN_RATE, dt);
     var panned = target;
@@ -326,9 +330,9 @@ fn highlight(game: *const Game, time: f32, strength: f32) ?station.Highlight {
 }
 
 /// Main power is out: no light from above, only a dim ambient, the alarm's red point
-/// light, and with the emergency lights on a yellowish light under each room's ceiling.
-/// Only the rooms the camera sees are lit, the room shown first, then the nearest (4
-/// point lights at most).
+/// light, and with the emergency lights on a yellowish light under each ceiling tube.
+/// Each room's lights stay in the room (`station.lightBounds`). Only the rooms the camera
+/// sees are lit, the room shown first, then the nearest (8 point lights at most).
 fn stationLights(settings: Settings, state: Station, alarm_level: f32, shown: station.RoomId, visible: std.EnumSet(station.RoomId)) SceneLights {
     const is_emergency = state.lights() == .emergency;
 
@@ -338,6 +342,7 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, shown: st
     else
         vec3(1.0, 1.0, 1.0).mulScalar(settings.lights.dark);
     lights.direction_light = .{ .dir = vec3(0.25, -1.0, -0.6), .color = vec3(0.0, 0.0, 0.0) };
+    const alarm_bounds = station.lightBounds(.room_01);
     lights.setPointLight(0, .{
         .world_pos = station.place(.room_01, room_01.ALARM_LIGHT_POSITION),
         .color = room_01.alarmLightColor(settings.alarm.intensity * alarm_level),
@@ -345,6 +350,7 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, shown: st
         .linear = 0.35,
         .quadratic = 0.15,
         .enabled = state.isAlarmSounding() and visible.contains(.room_01),
+        .bounds = .{ .min = alarm_bounds.min, .max = alarm_bounds.max },
     });
     var lit: [station.ROOM_COUNT]station.RoomId = undefined;
     lit[0] = shown;
@@ -356,18 +362,27 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, shown: st
         lit[count] = id;
     }
     std.mem.sort(station.RoomId, lit[1..count], shown, isNearer);
-    for (lit[0..count], 1..) |id, index| {
-        if (index == core.bindings.MAX_POINT_LIGHTS) {
-            break;
+    if (!is_emergency) {
+        return lights;
+    }
+    var index: usize = 1;
+    for (lit[0..count]) |id| {
+        const bounds = station.lightBounds(id);
+        for (station.room(id).ceiling_lights) |x| {
+            if (index == core.bindings.MAX_POINT_LIGHTS) {
+                return lights;
+            }
+            lights.setPointLight(index, .{
+                .world_pos = station.emergencyLightPosition(id, x),
+                .color = station.EMERGENCY_TINT.mulScalar(settings.lights.emergency * EMERGENCY_PER_TUBE),
+                .constant = 1.0,
+                .linear = 0.2,
+                .quadratic = 0.08,
+                .enabled = true,
+                .bounds = .{ .min = bounds.min, .max = bounds.max },
+            });
+            index += 1;
         }
-        lights.setPointLight(index, .{
-            .world_pos = station.emergencyLightPosition(id),
-            .color = station.EMERGENCY_TINT.mulScalar(settings.lights.emergency),
-            .constant = 1.0,
-            .linear = 0.2,
-            .quadratic = 0.08,
-            .enabled = is_emergency,
-        });
     }
     return lights;
 }
@@ -384,7 +399,7 @@ fn drawLines(frame: *const Frame, lines: *Lines, room: settings_file.RoomSetting
     var segments: [MAX_LINES]LineSegment = undefined;
     var count: usize = 0;
     if (room.show_grid) {
-        count += floorGrid(segments[0..GRID_LINES], shown);
+        count += floorGrid(segments[0 .. 2 * GRID_LINES], shown);
     }
     switch (hovered) {
         .hotspot => |index| if (room.show_hotspot_bounds) {
@@ -399,24 +414,41 @@ fn drawLines(frame: *const Frame, lines: *Lines, room: settings_file.RoomSetting
     }
 }
 
-/// A 1 m grid on room `id`'s floor, to see the perspective by. Returns the number of
-/// segments.
+/// A 1 m grid on room `id`'s floor, to see the perspective by, around a hole in it.
+/// Returns the number of segments.
 fn floorGrid(segments: []LineSegment, id: station.RoomId) usize {
     const half_width = station.room(id).width() / 2.0;
+    const hole = station.room(id).floor_hole;
     const y = 0.002;
     var count: usize = 0;
 
     var x = -half_width;
     while (x <= half_width) : (x += 1.0) {
-        segments[count] = .{ .start = station.place(id, vec3(x, y, 0.0)), .end = station.place(id, vec3(x, y, -room_kit.DEPTH)), .color = .black };
-        count += 1;
+        const across = hole != null and x > hole.?.min_x and x < hole.?.max_x;
+        if (across) {
+            count += gridLine(segments[count..], id, vec3(x, y, 0.0), vec3(x, y, hole.?.max_z));
+            count += gridLine(segments[count..], id, vec3(x, y, hole.?.min_z), vec3(x, y, -room_kit.DEPTH));
+        } else {
+            count += gridLine(segments[count..], id, vec3(x, y, 0.0), vec3(x, y, -room_kit.DEPTH));
+        }
     }
     var z: f32 = 0.0;
     while (z >= -room_kit.DEPTH) : (z -= 1.0) {
-        segments[count] = .{ .start = station.place(id, vec3(-half_width, y, z)), .end = station.place(id, vec3(half_width, y, z)), .color = .black };
-        count += 1;
+        const across = hole != null and z > hole.?.min_z and z < hole.?.max_z;
+        if (across) {
+            count += gridLine(segments[count..], id, vec3(-half_width, y, z), vec3(hole.?.min_x, y, z));
+            count += gridLine(segments[count..], id, vec3(hole.?.max_x, y, z), vec3(half_width, y, z));
+        } else {
+            count += gridLine(segments[count..], id, vec3(-half_width, y, z), vec3(half_width, y, z));
+        }
     }
     return count;
+}
+
+/// One grid line from `start` to `end` in room `id`'s coordinates. Returns 1.
+fn gridLine(segments: []LineSegment, id: station.RoomId, start: Vec3, end: Vec3) usize {
+    segments[0] = .{ .start = station.place(id, start), .end = station.place(id, end), .color = .black };
+    return 1;
 }
 
 /// A line of text in a small window that ignores the mouse, at `position` (window units);
@@ -479,6 +511,7 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
         panel.checkbox(.room, .show_hotspot_bounds, "hotspot bounds");
         panel.checkbox(.room, .use_placeholder, "placeholder robot");
         panel.checkbox(.room, .use_greybox, "greybox room");
+        panel.checkbox(.room, .frame_whole_room, "frame large rooms whole");
         _ = zgui.comboFromEnum("door", game.station.doors.getPtr(.room_01_left));
         if (zgui.button("restart", .{})) {
             game.restore(.{});

@@ -24,6 +24,14 @@ pub const PointLight = struct {
     linear: f32 = 0.5,
     quadratic: f32 = 3.0,
     enabled: bool = false,
+    /// The box the light reaches, if not everywhere: a light in a room that doesn't shine
+    /// through its walls (shaders test it with `pointLightReaches`, common.wgsl).
+    bounds: ?Bounds = null,
+};
+
+pub const Bounds = struct {
+    min: Vec3,
+    max: Vec3,
 };
 
 pub const SceneLights = struct {
@@ -97,10 +105,26 @@ pub const SceneLights = struct {
                 .quadratic = light.quadratic,
                 .enabled = @intFromBool(light.enabled),
             };
+            if (light.bounds) |bounds| {
+                out.bounds_min = bounds.min;
+                out.bounds_max = bounds.max;
+                out.is_bounded = 1;
+            }
         }
         return result;
     }
 };
+
+test "uniforms carries a point light's bounds" {
+    var lights = SceneLights.init();
+    lights.setPointLight(0, .{ .enabled = true, .bounds = .{ .min = vec3(-1.0, 0.0, -4.0), .max = vec3(1.0, 3.0, 0.0) } });
+    lights.setPointLight(1, .{ .enabled = true });
+
+    const u = lights.uniforms();
+    try std.testing.expectEqual(@as(u32, 1), u.point_lights[0].is_bounded);
+    try std.testing.expectEqual(@as(f32, 3.0), u.point_lights[0].bounds_max.y);
+    try std.testing.expectEqual(@as(u32, 0), u.point_lights[1].is_bounded);
+}
 
 test "uniforms carries point lights and the count" {
     var lights = SceneLights.init();

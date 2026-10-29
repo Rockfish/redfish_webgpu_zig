@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: the generator room; plan 022 phase E4
+- **core**: a point light can be bounded to a box it reaches (`PointLight.bounds`, `pointLightReaches` in common.wgsl, honored by pbr.wgsl); 8 point lights (was 4)
+- **games/the_station**: the generator room (greybox, 6 x 2, under Room 01) through an open doorway from Room 04: a big generator set along the back wall under pipe runs and a cable tray, switchgear and a gauge board beside it, the generator panel standing right of it (`generator_room.zig`). In a large room the camera shows a window of Room 01's size following the robot (`station.cameraFraming`); the panel's "frame large rooms whole" shows all of it. Emergency lights at each ceiling tube, kept in their room (no light through walls, no lit disc on the ceiling); the generator room's three fittings hang on rods. A hole is declared by the room whose floor it is in (`Room.floor_hole`)
+
 ### 2026-10-29 - The Station: Rooms 03 and 04; plan 022 phase E3
 - **games/the_station**: two greybox rooms below Room 02, down its ladder: the shaft through Room 03 to Room 04 (`shaft.zig`), the ladder stopping at each floor, a fade between floors. Stacked rooms share the slab between them (`Shell.floor`, `Shell.ceiling_hole`); each room draws the ladder in its own space. The camera's eye is above the shown room's floor (`Framing.floor_y`); the room shown is lit first
 - **the-station**: Room 02's ladder and shaft pipe end at the bottom of its floor (`build_room_02.py`), re-exported

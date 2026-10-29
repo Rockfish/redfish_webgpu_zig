@@ -61,12 +61,13 @@ pub const room: station.Room = .{
 };
 
 /// The shell: a doorway to Room 02 in the left wall, framed on both sides, its door drawn
-/// on its own (it slides); a solid right wall.
+/// on its own (it slides); a solid right wall; the floor is the generator room's ceiling.
 const shell: room_kit.Shell = .{
     .width = WIDTH,
     .height = HEIGHT,
     .left = .{ .doorway = .{ .door = .separate, .is_framed_outside = true } },
     .right = .solid,
+    .floor = .room_below,
 };
 
 /// The left wall's center line; the door slides along it, inside the wall. Room 02's

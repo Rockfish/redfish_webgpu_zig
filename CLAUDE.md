@@ -106,7 +106,9 @@ docs/
 - Group 2 binding 1 = joint matrices (storage); skinned draws set `joint_offset` and
   `DrawFlags.skinned`. Draw each posed `ModelInstance` once per frame
 - Per-frame vertex data (lines, instance attributes) goes through `gpu.vertex_ring`
-- Lights: `SceneLights.uniforms()` into `FrameUniforms.lights`, once per frame
+- Lights: `SceneLights.uniforms()` into `FrameUniforms.lights`, once per frame; up to 8
+  point lights, each optionally bounded to a box (`PointLight.bounds`, tested in WGSL
+  by `pointLightReaches`)
 - Multi-pass frames: `gpu.acquireFrame()`, then `frame.beginPass(PassTarget)` / `endPass`
   per pass; group 3 (e.g. `ShadowMap.bind`, or `ShadowMapArray.bindCaster` per shadow pass
   and `.bind` for receivers) is set after each `beginPass`. Shaders for render

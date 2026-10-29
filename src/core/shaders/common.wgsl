@@ -14,6 +14,20 @@ struct PointLight {
     linear: f32,
     quadratic: f32,
     enabled: u32,
+    // With is_bounded, the light reaches only points inside bounds_min..bounds_max
+    // (`pointLightReaches`): a light in a room that doesn't shine through its walls.
+    bounds_min: vec3f,
+    is_bounded: u32,
+    bounds_max: vec3f,
+}
+
+// Whether `light` reaches `position`: always, unless it is bounded and the point is
+// outside its bounds.
+fn pointLightReaches(light: PointLight, position: vec3f) -> bool {
+    if (light.is_bounded == 0u) {
+        return true;
+    }
+    return all(position >= light.bounds_min) && all(position <= light.bounds_max);
 }
 
 // The frame's SceneLights (src/core/lights.zig).

@@ -41,6 +41,9 @@ pub const DOOR_CENTER_Z: f32 = -2.2;
 pub const DOOR_WIDTH: f32 = 1.2;
 pub const DOOR_HEIGHT: f32 = 2.2;
 
+/// The ceiling tube fittings' middle, front to back (`PartBuilder.addCeilingLights`).
+pub const CEILING_LIGHT_Z: f32 = -2.1;
+
 /// The deck below a room with no room under it: solid under the floor, drawn as a cut.
 pub const BELOW_DEPTH: f32 = 3.0;
 pub const BELOW_COLOR_SRGB: f32 = 0.35;
@@ -97,9 +100,9 @@ pub const Shell = struct {
     left: Side,
     right: Side,
     floor: Floor = .deck,
-    /// A hole in the ceiling, where a ladder comes down from the room above (whose floor
-    /// the ceiling is).
-    ceiling_hole: ?Hole = null,
+    /// Solid station, a cell high, on the ceiling where no room is above it (drawn as a
+    /// cut, as the deck below), from `min_x` to `max_x`.
+    deck_above: ?Span = null,
 
     fn innerMinX(self: Shell) f32 {
         return -self.width / 2.0;
@@ -124,13 +127,20 @@ pub const Floor = enum { deck, room_below };
 
 pub const Doorway = struct {
     /// The door in it: none built with the wall (a door drawn on its own, as Room 01's
-    /// sliding door), or shut for good.
-    door: enum { separate, locked },
+    /// sliding door), shut for good, or none at all (an open doorway).
+    door: enum { separate, locked, none },
     /// A frame on the far side too, where a room is beyond.
     is_framed_outside: bool,
 };
 
-/// A hole in a ceiling (the floor above), on x and z.
+/// From `min_x` to `max_x`, in a room's coordinates.
+pub const Span = struct {
+    min_x: f32,
+    max_x: f32,
+};
+
+/// A hole in a floor, on x and z: the room's own (`station.Room.floor_hole`), built in
+/// the ceiling of the room below.
 pub const Hole = struct {
     min_x: f32,
     max_x: f32,
@@ -145,21 +155,27 @@ pub const PartBuilder = struct {
 
     /// Ceiling, back wall, the side walls the room builds, and the floor and the deck
     /// below as a solid cut unless a room is below. Floor, ceiling, and back wall run
-    /// under, over, and behind the side walls, so the cut reads as one frame. With a hole,
-    /// the ceiling is four pieces around it.
-    pub fn addShell(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part), shell: Shell) !void {
+    /// under, over, and behind the side walls, so the cut reads as one frame. With
+    /// `ceiling_hole` (the hole in the floor of the room above, which the ceiling is), the
+    /// ceiling is four pieces around it.
+    pub fn addShell(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part), shell: Shell, ceiling_hole: ?Hole) !void {
         const left = if (shell.left == .neighbor) shell.innerMinX() else shell.innerMinX() - WALL;
         const right = if (shell.right == .neighbor) shell.innerMaxX() else shell.innerMaxX() + WALL;
         const width = right - left;
         const middle = (left + right) / 2.0;
         const ceiling_y = shell.height + WALL / 2.0;
         const ceiling_color = grey(0.55);
-        if (shell.ceiling_hole) |hole| {
+        if (ceiling_hole) |hole| {
             try self.addAroundHole(allocator, parts, left, right, -DEPTH, ceiling_y, WALL, ceiling_color, hole);
         } else {
             try parts.append(allocator, .{ .shape = self.cube, .model = box(vec3(middle, ceiling_y, -DEPTH / 2.0), vec3(width, WALL, DEPTH)), .color = ceiling_color, .is_cut = true });
         }
         try parts.append(allocator, .{ .shape = self.cube, .model = box(vec3(middle, shell.height / 2.0, -DEPTH - WALL / 2.0), vec3(width, shell.height + 2.0 * WALL, WALL)), .color = grey(0.6) });
+        if (shell.deck_above) |span| {
+            const above_y = shell.height + WALL + CELL_HEIGHT / 2.0;
+            const above = box(vec3((span.min_x + span.max_x) / 2.0, above_y, -(DEPTH + WALL) / 2.0), vec3(span.max_x - span.min_x, CELL_HEIGHT, DEPTH + WALL));
+            try parts.append(allocator, .{ .shape = self.cube, .model = above, .color = grey(BELOW_COLOR_SRGB), .is_cut = true });
+        }
         try self.addSide(allocator, parts, shell, shell.left, shell.innerMinX(), 1.0);
         try self.addSide(allocator, parts, shell, shell.right, shell.innerMaxX(), -1.0);
 
@@ -172,20 +188,28 @@ pub const PartBuilder = struct {
         }
     }
 
-    /// Two ceiling tube fittings, running front to back: each a housing (into
-    /// `housings`) and its tube (into `tubes`, lit per draw).
+    /// Ceiling tube fittings at `xs`, running front to back, their tops at `fitting_y`:
+    /// each a housing (into `housings`) and its tube (into `tubes`, lit per draw). Hung
+    /// below the ceiling at `ceiling_y`, each on two rods.
     pub fn addCeilingLights(
         self: PartBuilder,
         allocator: std.mem.Allocator,
         housings: *std.ArrayList(Part),
         tubes: *std.ArrayList(Part),
-        height: f32,
+        xs: []const f32,
+        fitting_y: f32,
+        ceiling_y: f32,
     ) !void {
         const length = 2.6;
-        const back_z = -3.4;
-        for ([_]f32{ -1.8, 1.8 }) |x| {
-            try housings.append(allocator, .{ .shape = self.cube, .model = box(vec3(x, height - 0.03, back_z + length / 2.0), vec3(0.22, 0.06, length + 0.1)), .color = grey(0.45) });
-            try tubes.append(allocator, .{ .shape = self.cylinder, .model = cylinderModel(vec3(x, height - 0.1, back_z), .z, 0.07, length), .color = grey(0.7) });
+        const back_z = CEILING_LIGHT_Z - length / 2.0;
+        for (xs) |x| {
+            try housings.append(allocator, .{ .shape = self.cube, .model = box(vec3(x, fitting_y - 0.03, back_z + length / 2.0), vec3(0.22, 0.06, length + 0.1)), .color = grey(0.45) });
+            try tubes.append(allocator, .{ .shape = self.cylinder, .model = cylinderModel(vec3(x, fitting_y - 0.1, back_z), .z, 0.07, length), .color = grey(0.7) });
+            if (ceiling_y > fitting_y) {
+                for ([_]f32{ back_z + 0.3, back_z + length - 0.3 }) |z| {
+                    try housings.append(allocator, .{ .shape = self.cylinder, .model = cylinderModel(vec3(x, fitting_y, z), .y, 0.025, ceiling_y - fitting_y), .color = grey(0.35) });
+                }
+            }
         }
     }
 
@@ -230,7 +254,7 @@ pub const PartBuilder = struct {
             .{ .shape = self.cube, .model = box(vec3(wall_x, (height + DOOR_HEIGHT) / 2.0, DOOR_CENTER_Z), vec3(WALL, height - DOOR_HEIGHT, DOOR_WIDTH)), .color = shell },
         });
         switch (doorway.door) {
-            .separate => {},
+            .separate, .none => {},
             .locked => try parts.append(allocator, .{ .shape = self.cube, .model = box(vec3(wall_x, DOOR_HEIGHT / 2.0, DOOR_CENTER_Z), vec3(0.08, DOOR_HEIGHT, DOOR_WIDTH)), .color = grey(0.4) }),
         }
 

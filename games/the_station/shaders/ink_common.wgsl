@@ -61,7 +61,8 @@ fn highlightedInk(amount: f32) -> f32 {
     return draw.params.z * (1.0 - HIGHLIGHT_HATCH_CUT * min(amount, 1.0));
 }
 
-/// Ambient, plus Lambert diffuse from the directional light and each point light.
+/// Ambient, plus Lambert diffuse from the directional light and each point light that
+/// reaches the point (a room's lights stay in the room: `pointLightReaches`).
 fn lighting(normal: vec3f, world_position: vec3f) -> vec3f {
     let lights = frame.lights;
     var light = lights.ambient;
@@ -71,7 +72,7 @@ fn lighting(normal: vec3f, world_position: vec3f) -> vec3f {
 
     for (var i = 0u; i < lights.num_point_lights; i++) {
         let point = lights.point_lights[i];
-        if (point.enabled == 0u) {
+        if (point.enabled == 0u || !pointLightReaches(point, world_position)) {
             continue;
         }
         let to_light = point.world_pos - world_position;

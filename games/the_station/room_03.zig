@@ -4,8 +4,7 @@
 //!
 //! 3 x 1 cells at column -3, row -1 of the station (`station.zig`), in its own coordinates
 //! as Room 01 (`room_01.zig`). Its ceiling, with the hole, is Room 02's floor; its floor
-//! is Room 04's ceiling. Its right wall is the deck below Room 01 until the generator
-//! room (phase E4).
+//! is Room 04's ceiling. Its right wall is the generator room's.
 
 const std = @import("std");
 const math = @import("math");
@@ -35,6 +34,7 @@ pub const room: station.Room = .{
     .model_path = null,
     .shell = shell,
     .walk_areas = &walk_areas,
+    .floor_hole = shaft.HOLE,
     .hotspots = &hotspots,
     .addGreybox = addGreybox,
 };
@@ -45,7 +45,6 @@ const shell: room_kit.Shell = .{
     .left = .solid,
     .right = .neighbor,
     .floor = .room_below,
-    .ceiling_hole = shaft.HOLE,
 };
 
 /// The ladder's stop on this floor.

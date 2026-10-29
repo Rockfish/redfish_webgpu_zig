@@ -35,6 +35,9 @@ pub const RoomSettings = struct {
     use_placeholder: bool = false,
     /// Draw the room's equipment as boxes even when the Blender model is loaded.
     use_greybox: bool = false,
+    /// Frame a large room whole, not a window of it following the robot
+    /// (`station.cameraFraming`).
+    frame_whole_room: bool = false,
 };
 
 /// The deck's light: with the power off, and with the emergency lights on.

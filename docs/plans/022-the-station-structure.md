@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1-E3 done; next: phase E4)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1-E4 done; next: phase E5)
 
 ## Context
 
@@ -356,8 +356,8 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
 - [x] Tests: rooms on rows, the ladder's stops in their rooms
 
 #### E4. The generator room
-- [ ] Greybox, 6 x 2, under Room 01, entered through a doorway from Room 04
-- [ ] Camera in a large room: a window of at most 3 x 1 cells following the robot
+- [x] Greybox, 6 x 2, under Room 01, entered through a doorway from Room 04
+- [x] Camera in a large room: a window of at most 3 x 1 cells following the robot
       (x and y); the whole-room framing kept as an option; compare on screen
 
 #### E5. Check
@@ -604,7 +604,8 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
 - 2026-10-29, phase E3, as built:
   - `room_kit.Shell`: `floor` (`deck`, the floor over the solid deck below as before, or
     `room_below`: none, the room below's ceiling is the floor) and `ceiling_hole` (the
-    ceiling in four pieces around it); the floor hole and its shaft through the deck are
+    ceiling in four pieces around it; in E4 the hole moved to the room above,
+    `Room.floor_hole`); the floor hole and its shaft through the deck are
     gone. The room below builds the slab between floors, so the generator room's
     ceiling can run past Room 01 (E4).
   - `shaft.zig`: the hole (the same in each room's coordinates, one column of cells),
@@ -636,3 +637,75 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
     it); the other visible rooms get emergency lights nearest first
     (`main.isNearer`). Test: Room 01 visible from Room 04. Below the deck, right of
     Room 04, stays black until the generator room (E4).
+- 2026-10-29 (John): the generator room should look like a big complex machine with
+  lots of piping, cables, panels, and gauges behind it, and a panel beside it that the
+  player interacts with. Reference photos in `the-station/images/generator_rooms/`
+  (diesel generator sets, switchgear, old power plant engine rooms).
+- 2026-10-29, phase E4, as built:
+  - `generator_room.zig`: 6 x 2 at column 0, row -2, greybox after the photos: a
+    skid with an engine (a row of eight cylinder heads, an intake manifold, two
+    turbochargers with exhaust stacks to the ceiling) and an alternator drum with its end
+    bell and terminal box; three pipe runs and a cable tray along the back wall;
+    switchgear (three cabinets, a gauge each) and a gauge board above them left of the
+    machine; the generator panel (a cabinet with three gauges, lamps, and a desk)
+    standing right of it; a crane beam under the ceiling. Hotspots: the doorway, the
+    generator, the panel, the switchgear (all looks; phase H makes the panel a puzzle).
+    Walk areas: the walkway in front of the machine, and beside it to the switchgear
+    and to the panel.
+  - The doorway from Room 04: `room_kit.Doorway.door` `.none` (an open doorway), the
+    generator room's left wall (6.4 m, beside Rooms 03 and 04: their right sides are
+    `neighbor`); `DoorwayId.room_04_generator` with the gate `always`. Room 01's floor
+    is the generator room's ceiling (`.room_below`), so the deck under Room 01 is gone.
+  - `station.cameraFraming(room, focus, is_whole_room)`: a room up to 3 x 1 cells whole;
+    a larger one a 3 x 1 window around the robot (x, and y from its floor), kept inside
+    the room's framing, the eye above the window's floor. main eases it like the pan, so
+    the camera follows the robot. Panel: Room "frame large rooms whole"
+    (`RoomSettings.frame_whole_room`), the option to compare.
+  - The emergency light is as high as a one-cell room's (under the ceiling there),
+    whatever the room's height.
+  - Tests: `cameraFraming` (the window at the left end and the middle, whole on the
+    option, a small room whole); the generator room beside Rooms 03 and 04 in `roomAt`,
+    `areSideBySide`, visible from Room 04. 155 pass.
+  - Checked with captures: the generator room's window at the left end, the middle, and
+    the right end (the robot Room 01's size), framed whole, and Rooms 04 and 01 with
+    the generator room beside and below. One emergency light leaves the room's ends dim.
+  - John: from Room 01, floor showed outside its right wall: the generator room's roof
+    (6 cells wide, Room 01 over 3), seen from Room 01's eye above it. Solid station on
+    it where no room is above (`Shell.deck_above`, a cell high, a cut as the deck below;
+    in `drawnSpace`). And in Room 03 the floor grid ran across the hole: the grid now
+    stops at the hole in a room's floor (`station.floorHole`: the room below's ceiling
+    hole), in Room 02 too. Tests: `floorHole`. 156 pass. Checked with captures.
+  - John: three ceiling lights in the generator room. `Room.ceiling_lights` (the
+    fittings' x, default -1.8 and 1.8), passed to `PartBuilder.addCeilingLights`; the
+    generator room's at -5.5, 0, and 5.5, the crane beam lowered below them.
+  - John: the lighting shines oddly: a bright spot in the middle of Room 01's ceiling,
+    and on the generator room's lower back wall; the generator room's left side dims as
+    the robot walks from the doorway to the middle, and its panel is lit less than the
+    middle. Causes: one point light per room, 0.4 m under a one-cell ceiling, makes the
+    spots (a point light right under a ceiling lights a disc of it; in the 6.4 m room it
+    is 2.6 m up, near the back wall). Point lights have no shadows, so Room 04's light
+    shines through the wall onto the generator room's left side; the lights go to the
+    visible rooms (4 point lights: the alarm and 3), so when the camera moves right and
+    Room 04 leaves the view, its light goes off and that side dims. One light in the
+    middle of a 16 m room leaves its ends darker.
+  - John chose: bounded lights, the emergency lights at the tubes, and the hole declared
+    by the room whose floor it is in. As built:
+    - Engine: `core.PointLight.bounds` (optional; `PointLightUniforms` `bounds_min`,
+      `is_bounded`, `bounds_max`; 80 bytes), `pointLightReaches` in `common.wgsl`, used
+      by `pbr.wgsl` and the ink shader; `MAX_POINT_LIGHTS` 4 -> 8 (`LightsUniforms` 704
+      bytes, `FrameUniforms` 976). Test of the bounds in `lights.zig`. draw_test and
+      angrybot checked on screen (angrybot as before).
+    - Game: an emergency light under each tube fitting (`station.emergencyLightPosition
+      (room, x)`), `EMERGENCY_PER_TUBE` 0.6 of the setting each, bounded to its room up
+      to just under the ceiling (`station.lightBounds`: no lit discs on ceilings, no
+      light through walls); the alarm bounded to Room 01. Rooms lit in turn: the room
+      shown, then the nearest visible (7 after the alarm). `Room.ceiling_light_drop`:
+      the generator room's fittings hang 2 m down on rods (`addCeilingLights` takes the
+      fittings' and the ceiling's heights); 6 m up they left the room dim.
+    - `Room.floor_hole` (Rooms 02 and 03: `shaft.HOLE`); `station.ceilingHole(room)`
+      finds it from the room above for `addShell` (a parameter now; `Shell.ceiling_hole`
+      gone); `station.floorHole` gone, the grid reads `floor_hole`. Test: `ceilingHole`.
+    - 157 pass. Checked with captures: Room 01 without the ceiling spot; the generator
+      room even from end to end, its panel lit as the middle; Room 03.
+  - John: the lighting looks much better; shadows later (plan 017's `ShadowMapArray`
+    for point lights is a start; the ink shader would read it).

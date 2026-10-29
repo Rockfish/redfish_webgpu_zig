@@ -1,6 +1,7 @@
 //! The game: the robot, the station's state (`state.zig`), and the clicks that drive the
 //! robot (plan 021, phases B and G; plan 022, phase D). A room's own hotspot is used by
-//! its room (`room_01.use`, `room_02.use`); the door and the ladder are crossed here.
+//! its room (`room_01.use`, `room_02.use`, `generator_room.use`); the doorways and the
+//! ladder are crossed here.
 //!
 //! The game explores the room shown, or is in a transition to the next (`Mode`, plan
 //! 022 phase E2): when the robot leaves the room shown, the camera pans to a room beside
@@ -19,6 +20,7 @@ const navigation = @import("navigation.zig");
 const station = @import("station.zig");
 const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
+const generator_room = @import("generator_room.zig");
 const Station = @import("state.zig").Station;
 const robot_module = @import("robot.zig");
 const Robot = robot_module.Robot;
@@ -235,7 +237,7 @@ pub const Game = struct {
             .doorway => |id| if (station.doorway(id).gate.isOpen(self.station)) self.exitCursor(id) else actionCursor(hotspot.action),
             .ladder => self.ladderCursor(.up),
             .ladder_hole => self.ladderCursor(.down),
-            .room_01, .room_02 => actionCursor(hotspot.action),
+            .room_01, .room_02, .generator_room => actionCursor(hotspot.action),
         };
     }
 
@@ -279,7 +281,7 @@ pub const Game = struct {
             .doorway => |id| if (station.doorway(id).gate.isOpen(self.station)) {
                 return self.walkThrough(id);
             },
-            .room_01, .room_02 => {},
+            .room_01, .room_02, .generator_room => {},
         }
         self.walkTo(hotspot.stand_point, .{ .use = .{ .hotspot = index, .facing = hotspot.facing, .action = hotspot.action } });
     }
@@ -338,6 +340,7 @@ pub const Game = struct {
             .ladder, .ladder_hole => {},
             .room_01 => |room_kind| self.say(room_01.use(&self.station, room_kind)),
             .room_02 => |room_kind| self.say(room_02.use(&self.station, room_kind)),
+            .generator_room => |room_kind| self.say(generator_room.use(&self.station, room_kind)),
         }
     }
 

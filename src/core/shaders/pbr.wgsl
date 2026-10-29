@@ -162,7 +162,7 @@ fn sceneLight(world_position: vec3f, normal: vec3f, base_color: vec3f, metallic:
     var color = brdf(normal, view_dir, normalize(-lights.direction_light.dir), lights.direction_light.color, base_color, metallic, roughness);
     for (var i = 0u; i < min(lights.num_point_lights, MAX_POINT_LIGHTS); i++) {
         let light = lights.point_lights[i];
-        if (light.enabled == 0u) {
+        if (light.enabled == 0u || !pointLightReaches(light, world_position)) {
             continue;
         }
         let to_light = light.world_pos - world_position;

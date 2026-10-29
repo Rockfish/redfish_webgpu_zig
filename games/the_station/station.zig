@@ -5,7 +5,8 @@
 //! camera, and drawing the rooms the camera sees.
 //!
 //! Room 02 is left of Room 01 through Room 01's door; Rooms 03 and 04 are below Room 02,
-//! down its ladder (`shaft.zig`). The camera shows the robot's room and pans or fades to
+//! down its ladder (`shaft.zig`); the generator room, under Room 01, is through Room
+//! 04's right wall. The camera shows the robot's room and pans or fades to
 //! the next (`game.zig`); a neighbor shows at the frame's edge.
 
 const std = @import("std");
@@ -17,6 +18,7 @@ const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
 const room_03 = @import("room_03.zig");
 const room_04 = @import("room_04.zig");
+const generator_room = @import("generator_room.zig");
 const navigation = @import("navigation.zig");
 const interaction = @import("interaction.zig");
 const robot = @import("robot.zig");
@@ -45,6 +47,10 @@ const log = std.log.scoped(.station);
 
 /// Space shown around a room's cut edges.
 const FRAME_MARGIN: f32 = 0.3;
+/// The most of a room the camera shows: Room 01's size, so the robot is the same size on
+/// screen in a larger room (`cameraFraming`).
+const WINDOW_CELLS_WIDE = 3;
+const WINDOW_CELLS_HIGH = 1;
 
 /// The alarm lamp's lens when it isn't glowing: a dull red, so room light doesn't make
 /// it look lit (linear).
@@ -63,6 +69,7 @@ pub const HotspotKind = union(enum) {
     ladder_hole,
     room_01: room_01.HotspotKind,
     room_02: room_02.HotspotKind,
+    generator_room: generator_room.HotspotKind,
 };
 
 pub const Hotspot = interaction.Hotspot(HotspotKind);
@@ -81,7 +88,13 @@ pub const Room = struct {
     model_path: ?[]const u8,
     shell: room_kit.Shell,
     walk_areas: []const navigation.Area,
+    /// A hole in its floor (a ladder down), built in the ceiling of the room below.
+    floor_hole: ?room_kit.Hole = null,
     hotspots: []const Hotspot,
+    /// Where its ceiling tube lights are across it: two in a room 3 cells wide.
+    ceiling_lights: []const f32 = &.{ -1.8, 1.8 },
+    /// How far below the ceiling they hang, on rods (in a tall room).
+    ceiling_light_drop: f32 = 0.0,
     /// Its equipment as boxes, drawn without the model.
     addGreybox: *const fn (PartBuilder, std.mem.Allocator, *std.ArrayList(Part)) std.mem.Allocator.Error!void,
 
@@ -103,11 +116,11 @@ pub const Room = struct {
     }
 };
 
-pub const RoomId = enum { room_01, room_02, room_03, room_04 };
+pub const RoomId = enum { room_01, room_02, room_03, room_04, generator_room };
 pub const ROOM_COUNT = std.enums.values(RoomId).len;
 
 /// By `RoomId`.
-pub const rooms = [ROOM_COUNT]Room{ room_01.room, room_02.room, room_03.room, room_04.room };
+pub const rooms = [ROOM_COUNT]Room{ room_01.room, room_02.room, room_03.room, room_04.room, generator_room.room };
 
 pub fn room(id: RoomId) Room {
     return rooms[@intFromEnum(id)];
@@ -155,7 +168,7 @@ pub const Doorway = struct {
     }
 };
 
-pub const DoorwayId = enum { room_01_02 };
+pub const DoorwayId = enum { room_01_02, room_04_generator };
 
 /// By `DoorwayId`.
 const doorways = [_]Doorway{
@@ -163,6 +176,11 @@ const doorways = [_]Doorway{
         .rooms = .{ .room_01, .room_02 },
         .ends = .{ place(.room_01, room_01.DOOR_STAND_POINT), place(.room_02, room_02.DOOR_STAND_POINT) },
         .gate = .{ .door = .room_01_left },
+    },
+    .{
+        .rooms = .{ .room_04, .generator_room },
+        .ends = .{ place(.room_04, room_04.DOOR_STAND_POINT), place(.generator_room, generator_room.DOOR_STAND_POINT) },
+        .gate = .always,
     },
 };
 
@@ -224,6 +242,30 @@ pub fn areSideBySide(a: RoomId, b: RoomId) bool {
     return first.row < second_top and second.row < first_top;
 }
 
+/// What the camera shows of room `id`: all of a room up to `WINDOW_CELLS_WIDE` x
+/// `WINDOW_CELLS_HIGH` cells (`framing`); of a larger one a window that size around
+/// `focus` (the robot), kept inside the room's framing, with the eye above the window's
+/// floor. `is_whole_room` frames every room whole (the panel's option).
+pub fn cameraFraming(id: RoomId, focus: Vec3, is_whole_room: bool) Framing {
+    const whole = framing(id);
+    const shown = room(id);
+    if (is_whole_room or (shown.cells_wide <= WINDOW_CELLS_WIDE and shown.cells_high <= WINDOW_CELLS_HIGH)) {
+        return whole;
+    }
+    const half_width = room_kit.insideWidth(WINDOW_CELLS_WIDE) / 2.0 + room_kit.WALL + FRAME_MARGIN;
+    const inside_height = room_kit.insideHeight(WINDOW_CELLS_HIGH);
+    const half_height = inside_height / 2.0 + room_kit.WALL + FRAME_MARGIN;
+    const center_x = std.math.clamp(focus.x, whole.center_x - whole.half_width + half_width, whole.center_x + whole.half_width - half_width);
+    const center_y = std.math.clamp(focus.y + inside_height / 2.0, whole.center_y - whole.half_height + half_height, whole.center_y + whole.half_height - half_height);
+    return .{
+        .center_x = center_x,
+        .center_y = center_y,
+        .half_width = half_width,
+        .half_height = half_height,
+        .floor_y = center_y - inside_height / 2.0,
+    };
+}
+
 /// A room's opening and the cut edges around it, on the opening's plane (z = 0).
 pub fn framing(id: RoomId) Framing {
     const shown = room(id);
@@ -270,9 +312,40 @@ pub fn isVisible(id: RoomId, view: Framing, eye: Vec3, back_scale: f32) bool {
         min_y < view.center_y + view.half_height and max_y > view.center_y - view.half_height;
 }
 
-/// Room `id`'s emergency light: under its ceiling, in its middle.
-pub fn emergencyLightPosition(id: RoomId) Vec3 {
-    return place(id, vec3(0.0, room(id).height() - 0.4, -room_kit.DEPTH / 2.0));
+/// The hole in room `id`'s ceiling, in its coordinates: the floor hole of a room right
+/// above it.
+pub fn ceilingHole(id: RoomId) ?room_kit.Hole {
+    const below = room(id);
+    for (rooms) |above| {
+        const hole = above.floor_hole orelse continue;
+        if (above.row != below.row + @as(i32, @intCast(below.cells_high))) {
+            continue;
+        }
+        const shift = above.origin().x - below.origin().x;
+        const moved: room_kit.Hole = .{ .min_x = hole.min_x + shift, .max_x = hole.max_x + shift, .min_z = hole.min_z, .max_z = hole.max_z };
+        if (moved.min_x >= -below.width() / 2.0 and moved.max_x <= below.width() / 2.0) {
+            return moved;
+        }
+    }
+    return null;
+}
+
+/// Room `id`'s emergency light at the fitting at `x` (`Room.ceiling_lights`): just
+/// under its tube.
+pub fn emergencyLightPosition(id: RoomId, x: f32) Vec3 {
+    const fitting_y = room(id).height() - room(id).ceiling_light_drop;
+    return place(id, vec3(x, fitting_y - 0.3, room_kit.CEILING_LIGHT_Z));
+}
+
+/// What a light in room `id` reaches: its inside, a little past its floor and walls (to
+/// light their faces), up to just under the ceiling (the fittings' housings shade it).
+pub fn lightBounds(id: RoomId) AABB {
+    const inside = interior(id);
+    const margin = vec3(0.05, 0.05, 0.05);
+    return .{
+        .min = inside.min.sub(margin),
+        .max = vec3(inside.max.x + margin.x, inside.max.y - 0.12, inside.max.z + margin.z),
+    };
 }
 
 /// The rooms' parts and models, drawn from the station's state (`DrawState`).
@@ -382,8 +455,9 @@ const RoomParts = struct {
 
         var shell: std.ArrayList(Part) = .empty;
         var tubes: std.ArrayList(Part) = .empty;
-        try builder.addShell(context.alloc, &shell, built.shell);
-        try builder.addCeilingLights(context.alloc, &shell, &tubes, built.height());
+        try builder.addShell(context.alloc, &shell, built.shell, ceilingHole(id));
+        const fitting_y = built.height() - built.ceiling_light_drop;
+        try builder.addCeilingLights(context.alloc, &shell, &tubes, built.ceiling_lights, fitting_y, built.height());
         var greybox: std.ArrayList(Part) = .empty;
         try built.addGreybox(builder, context.alloc, &greybox);
 
@@ -490,13 +564,16 @@ fn roomSpace(id: RoomId) AABB {
     };
 }
 
-/// What a room's parts cover: its space, and the deck below it (`Shell.floor`), which
-/// is the wall beside a room on the floor below (Room 01's, beside Room 03).
+/// What a room's parts cover: its space, the deck below it (`Shell.floor`), and solid
+/// station above it (`Shell.deck_above`).
 fn drawnSpace(id: RoomId) AABB {
     var space = roomSpace(id);
     switch (room(id).shell.floor) {
         .deck => space.min.y -= room_kit.BELOW_DEPTH,
         .room_below => {},
+    }
+    if (room(id).shell.deck_above != null) {
+        space.max.y += room_kit.WALL + room_kit.CELL_HEIGHT;
     }
     return space;
 }
@@ -603,6 +680,8 @@ test "areSideBySide: Rooms 01 and 02 share row 0; Rooms 02, 03, and 04 are floor
     try testing.expect(areSideBySide(.room_02, .room_02));
     try testing.expect(!areSideBySide(.room_02, .room_03));
     try testing.expect(!areSideBySide(.room_03, .room_04));
+    try testing.expect(areSideBySide(.room_04, .generator_room));
+    try testing.expect(!areSideBySide(.room_01, .generator_room));
 }
 
 test "rooms on rows: Room 03 under Room 02, Room 04 under Room 03; the floors between" {
@@ -611,8 +690,28 @@ test "rooms on rows: Room 03 under Room 02, Room 04 under Room 03; the floors be
     // Room 02's floor slab is Room 02's; just under it, Room 03's ceiling space
     try testing.expectEqual(RoomId.room_02, roomAt(vec3(-4.2, -0.3, -2.0)));
     try testing.expectEqual(RoomId.room_03, roomAt(vec3(-4.2, -0.5, -2.0)));
-    // In the deck under Room 01, beside Room 03: the nearest room
-    try testing.expectEqual(RoomId.room_03, roomAt(vec3(0.5, -2.0, -2.0)));
+    // The generator room beside Rooms 03 and 04, under Room 01
+    try testing.expectEqual(RoomId.generator_room, roomAt(vec3(0.5, -2.0, -2.0)));
+    try testing.expectEqual(RoomId.generator_room, roomAt(vec3(0.5, -6.8, -2.0)));
+}
+
+test "cameraFraming: a window of the generator room follows the robot, inside the room" {
+    const whole = framing(.generator_room);
+    const left = cameraFraming(.generator_room, place(.generator_room, vec3(-8.0, 0.0, -1.0)), false);
+    try testing.expectApproxEqAbs(framing(.room_01).half_width, left.half_width, 1e-5);
+    try testing.expectApproxEqAbs(whole.center_x - whole.half_width, left.center_x - left.half_width, 1e-5);
+    try testing.expectApproxEqAbs(room(.generator_room).origin().y, left.floor_y, 1e-5);
+    const middle = cameraFraming(.generator_room, place(.generator_room, vec3(1.0, 0.0, -1.0)), false);
+    try testing.expectApproxEqAbs(place(.generator_room, vec3(1.0, 0.0, 0.0)).x, middle.center_x, 1e-5);
+    try testing.expectEqual(whole, cameraFraming(.generator_room, Vec3.Zero, true));
+    try testing.expectEqual(framing(.room_01), cameraFraming(.room_01, Vec3.Zero, false));
+}
+
+test "ceilingHole: Rooms 03 and 04 have the shaft's hole, from the floor above" {
+    try testing.expectEqual(shaft.HOLE, ceilingHole(.room_03).?);
+    try testing.expectEqual(shaft.HOLE, ceilingHole(.room_04).?);
+    try testing.expectEqual(@as(?room_kit.Hole, null), ceilingHole(.room_02));
+    try testing.expectEqual(@as(?room_kit.Hole, null), ceilingHole(.generator_room));
 }
 
 test "a doorway's gate: the door between Rooms 01 and 02 opens it" {
@@ -631,10 +730,10 @@ test "isVisible: a room's neighbor shows at the edge; a far view shows neither" 
     const back_scale = 6.0 / (6.0 + room_kit.DEPTH + room_kit.WALL);
     try testing.expect(!isVisible(.room_04, view, eye, back_scale));
 
-    // From Room 04, the deck under Room 01 beside Room 03: Room 01 draws it
+    // From Room 04, the generator room beside it
     const below = RoomCamera.fitToAspect(framing(.room_04), 16.0 / 9.0);
     const below_eye = vec3(below.center_x, below.floor_y + 1.9, 6.0);
-    try testing.expect(isVisible(.room_01, below, below_eye, back_scale));
+    try testing.expect(isVisible(.generator_room, below, below_eye, back_scale));
     try testing.expect(isVisible(.room_01, view, eye, back_scale));
     try testing.expect(isVisible(.room_02, view, eye, back_scale));
 

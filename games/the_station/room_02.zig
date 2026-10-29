@@ -56,6 +56,7 @@ pub const room: station.Room = .{
     .model_path = MODEL_PATH,
     .shell = shell,
     .walk_areas = &walk_areas,
+    .floor_hole = shaft.HOLE,
     .hotspots = &hotspots,
     .addGreybox = addGreybox,
 };
