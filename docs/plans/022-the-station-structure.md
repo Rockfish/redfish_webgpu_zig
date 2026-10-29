@@ -707,5 +707,6 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
       gone); `station.floorHole` gone, the grid reads `floor_hole`. Test: `ceilingHole`.
     - 157 pass. Checked with captures: Room 01 without the ceiling spot; the generator
       room even from end to end, its panel lit as the middle; Room 03.
-  - John: the lighting looks much better; shadows later (plan 017's `ShadowMapArray`
-    for point lights is a start; the ink shader would read it).
+  - John: the lighting looks much better; shadows later. Plan 017's `ShadowMapArray` has
+    one 2D layer per light (a spot's view); the tubes shine down, so a downward view per
+    light may do, else cube maps for point lights. The ink shader would read them.
