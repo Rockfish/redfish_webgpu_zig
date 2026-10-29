@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: plan 022, the structure for the whole game
+- **docs/plans**: plan 022 written after a review of `games/the_station`: style fixes, a room kit and rooms as data on a grid of 2.8 x 3.4 m cells, the station's state as one typed struct, connections and transitions between rooms, two rooms down Room 02's ladder and the generator room (6 x 2) through a doorway, an inventory with counts, model nodes in the engine, and the first 3D puzzle panel. Plan 021 parked; plan 022 active
+
 ### 2026-10-28 - The Station: Room 02 from Blender; plan 021 phase H
 - **games/the_station**: Room 02's equipment is a Blender model (`the-station/models/room_02/room_02.glb`): the ladder, a hazard-striped rim around the hole, the deck's power cabinet (a new hotspot), lockers, signs, the keypad, pipes, one going down the shaft. Each room draws its model or its greybox (`deck.Equipment`). The alarm lamp is a dull red when off (it looked lit in the emergency light)
 - **the-station**: `blender/build_room_02.py`; `blender/room_kit.py`, the pieces both room scripts share (moved out of `build_room.py`)

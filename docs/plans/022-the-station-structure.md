@@ -1,0 +1,330 @@
+# Plan 022 - The Station: Structure for the Whole Game
+
+## Status: Active (written 2026-10-29; next: phase A)
+
+## Context
+
+Plan 021 built Room 01 and Room 02 end to end: the cutaway camera, walking and clicking,
+the ink look, the robot from Blender, power out with emergency lights, the ladder down.
+The game ahead has many rooms, an inventory, and puzzles on industrial panels (switches,
+gauges, valves, indicator lights), with machinery whose state changes with the robot's
+actions and shows in other rooms: climb down to the generator room, fix it, and the
+control room's panels show it.
+
+A review of `games/the_station` on 2026-10-29 (see Notes) found the code works and
+mostly follows `docs/STYLE.md`, but "a room" isn't a concept in it yet. `room_01.zig`
+doubles as the library every room is drawn with, `deck.zig` names each room by hand in
+several places, and the game's state is a few booleans in `Game`. Adding Room 03 means
+copying and editing six places, and a room below the deck doesn't fit `roomAt`'s split
+on x.
+
+Scope: the structure the rest of the game is built on, carried through to one example of
+each piece: rooms as data, the station's state, room transitions, the generator room
+(stub) below the ladder, an inventory with counts, and one 3D puzzle panel whose result
+shows in the control room. Content beyond that (more rooms, more puzzles) is later plans.
+
+## Decisions (John, 2026-10-29)
+
+1. **Every room is reached by a transition.** No stacked multi-floor view (plan 021
+   deferred it; now dropped). The camera shows one room; moving to another is a
+   transition (pan, cut, or fade).
+2. **Room sizes are multiples of one base size.** Room 01 is 3 x 1 (three bases wide,
+   one high). May change later; assumed for now.
+3. **Puzzle panels are 3D close-ups** (Blender models in ink), not 2D overlays.
+4. **The inventory has counts** (three fuses, not just "a fuse").
+5. **STYLE.md gets two exceptions**: data written one row per item (a room's parts,
+   its hotspots) stays one item per line, however long; and a short `if` in a switch
+   arm stays on one line without braces (`.top => if (is_lower_part) self.robot.climb(true),`).
+6. **The cell is 2.8 x 3.4 m** (confirmed), and **the generator room is 6 x 2**.
+7. **Two rooms below Room 02** on the ladder; the generator room is entered through a
+   doorway from the lower one, so it lines up with them (see "The station so far").
+
+## Design
+
+### Room grid
+
+A base cell measured wall center to wall center: **2.8 m wide, 3.4 m high**. A room
+`w` x `h` cells has an inside `w * 2.8 - WALL` wide and `h * 3.4 - WALL` high, with
+`WALL` = 0.4 m. Room 01, 3 x 1: 8.0 x 3.0 m, its size today, and Room 02's center 8.4 m
+from Room 01's is one room-width of cells, as now. Depth stays 4 m for every room.
+The generator room, 6 x 2: 16.4 x 6.4 m inside.
+
+Why cells: rooms built from them line up (shared walls, doorways at the same heights,
+a shaft from one room's floor lands in the ceiling of the room below), the Blender kit
+can snap to them, and the robot is the same size in every room as long as the camera
+shows the same amount of room.
+
+### Framing large rooms
+
+`RoomCamera` fits the whole opening to the screen. Room 01's framing (9.4 x 4.4 m with
+the margin) is limited by its width at 16:9, so it shows about 5.3 m of height and the
+1.35 m robot is about a quarter of the screen's height. The generator room's framing
+(17.8 x 7.8 m) would show it at about half that size, and its hotspots as small.
+
+So the camera frames **a window of the room, at most 3 x 1 cells' worth**, and pans it
+within a larger room to follow the robot (the pan already eases `camera_x`; a room 2
+high pans on y too, by floor level or by the robot's height). Entering a large room can
+first show all of it, then move in. The whole-room framing stays as an option, to
+compare on screen. To check when the room exists: the 3 x 1 window may need to grow a
+little for a 2-high room so its floors read as one space.
+
+Depth fixed at 4 m makes a 16 m wide room shallow, like a stage. Fine for the cutaway
+look; if a hall needs more, depth becomes a room setting later (not cells).
+
+A room's place on the station is its cell (`col`, `row`, deck). Since rooms are reached
+by transitions, the grid doesn't need rooms to touch; it keeps the station's layout
+consistent (side-by-side rooms can still pan, a map screen later can draw it) and gives
+each room's origin.
+
+### The station so far
+
+Cells by column and row, a room's `cell` its lower-left one; Room 01 at column 0, row 0:
+
+```
+            col -3 .. -1        col 0 .. 5
+row  0    [ Room 02     ]     [ Room 01     ]
+row -1    [ Room 03     ]     [                            ]
+row -2    [ Room 04     ] ==> [ Generator room (6 x 2)     ]
+```
+
+- **Room 02's ladder goes down two floors.** The shaft passes through Room 03 (a hole in
+  its ceiling and in its floor, the ladder running through) and ends in Room 04 (a hole
+  in its ceiling). The robot can step off in Room 03 or go on to Room 04. Two ladder
+  connections: Room 02 to 03, Room 03 to 04. Climbing out of sight through a floor or
+  ceiling is the transition, as the robot climbs out of sight in Room 02 now.
+- **The generator room is entered through a doorway from Room 04**, a door connection
+  like Room 01 to Room 02. Its floor lines up with Room 04's and its top with Room 03's
+  ceiling, so it sits beside them on the grid.
+- **It is under Room 01**, the control room over its generator; the mimic board above
+  the machinery it shows.
+- Room 03 is a place for content on the way down (an item, a small panel).
+- Later, if wanted: a second, upper entrance from Room 03 onto a catwalk along the
+  generator room's upper half.
+- Room 03 and 04 are 3 x 1, greybox in this plan; what they are is open.
+
+### Rooms as data
+
+New `room_kit.zig` (mirrors `the-station/blender/room_kit.py`) takes from `room_01.zig`
+what every room uses: `Part`, `PartBuilder`, `box`, `cylinderModel`, `grey`, `bounds`,
+`Hatching`, the `FACE_*` facings, door sizes, `WALL`, the cell size. Plus one shell
+builder for any room: `addShell(builder, size, openings)`, where openings are doors in a
+side wall (open, sliding, locked) and holes in the floor. It replaces
+`room_01.addShell` / `addDoorway` and `room_02.addRoomBox` / `addLockedDoor` /
+`addShaft`, which are near copies.
+
+Each room file exports one descriptor, its contents in **room-local coordinates** (origin
+at the opening's floor center, as Room 01 now):
+
+```zig
+pub const room: Room = .{
+    .name = "Control room",
+    .cells = .{ .w = 3, .h = 1 },
+    .cell = .{ .col = 0, .row = 0 },
+    .model_path = "the-station/models/room_01/room_01.glb",
+    .walk_areas = &walk_areas,
+    .hotspots = &hotspots,
+    .lights = &lights,
+    .openings = &openings,
+    .addGreybox = addGreybox,
+};
+```
+
+`station.zig` (what `deck.zig` becomes) holds the table of rooms (`RoomId` an enum
+indexing it) and loops over it: building, drawing, `roomAt` by containment, framing,
+lights. Only the shown room is drawn and lit (plus the next one during a pan): the
+engine has 4 point lights (`MAX_POINT_LIGHTS`). The Blender scripts export each room at
+its own origin, so room_02's world numbers (`-11.4`, `-7.1`) become local ones.
+
+### Connections
+
+A door, a ladder, or a hatch joins two rooms: `Connection` with an end in each room
+(stand point, facing), how it's crossed (walk through, climb), and a gate (a condition on
+the station's state: the door is open, the hatch is unlocked). Crossing one starts a
+transition. Replaces `navigation.Area.needs_open_door` (areas belong to one room; the
+path never leaves it), `Game.otherSideOfDoor`, and the ladder's dead end
+(`LadderPlace.below`): climbing down out of sight in Room 02 arrives on the ladder at
+Room 03's ceiling (see "The station so far"). A ladder that runs through a room has
+stops: off at the floor, or on down.
+
+### The station's state
+
+One plain-data struct, typed, with no pointers:
+
+```zig
+pub const Station = struct {
+    power: Power = .{},          // generator, buses, breakers: enums, not flags
+    alarm: Alarm = .on,
+    doors: std.EnumArray(DoorId, DoorState) = ...,
+    inventory: Inventory = .{},
+    generator_panel: GeneratorPanel = .{},
+    ...
+};
+```
+
+- What's on screen is **derived** from it by functions (`power.isBusLive(.b)`,
+  `mimicLamp(...)`, a needle's angle), never stored twice, so the control room's lamps,
+  the mimic board, the lights, and the door's power can't disagree. `DrawState` is the
+  start of this; it widens to the whole state.
+- Typed Zig rather than a table of named flags: the compiler checks every use, switches
+  stay exhaustive.
+- Plain data, so a **snapshot** is a copy: restore on death (the outline has many ways to
+  die) and, later, a save game in ZON.
+- `Game` keeps the robot, the shown room, the mode, and a `Station`.
+
+### Hotspots by room
+
+Each room has its own `HotspotKind` and a `use(station: *Station, kind, item: ?Item)`
+function; the station sends a use to its room. `Hotspot(Kind)` is already generic; only
+`deck.hotspots = room_01.hotspots ++ room_02.hotspots` forces one shared enum. Hotspot
+indices stay per room. `Game.use`'s switch splits into the rooms' files.
+
+Lua stays deferred (plan 021, phase E): typed Zig plus a `use` per room may be all the
+game needs. If editing remarks gets slow, their text moves to a ZON file first.
+
+### Modes
+
+```zig
+const Mode = union(enum) { explore, transition: Transition, panel: PanelId };
+```
+
+Input goes to the active mode only. `explore` is today's loop. `transition` runs a
+room change (pan for side-by-side rooms, as now; a fade otherwise) with no input. `panel`
+is a puzzle close-up; the robot waits at the panel's stand point.
+
+### Inventory
+
+`Item` an enum; `Inventory` counts per item (`std.EnumArray(Item, u8)`), `add`, `take`,
+`count`. Picking up is a hotspot effect; whether an item still lies in a room is derived
+(`fuse_on_shelf` until taken), not a separate flag. Using an item: select it in the
+inventory bar, then click a hotspot; the room's `use` gets `item`. The bar and remarks
+need a screen-space overlay that isn't ImGui (which looks like the debug panel): an
+orthographic pass of textured quads with hit tests in pixels, in the game first.
+
+### 3D puzzle panels
+
+A panel is a Blender glb with **named nodes** (`switch_1`, `valve_a`, `needle_bus_b`,
+`lamp_3`). Opening it cuts the camera to a framing of the panel; a click picks a node;
+the panel's logic changes state; nodes turn and lamps light from that state. The same
+devices seen in the room read the same state.
+
+Each puzzle's logic is a struct apart from drawing (`toggle(switch)`, `turn(valve)`,
+`readings()`, `isSolved()`), unit-tested.
+
+Engine work this needs (`src/core`, `ModelInstance`):
+- find a node by name;
+- a transform override per node for models drawn without an animator (today they draw
+  every mesh at the identity, `model_instance.zig:164`);
+- params per node (a lamp's emissive), where `drawWithParams` now gives one for the model;
+- a ray pick against node bounds.
+
+### Tests
+
+`zig build test` doesn't run game files (plan 021, phase A notes). Add a test step for
+`games/the_station`'s logic: navigation, the station's state and derived values, the
+inventory, puzzle logic.
+
+## Phases
+
+### A. Style fixes
+- [ ] STYLE.md: the two exceptions (decision 5)
+- [ ] Rename leftovers in comments ("the robot's room_01.", `main.zig:5`, `deck.zig:4`,
+      `game.zig:48`, `game.zig:186`, `room_01.zig:72`)
+- [ ] `game.zig:103` `else => {}` over `HotspotKind`: list the cases
+- [ ] `deck.zig:194` `self.model.?` becomes `if (self.model) |model|`
+- [ ] `deck.zig` constants above the types; `game.zig:20` the inline `@import`; a scoped
+      log in `deck.zig`
+- [ ] `ink.zig`: `Ink` doesn't store an allocator (resize takes the context)
+- [ ] Settings file and panel named for the game, not Room 01
+      (`settings/the_station.zon`, moving the saved values)
+- [ ] Test step for the game's logic; `navigation.zig` tests first
+
+### B. Room kit
+- [ ] `room_kit.zig` with the shared pieces from `room_01.zig`; room_02, robot, ink
+      import it, not room_01
+- [ ] The cell size and `roomSize(cells)`
+- [ ] `addShell(builder, size, openings)` for any room; Rooms 01 and 02 built through it
+- [ ] Check: both rooms look the same as before (captures before and after)
+
+### C. Rooms as data
+- [ ] `Room` descriptor; `room_01.room`, `room_02.room` in room-local coordinates
+- [ ] `station.zig` (from `deck.zig`): the table of rooms; build, draw, `roomAt` by
+      containment, framing, lights from the rooms
+- [ ] Draw and light only the shown room (and the next during a pan)
+- [ ] `the-station`: room scripts export at the room's own origin; Room 02's glb
+      re-exported
+- [ ] `robot.zig` split: the task state machine, and the placeholder's drawing
+      (`robot_placeholder.zig`)
+
+### D. The station's state
+- [ ] `Station` struct: power, alarm, lights, doors; `Game` holds one
+- [ ] Derived values for drawing (`DrawState` from `Station`), the lights from it
+- [ ] Per-room `HotspotKind` and `use`; the station routes a use to its room
+- [ ] Snapshot and restore (the panel's "restart" restores the start; a room-entry
+      snapshot for later deaths)
+- [ ] Tests: power, doors, derived values
+
+### E. Connections, transitions, the generator room
+- [ ] `Connection` (door, ladder) with a gate; navigation stays inside a room
+- [ ] `Mode` with `explore` and `transition`; the pan between Rooms 01 and 02 becomes
+      a transition; a fade for the rest
+- [ ] Rooms 03 and 04 (greybox, 3 x 1) below Room 02: the shaft through Room 03,
+      ending in Room 04's ceiling; a ladder with a stop at Room 03's floor
+- [ ] The generator room (greybox, 6 x 2, under Room 01), entered through a doorway
+      from Room 04
+- [ ] Camera in a large room: a window of at most 3 x 1 cells following the robot
+      (x and y); the whole-room framing kept as an option; compare on screen
+- [ ] Check with a scripted run: down two floors, through the doorway into the
+      generator room, and back up to Room 02
+
+### F. Inventory
+- [ ] `Item`, `Inventory` with counts; tests
+- [ ] Pick-up action (a gesture, a clip in `build_robot.py`), items in rooms derived
+      from the state
+- [ ] Screen-space overlay: inventory bar, remarks moved off ImGui
+- [ ] Use an item on a hotspot: select, then click; the room's `use` gets it
+- [ ] First use: fuses for the generator room (count shown)
+
+### G. Engine: model nodes
+- [ ] `ModelInstance`: node by name, per-node transform override without an animator,
+      per-node params, ray pick against node bounds; tests
+- [ ] `examples/draw_test` and angrybot still right
+
+### H. The first puzzle panel
+- [ ] `Mode.panel`: camera to the panel's framing and back, input to the panel
+- [ ] The generator panel: logic struct with tests (switches, a valve, gauges, lamps;
+      solved state brings main power)
+- [ ] `the-station/blender/build_panel_generator.py`: the panel glb with named nodes
+- [ ] In the game: clicks on nodes, nodes posed and lit from the state
+- [ ] The result elsewhere: main power on lights the control room, the mimic board's
+      lamps, the screen's message
+
+## Notes & Decisions
+
+- 2026-10-29: written after a review of `games/the_station` (in conversation, John).
+  Findings that shaped it:
+  - Working well and kept: `Hotspot` (stand point, facing, action) and the robot's tasks
+    (walk, turn, act, effect at a time in the gesture, `pending`); drawing reads state
+    each frame (`deck.DrawState`); `navigation.zig`'s rectangles; logic apart from GPU
+    code.
+  - `room_01.zig` is both Room 01 and the shared kit: room_02, robot, ink, and deck
+    import it for `Part`, `box`, `grey`, `Hatching`, facings, door sizes.
+  - A room is named by hand in `RoomId`, `roomCenterX`, `equipment: [2]`, the doorway
+    walk area, `roomAt`, `deckLights`'s loop, `otherSideOfDoor`.
+  - `roomAt` splits on x; a room below doesn't fit. Room 02's contents use world x.
+  - State is `Game.is_alarm_on`, `lights`, `is_door_open`; effects are one switch over
+    one `HotspotKind` for every room.
+  - Style: rename leftovers in comments, an `else` branch over `HotspotKind`, an `if`
+    without braces in a switch arm (made an exception, John), a `.?`, constants after
+    functions, `Ink` storing an allocator, 97 lines over 120 columns (mostly part
+    tables; hence decision 5).
+- 2026-10-29: plan 021 parked for this one (its open items: ink tuning, the lighter
+  look).
+- 2026-10-29 (John): a short `if` in a switch arm is fine on one line (second STYLE.md
+  exception); the cell reading (2.8 x 3.4 m, depth 4 m) is right; the generator room is
+  6 x 2. At the same framing as Room 01 the robot would be half as large there, hence
+  the camera window (Design, "Framing large rooms").
+- 2026-10-29 (John): two rooms under Room 02, joined by the ladder; the player goes
+  down two floors and enters the generator room through a doorway, so the generator
+  room lines up with the other rooms. Agreed: its floor and top match the stacked rooms,
+  the entrance is the door connection already planned, and no 6.4 m climb in view.
+  Placed under Room 01 (Claude's suggestion, the control room over its generator).

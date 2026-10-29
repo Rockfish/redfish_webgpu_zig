@@ -1,6 +1,6 @@
 # Plan 021 - The Station: Room 01
 
-## Status: Active (started 2026-10-18; phases A-H done)
+## Status: Parked 2026-10-29 for plan 022 (started 2026-10-18; phases A-H done)
 
 ## Context
 
@@ -511,3 +511,8 @@ toward the back center.
   Now its color goes from a dull red (`deck.ALARM_LENS_DULL`) to the alarm's red with
   its glow; while the alarm runs the lens dims to dull between pulses. Checked with the
   alarm off, lights off and emergency lights on.
+- 2026-10-29, parked for plan 022 (the structure for the whole game: rooms as data, the
+  station's state, transitions, inventory, 3D puzzle panels). Where it stands: phases
+  A-H done, nothing half-finished; open items are tuning the ink (phase D), Lua (phase
+  E, deferred again in 022), and the lighter look (phase F). Next if resumed: those
+  items, on top of 022's structure.

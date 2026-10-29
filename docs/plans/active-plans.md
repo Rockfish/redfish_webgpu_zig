@@ -4,19 +4,19 @@ How these files work, including parking and resuming plans: [README.md](README.m
 
 ## 🔄 Active
 
-- **[021-the-station-room-01.md](021-the-station-room-01.md)**: started 2026-10-18. A new
-  point-and-click game in `games/the_station` (docs and art in `the-station/`). Phases
-  A-D done: greybox Room 01 with the shifted-lens cutaway camera, walking and clicking
-  with hotspots (the red button opens the door; the robot leaves through it and comes
-  back), ink outlines and hatching, the robot from Blender (`the-station/blender/
-  build_robot.py`, live 3D in ink), settings saved per setting to a ZON file
-  (`core.SettingsFile`; Lua later for game scripting), Room 01's equipment from
-  Blender after the Dubna control hall (`the-station/blender/build_room.py`), power out
-  with emergency lights, Room 02 with a ladder down, walking between rooms (phase G),
-  Room 02 from Blender (`build_room_02.py`, phase H).
-  Next: to be decided (below the ladder, Room 02's art, the lighter look).
+- **[022-the-station-structure.md](022-the-station-structure.md)**: written 2026-10-29
+  after a review of `games/the_station`. The structure the rest of the game builds on:
+  style fixes, a room kit and rooms as data on a grid of base cells, the station's state
+  as one typed struct, connections and transitions between rooms, the generator room
+  below the ladder, an inventory with counts, model nodes in the engine, and the first
+  3D puzzle panel. Next: phase A (style fixes, a test step for the game's logic).
 
 ## ⏸️ Parked
+
+- **[021-the-station-room-01.md](021-the-station-room-01.md)**: parked 2026-10-29 for
+  plan 022, phases A-H done (Rooms 01 and 02, the cutaway camera, ink, the robot from
+  Blender, saved settings, power out, the ladder), nothing half-finished. Next if
+  resumed: ink tuning, the lighter look.
 
 - **[019-tower-attack-captain-and-squad.md](019-tower-attack-captain-and-squad.md)**:
   parked 2026-10-18 for plan 021, phases A-J done (captain, squad, turrets firing back,
