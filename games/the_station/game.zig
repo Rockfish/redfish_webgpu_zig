@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const core = @import("core");
+const math = @import("math");
 
 const interaction = @import("interaction.zig");
 const navigation = @import("navigation.zig");
@@ -17,8 +18,8 @@ const room_02 = @import("room_02.zig");
 const robot_module = @import("robot.zig");
 const Robot = robot_module.Robot;
 const Ray = core.Ray;
-const Vec3 = @import("math").Vec3;
 const Target = interaction.Target;
+const Vec3 = math.Vec3;
 
 /// Seconds the door takes to slide open.
 const DOOR_OPEN_TIME: f32 = 1.2;
@@ -45,7 +46,7 @@ pub const Game = struct {
 
     /// `ray` is the mouse ray, null while the mouse is over a panel; `clicked` is true on
     /// the frame the left button goes down. Only the robot's room's hotspots are picked:
-    /// the camera shows that room_01.
+    /// the camera shows that room.
     pub fn update(self: *Self, ray: ?Ray, clicked: bool, dt: f32) void {
         const shown = self.robotRoom();
         const filter: RoomFilter = .{ .room = shown };
@@ -100,7 +101,7 @@ pub const Game = struct {
             .door => if (self.is_door_open) {
                 return self.walkTo(self.otherSideOfDoor(), .stand);
             },
-            else => {},
+            .red_button, .door_button, .lights_button, .lever, .gauges, .screen, .breakers, .locked_door, .keypad, .power_cabinet => {},
         }
         self.walkTo(hotspot.stand_point, .{ .use = .{ .hotspot = index, .facing = hotspot.facing, .action = hotspot.action } });
     }
@@ -183,7 +184,7 @@ pub const Game = struct {
     }
 };
 
-/// Picks only the hotspots in one room_01.
+/// Picks only the hotspots in one room.
 const RoomFilter = struct {
     room: deck.RoomId,
 

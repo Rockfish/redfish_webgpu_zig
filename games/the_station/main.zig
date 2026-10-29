@@ -2,7 +2,7 @@
 //! Design notes: `the-station/docs/game_notes/the_station_design.md`; plan 021.
 //!
 //! The deck (`deck.zig`): Room 01 and, through its door, Room 02, each seen through its
-//! open front by the cutaway camera (`room_camera.zig`), which pans to the robot's room_01.
+//! open front by the cutaway camera (`room_camera.zig`), which pans to the robot's room.
 //! Click the floor to walk there; click something (outlined under the mouse) to walk to
 //! it and use it (`game.zig`). Main power is out: the red button stops the alarm, the
 //! console's third button turns on the emergency lights, its middle button opens and
@@ -152,7 +152,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         const alarm_level = if (game.is_alarm_on) alarmPulse(time, settings.alarm.rate) else 0.0;
 
         var frame = gpu.acquireFrame() orelse continue;
-        try ink_pass.update(gpu);
+        try ink_pass.update(context.alloc, gpu);
 
         var uniforms = render_context.frameUniforms();
         uniforms.lights = deckLights(settings, &game, alarm_level).uniforms();
@@ -332,7 +332,7 @@ fn drawPanel(panel: settings_file.Panel, game: *Game, aspect: f32) void {
     zgui.setNextWindowSize(.{ .w = 340, .h = 0, .cond = .first_use_ever });
     // Collapsed at first: open it covers the door
     zgui.setNextWindowCollapsed(.{ .collapsed = true, .cond = .first_use_ever });
-    if (zgui.begin("room 01", .{})) {
+    if (zgui.begin("the station", .{})) {
         zgui.text("1 / 2 / 3: view   Space: alarm", .{});
         zgui.text("Right-click a setting: save, revert, reset", .{});
 

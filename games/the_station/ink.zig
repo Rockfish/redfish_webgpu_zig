@@ -97,7 +97,6 @@ pub const Style = struct {
 };
 
 pub const Ink = struct {
-    allocator: std.mem.Allocator,
     /// View-space normal (xyz) and depth (w) of the frame's scene, the window's size.
     normal_depth: *Texture,
     /// The scene's shaders drawing into `normal_depth`.
@@ -122,7 +121,6 @@ pub const Ink = struct {
         quad.is_transparent = true;
 
         return .{
-            .allocator = context.alloc,
             .normal_depth = try createNormalDepth(context.alloc, gpu),
             .normal_depth_shaders = try SceneShaders.init(context, gpu, true),
             .outline_shader = outline_shader,
@@ -131,12 +129,12 @@ pub const Ink = struct {
     }
 
     /// Recreates the normal-depth target if the window's size changed.
-    pub fn update(self: *Self, gpu: *GpuContext) !void {
+    pub fn update(self: *Self, allocator: std.mem.Allocator, gpu: *GpuContext) !void {
         if (self.normal_depth.width == gpu.width and self.normal_depth.height == gpu.height) {
             return;
         }
         self.normal_depth.releaseGpuObjects();
-        self.normal_depth = try createNormalDepth(self.allocator, gpu);
+        self.normal_depth = try createNormalDepth(allocator, gpu);
     }
 
     /// The pass that draws the scene's normals and depth: single-sample, with the

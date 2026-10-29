@@ -69,7 +69,7 @@ pub const WALK_MAX_Z: f32 = -0.4;
 /// Where the robot starts.
 pub const ROBOT_START = vec3(-0.8, 0.0, -1.6);
 
-/// Where the robot stands to use the door, in this room_01.
+/// Where the robot stands to use the door, in this room.
 pub const DOOR_STAND_POINT = vec3(-3.3, 0.0, DOOR_CENTER_Z);
 
 /// What each hotspot on the deck is, for the game to decide what using it does. The

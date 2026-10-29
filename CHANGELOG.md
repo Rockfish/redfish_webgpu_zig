@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: style fixes and tests; plan 022 phase A
+- **docs/STYLE.md**: two exceptions: a short `if` as a switch arm stays on one line; a table of data keeps one item per line, however long
+- **games/the_station**: fixes from the review (comment leftovers of the `room_01` rename, an `else` branch over `HotspotKind`, a `.?`, constants placed after functions, `Ink` storing an allocator); settings saved to `the-station/settings/the_station.zon` (was `room_01.zon`), panel named "the station"; `tests.zig`, run by `zig build test`, with tests for `navigation.zig`
+
 ### 2026-10-29 - The Station: plan 022, the structure for the whole game
 - **docs/plans**: plan 022 written after a review of `games/the_station`: style fixes, a room kit and rooms as data on a grid of 2.8 x 3.4 m cells, the station's state as one typed struct, connections and transitions between rooms, two rooms down Room 02's ladder and the generator room (6 x 2) through a doorway, an inventory with counts, model nodes in the engine, and the first 3D puzzle panel. Plan 021 parked; plan 022 active
 

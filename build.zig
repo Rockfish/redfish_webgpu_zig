@@ -143,6 +143,20 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests and analyze all of math, containers, core");
     test_step.dependOn(&b.addRunArtifact(tests).step);
 
+    // The Station's game logic (no window or GPU)
+    const station_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("games/the_station/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "core", .module = core },
+                .{ .name = "math", .module = math },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(station_tests).step);
+
     // Test blocks are only discovered in a test's root module, so each module gets its own.
     inline for (.{ math, containers, core }) |module| {
         const module_tests = b.addTest(.{ .root_module = module });

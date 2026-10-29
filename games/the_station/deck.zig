@@ -1,7 +1,7 @@
 //! The deck: Room 01 (`room_01.zig`) and Room 02 (`room_02.zig`) side by side, joined by
 //! Room 01's door (plan 021, phase G). Where the robot can walk on it, every hotspot,
 //! which room a point is in, and how to frame each room for the camera, which pans to the
-//! robot's room_01.
+//! robot's room.
 //!
 //! Both rooms are always drawn; the camera shows one, and the other while it pans.
 
@@ -28,8 +28,17 @@ const Vec4 = math.Vec4;
 const vec3 = math.vec3;
 const vec4 = math.vec4;
 
+const log = std.log.scoped(.deck);
+
 /// Space shown around a room's cut edges.
 const FRAME_MARGIN: f32 = 0.3;
+
+/// The alarm lamp's lens when it isn't glowing: a dull red, so room light doesn't make
+/// it look lit (linear).
+const ALARM_LENS_DULL = vec4(0.1, 0.012, 0.01, 1.0);
+
+/// The light on the deck: emergency light glows yellowish.
+pub const EMERGENCY_TINT = vec3(1.0, 0.72, 0.3);
 
 pub const RoomId = enum { room_01, room_02 };
 
@@ -78,13 +87,6 @@ pub fn isHotspotIn(index: usize, id: RoomId) bool {
     const bounds = hotspots[index].bounds;
     return roomAt((bounds.min.x + bounds.max.x) / 2.0) == id;
 }
-
-/// The alarm lamp's lens when it isn't glowing: a dull red, so room light doesn't make
-/// it look lit (linear).
-const ALARM_LENS_DULL = vec4(0.1, 0.012, 0.01, 1.0);
-
-/// The light on the deck: emergency light glows yellowish.
-pub const EMERGENCY_TINT = vec3(1.0, 0.72, 0.3);
 
 pub const Deck = struct {
     cube: *Shape,
@@ -190,9 +192,11 @@ const Equipment = struct {
     model: ?*ModelInstance,
 
     fn draw(self: Equipment, frame: *const Frame, shader: *const Shader, model_shader: *const Shader, hatching: Hatching, use_greybox: bool) void {
-        if (self.model != null and !use_greybox) {
-            self.model.?.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
-            return;
+        if (self.model) |model| {
+            if (!use_greybox) {
+                model.drawWithParams(frame, model_shader, Mat4.Identity, vec4(0.0, 0.0, hatching.strength, hatching.spacing));
+                return;
+            }
         }
         for (self.greybox) |part| {
             room_01.drawPart(frame, shader, part, hatching);
@@ -215,7 +219,7 @@ pub const DrawState = struct {
 /// Null, with a warning, when the model can't be loaded (no the-station checkout).
 fn loadModel(context: core.Context, gpu: *GpuContext, name: []const u8, path: []const u8) ?*ModelInstance {
     return ModelInstance.initWithConfig(context, gpu, .{ .name = name, .file_path = path }) catch |err| {
-        std.log.warn("{s} not loaded ({s}); drawing the greybox room", .{ path, @errorName(err) });
+        log.warn("{s} not loaded ({s}); drawing the greybox room", .{ path, @errorName(err) });
         return null;
     };
 }

@@ -114,6 +114,8 @@ pub fn draw(self: *Model, pass: c.WGPURenderPassEncoder, frame: *const FrameData
 
 - Exception: an `if` used as an expression to pick a value, like `?:` in C, stays on one
   line without braces: `const scale = if (is_hit) 1.2 else 1.0;`
+- Exception: a short `if` as a switch arm stays on one line without braces:
+  `.top => if (is_lower_part) self.robot.climb(true),`
 - Prefer early return over deep nesting.
 - Unwrap optionals with `if (x) |value|` or `orelse`; use `.?` only where null is a bug.
 - `switch` over enums and tagged unions; no `else` branch unless it's truly a default,
@@ -241,6 +243,9 @@ Correctness rules. They exist because WebGPU works differently from GL.
       std.mem.sliceAsBytes(positions),
   );
   ```
+- Exception: a table of data written one row per item (a room's parts, its hotspots'
+  bounds) keeps each item on one line, however long, so the rows line up and read as a
+  table.
 - Zig lazy analysis compiles unreferenced functions without checking them. "It builds"
   proves nothing about uncalled code: call new public functions from somewhere, or
   cover them with a `test`.

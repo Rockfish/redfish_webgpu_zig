@@ -155,3 +155,62 @@ fn nearestArea(areas: []const Area, is_door_open: bool, point: Vec3, allowed: ?*
     }
     return best;
 }
+
+const testing = std.testing;
+
+/// A room joined by a doorway to a room with a hole: a front strip and a strip either
+/// side of the hole behind it; the doorway opens onto the right one.
+const test_areas = [_]Area{
+    .{ .min_x = 0.0, .max_x = 4.0, .min_z = -4.0, .max_z = 0.0 },
+    .{ .min_x = -1.0, .max_x = 0.0, .min_z = -2.5, .max_z = -1.5, .needs_open_door = true },
+    .{ .min_x = -5.0, .max_x = -1.0, .min_z = -1.0, .max_z = 0.0 },
+    .{ .min_x = -5.0, .max_x = -4.0, .min_z = -4.0, .max_z = -1.0 },
+    .{ .min_x = -2.0, .max_x = -1.0, .min_z = -4.0, .max_z = -1.0 },
+};
+
+fn expectPoint(expected: Vec3, actual: Vec3) !void {
+    try testing.expectApproxEqAbs(expected.x, actual.x, 1e-5);
+    try testing.expectApproxEqAbs(expected.y, actual.y, 1e-5);
+    try testing.expectApproxEqAbs(expected.z, actual.z, 1e-5);
+}
+
+test "findPath: inside one area, straight to the target" {
+    const path = findPath(&test_areas, false, vec3(1.0, 0.0, -1.0), vec3(3.0, 0.0, -3.0));
+    try testing.expectEqual(1, path.len);
+    try expectPoint(vec3(3.0, 0.0, -3.0), path.last());
+}
+
+test "findPath: a point outside every area goes to the nearest point in one" {
+    const path = findPath(&test_areas, false, vec3(1.0, 0.0, -1.0), vec3(6.0, 1.5, -2.0));
+    try testing.expectEqual(1, path.len);
+    try expectPoint(vec3(4.0, 0.0, -2.0), path.last());
+}
+
+test "findPath: through the doorway when the door is open" {
+    const path = findPath(&test_areas, true, vec3(2.0, 0.0, -2.0), vec3(-3.0, 0.0, -0.5));
+    try testing.expectEqual(4, path.len);
+    // Into the doorway, out of it into the strip beside the hole, into the front strip
+    try expectPoint(vec3(0.0, 0.0, -1.5), path.points[0]);
+    try expectPoint(vec3(-1.0, 0.0, -1.5), path.points[1]);
+    try expectPoint(vec3(-2.0, 0.0, -1.0), path.points[2]);
+    try expectPoint(vec3(-3.0, 0.0, -0.5), path.points[3]);
+}
+
+test "findPath: a closed door keeps the robot in its room" {
+    const target = nearestReachable(&test_areas, false, vec3(2.0, 0.0, -2.0), vec3(-3.0, 0.0, -0.5));
+    try expectPoint(vec3(0.0, 0.0, -0.5), target);
+}
+
+test "findPath: around the hole's front, from one side behind it to the other" {
+    const path = findPath(&test_areas, false, vec3(-4.5, 0.0, -3.0), vec3(-1.5, 0.0, -3.0));
+    try testing.expectEqual(3, path.len);
+    // Each crossing is the point of the shared edge nearest the next point
+    try expectPoint(vec3(-4.0, 0.0, -1.0), path.points[0]);
+    try expectPoint(vec3(-1.5, 0.0, -1.0), path.points[1]);
+    try expectPoint(vec3(-1.5, 0.0, -3.0), path.last());
+}
+
+test "Area.contains allows a point on the edge" {
+    try testing.expect(test_areas[0].contains(vec3(4.0, 0.0, 0.0)));
+    try testing.expect(!test_areas[0].contains(vec3(4.1, 0.0, 0.0)));
+}

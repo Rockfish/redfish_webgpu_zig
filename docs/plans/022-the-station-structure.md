@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; next: phase A)
+## Status: Active (written 2026-10-29; phase A done; next: phase B)
 
 ## Context
 
@@ -226,17 +226,17 @@ inventory, puzzle logic.
 ## Phases
 
 ### A. Style fixes
-- [ ] STYLE.md: the two exceptions (decision 5)
-- [ ] Rename leftovers in comments ("the robot's room_01.", `main.zig:5`, `deck.zig:4`,
+- [x] STYLE.md: the two exceptions (decision 5)
+- [x] Rename leftovers in comments ("the robot's room_01.", `main.zig:5`, `deck.zig:4`,
       `game.zig:48`, `game.zig:186`, `room_01.zig:72`)
-- [ ] `game.zig:103` `else => {}` over `HotspotKind`: list the cases
-- [ ] `deck.zig:194` `self.model.?` becomes `if (self.model) |model|`
-- [ ] `deck.zig` constants above the types; `game.zig:20` the inline `@import`; a scoped
+- [x] `game.zig:103` `else => {}` over `HotspotKind`: list the cases
+- [x] `deck.zig:194` `self.model.?` becomes `if (self.model) |model|`
+- [x] `deck.zig` constants above the types; `game.zig:20` the inline `@import`; a scoped
       log in `deck.zig`
-- [ ] `ink.zig`: `Ink` doesn't store an allocator (resize takes the context)
-- [ ] Settings file and panel named for the game, not Room 01
+- [x] `ink.zig`: `Ink` doesn't store an allocator (resize takes the context)
+- [x] Settings file and panel named for the game, not Room 01
       (`settings/the_station.zon`, moving the saved values)
-- [ ] Test step for the game's logic; `navigation.zig` tests first
+- [x] Test step for the game's logic; `navigation.zig` tests first
 
 ### B. Room kit
 - [ ] `room_kit.zig` with the shared pieces from `room_01.zig`; room_02, robot, ink
@@ -328,3 +328,15 @@ inventory, puzzle logic.
   room lines up with the other rooms. Agreed: its floor and top match the stacked rooms,
   the entrance is the door connection already planned, and no 6.4 m climb in view.
   Placed under Room 01 (Claude's suggestion, the control room over its generator).
+- 2026-10-29, phase A, as built: STYLE.md's two exceptions (sections 5 and 11); the
+  rename leftovers; `sendToHotspot` lists every `HotspotKind`; `Equipment.draw` unwraps
+  the model with `if`; deck's constants above its types and a scoped log; `Ink.update`
+  takes the allocator (each resize still allocates the new target's struct in the
+  arena, freed when the arena resets); the settings file is
+  `the-station/settings/the_station.zon` (moved with `git mv`, values kept) and the panel
+  is "the station" (ImGui forgets its position once). Tests:
+  `games/the_station/tests.zig`, run by `zig build test`, imports the logic files;
+  `navigation.zig` has six (one area, clamping, the doorway open and shut, around the
+  hole, edges). Two expectations were wrong at first, not the code: the test doorway
+  also touched the strip beside the hole, and a crossing is the shared edge's point
+  nearest the next point (straight above the target, not the strip's corner).

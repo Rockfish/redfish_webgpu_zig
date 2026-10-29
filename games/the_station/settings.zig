@@ -16,7 +16,7 @@ const RoomCamera = @import("room_camera.zig").RoomCamera;
 const log = std.log.scoped(.settings);
 
 /// With the room's art, in the-station's repo.
-pub const SETTINGS_PATH = "the-station/settings/room_01.zon";
+pub const SETTINGS_PATH = "the-station/settings/the_station.zon";
 
 /// Everything the panel tunes, one section per panel section.
 pub const Settings = struct {
