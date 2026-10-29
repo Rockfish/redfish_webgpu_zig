@@ -1,6 +1,6 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1, E2 done; next: phase E3)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1-E3 done; next: phase E4)
 
 ## Context
 
@@ -348,12 +348,12 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
 - [x] Tests: a transition starts when the robot leaves the shown room, and ends
 
 #### E3. Rooms 03 and 04
-- [ ] The shell for stacked rooms: a room with a room below builds no floor; a hole in
+- [x] The shell for stacked rooms: a room with a room below builds no floor; a hole in
       the ceiling; `roomAt` and visibility by rows
-- [ ] Rooms 03 and 04 (greybox, 3 x 1) below Room 02: the shaft through Room 03, ending
+- [x] Rooms 03 and 04 (greybox, 3 x 1) below Room 02: the shaft through Room 03, ending
       in Room 04's ceiling; the ladder's stops at Room 03's and Room 04's floors
-- [ ] The camera's eye height above the shown floor (`Framing.floor_y`)
-- [ ] Tests: rooms on rows, the ladder's stops in their rooms
+- [x] The camera's eye height above the shown floor (`Framing.floor_y`)
+- [x] Tests: rooms on rows, the ladder's stops in their rooms
 
 #### E4. The generator room
 - [ ] Greybox, 6 x 2, under Room 01, entered through a doorway from Room 04
@@ -601,3 +601,38 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
     a fade black at its middle, changing the room there. 153 pass.
   - Checked on screen: the game held mid-fade (temporary edit) darkens to about half,
     the cursor over it.
+- 2026-10-29, phase E3, as built:
+  - `room_kit.Shell`: `floor` (`deck`, the floor over the solid deck below as before, or
+    `room_below`: none, the room below's ceiling is the floor) and `ceiling_hole` (the
+    ceiling in four pieces around it); the floor hole and its shaft through the deck are
+    gone. The room below builds the slab between floors, so the generator room's
+    ceiling can run past Room 01 (E4).
+  - `shaft.zig`: the hole (the same in each room's coordinates, one column of cells),
+    the ladder's place, its stops (`RUNG_STOP` over the hole, `FOOT_STOP` in Room 04),
+    `walkAreasAroundHole`, `addLadder(bottom, top)`, `addPipe`. Each room draws the
+    ladder and the pipe in its own space, from the bottom of its floor to its ceiling,
+    so they show whichever rooms are drawn; Room 02's above the floor too.
+    `build_room_02.py`: the ladder and the pipe down the shaft end at the bottom of the
+    floor (`SHAFT_DEPTH` 0.4, was 3.4); re-exported.
+  - `room_03.zig`, `room_04.zig`: greybox (`Room.model_path` is optional), 3 x 1 at
+    column -3, rows -1 and -2; stand-ins on the back walls. Room 03's right wall is the
+    deck under Room 01 for now; Room 04's is solid until E4. `RoomId` and `rooms` have
+    them; `station.ladder`'s stops are Rooms 02, 03, and 04's, from the top.
+  - A room's space is its cells: from the bottom of its floor to its ceiling (the room
+    above starts there); outside every room (the deck under Room 01), the nearest by
+    distance to its space.
+  - `Framing.floor_y`: the eye is `eye_height` above the shown room's floor
+    (`station.framing`), eased with the pan.
+  - Lights: the room shown gets the first emergency light, then the other visible rooms.
+  - Tests: rooms on rows, `roomAt` at the slab between floors and in the deck, the
+    ladder's stops by room, `areSideBySide` across floors, Room 04 not visible from
+    Room 01; the ladder from Room 02 down to Room 03 with a fade, off to a walk there.
+    154 pass.
+  - Checked with captures of Rooms 02, 03, and 04 (model and greybox): the ladder and
+    pipe line up through the floors, the room below shows under the cut.
+  - John: from Room 04, Room 03's right side was cut off. Its right wall is the deck
+    under Room 01, drawn with Room 01, which wasn't counted as visible (its cells are
+    above). `isVisible` now tests what a room draws (`drawnSpace`: with the deck below
+    it); the other visible rooms get emergency lights nearest first
+    (`main.isNearer`). Test: Room 01 visible from Room 04. Below the deck, right of
+    Room 04, stays black until the generator room (E4).

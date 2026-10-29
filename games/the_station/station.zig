@@ -4,8 +4,9 @@
 //! ladder), every hotspot, which room a point is in, how to frame each room for the
 //! camera, and drawing the rooms the camera sees.
 //!
-//! Room 02 is left of Room 01 through Room 01's door. The camera shows the robot's room
-//! and pans to the next; a neighbor shows at the frame's edge.
+//! Room 02 is left of Room 01 through Room 01's door; Rooms 03 and 04 are below Room 02,
+//! down its ladder (`shaft.zig`). The camera shows the robot's room and pans or fades to
+//! the next (`game.zig`); a neighbor shows at the frame's edge.
 
 const std = @import("std");
 const core = @import("core");
@@ -14,9 +15,12 @@ const math = @import("math");
 const room_kit = @import("room_kit.zig");
 const room_01 = @import("room_01.zig");
 const room_02 = @import("room_02.zig");
+const room_03 = @import("room_03.zig");
+const room_04 = @import("room_04.zig");
 const navigation = @import("navigation.zig");
 const interaction = @import("interaction.zig");
 const robot = @import("robot.zig");
+const shaft = @import("shaft.zig");
 const station_state = @import("state.zig");
 const Ladder = robot.Ladder;
 const LadderStop = robot.LadderStop;
@@ -73,8 +77,8 @@ pub const Room = struct {
     /// Its size in cells.
     cells_wide: u32,
     cells_high: u32,
-    /// Its equipment from Blender.
-    model_path: []const u8,
+    /// Its equipment from Blender; null for a greybox room.
+    model_path: ?[]const u8,
     shell: room_kit.Shell,
     walk_areas: []const navigation.Area,
     hotspots: []const Hotspot,
@@ -99,11 +103,11 @@ pub const Room = struct {
     }
 };
 
-pub const RoomId = enum { room_01, room_02 };
-const ROOM_COUNT = std.enums.values(RoomId).len;
+pub const RoomId = enum { room_01, room_02, room_03, room_04 };
+pub const ROOM_COUNT = std.enums.values(RoomId).len;
 
 /// By `RoomId`.
-pub const rooms = [ROOM_COUNT]Room{ room_01.room, room_02.room };
+pub const rooms = [ROOM_COUNT]Room{ room_01.room, room_02.room, room_03.room, room_04.room };
 
 pub fn room(id: RoomId) Room {
     return rooms[@intFromEnum(id)];
@@ -166,9 +170,14 @@ pub fn doorway(id: DoorwayId) Doorway {
     return doorways[@intFromEnum(id)];
 }
 
-/// Room 02's ladder, on the station.
-pub const ladder: Ladder = .{ .stops = &ladder_stops, .facing = room_02.LADDER_FACING };
-const ladder_stops = placeLadderStops();
+/// The ladder from Room 02 down to Room 04, on the station (`shaft.zig`).
+pub const ladder: Ladder = .{ .stops = &ladder_stops, .facing = shaft.LADDER_FACING };
+/// From the top down.
+const ladder_stops = [_]LadderStop{
+    placeStop(.room_02, room_02.ladder_stop),
+    placeStop(.room_03, room_03.ladder_stop),
+    placeStop(.room_04, room_04.ladder_stop),
+};
 
 /// The ladder's stop in room `id` (the first, from the top), or null.
 pub fn ladderStopIn(id: RoomId) ?usize {
@@ -181,7 +190,8 @@ pub fn ladderStopIn(id: RoomId) ?usize {
 }
 
 /// The room `position` is in: inside its walls (a shared wall's middle divides two
-/// rooms), from the deck below it to its ceiling. Outside every room, the nearest.
+/// rooms), from the bottom of its floor to its ceiling. Outside every room (in the deck
+/// below a room), the nearest.
 pub fn roomAt(position: Vec3) RoomId {
     var nearest: RoomId = .room_01;
     var nearest_distance = std.math.inf(f32);
@@ -190,7 +200,12 @@ pub fn roomAt(position: Vec3) RoomId {
         if (position.x >= space.min.x and position.x < space.max.x and position.y >= space.min.y and position.y < space.max.y) {
             return id;
         }
-        const distance = @abs(position.x - place(id, Vec3.Zero).x);
+        const nearest_point = vec3(
+            std.math.clamp(position.x, space.min.x, space.max.x),
+            std.math.clamp(position.y, space.min.y, space.max.y),
+            position.z,
+        );
+        const distance = nearest_point.sub(position).length();
         if (distance < nearest_distance) {
             nearest = id;
             nearest_distance = distance;
@@ -218,6 +233,7 @@ pub fn framing(id: RoomId) Framing {
         .center_y = origin.y + shown.height() / 2.0,
         .half_width = shown.width() / 2.0 + room_kit.WALL + FRAME_MARGIN,
         .half_height = shown.height() / 2.0 + room_kit.WALL + FRAME_MARGIN,
+        .floor_y = origin.y,
     };
 }
 
@@ -235,11 +251,12 @@ pub fn isHotspotIn(index: usize, id: RoomId) bool {
     return hotspot_rooms[index] == id;
 }
 
+/// Whether room `id` draws anything the camera sees (`drawnSpace`), so it is drawn.
 /// What the camera shows: `view` on the opening's plane (fitted to the screen), seen
 /// from `eye`; `back_scale` is how much smaller the back of a room looks than its
 /// opening (`RoomCamera.depthScale`; 1 without perspective).
 pub fn isVisible(id: RoomId, view: Framing, eye: Vec3, back_scale: f32) bool {
-    const space = roomSpace(id);
+    const space = drawnSpace(id);
     // Its back, seen from the eye, falls closer to the eye's line than its opening
     const back_min_x = eye.x + (space.min.x - eye.x) * back_scale;
     const back_max_x = eye.x + (space.max.x - eye.x) * back_scale;
@@ -375,7 +392,7 @@ const RoomParts = struct {
             .tubes = try tubes.toOwnedSlice(context.alloc),
             .equipment = .{
                 .greybox = try greybox.toOwnedSlice(context.alloc),
-                .model = loadModel(context, gpu, built.name, built.model_path),
+                .model = if (built.model_path) |path| loadModel(context, gpu, built.name, path) else null,
                 .origin = origin,
             },
         };
@@ -462,16 +479,26 @@ pub const DrawState = struct {
     highlight: ?Highlight = null,
 };
 
-/// A room's space on the station: inside its walls (to their middles), from the bottom
-/// of the deck below it to the top of its ceiling.
+/// A room's space on the station, its cells: inside its walls (to their middles), from
+/// the bottom of its floor to its ceiling, where the room above starts.
 fn roomSpace(id: RoomId) AABB {
     const inside = room(id);
     const half_width = inside.width() / 2.0 + room_kit.WALL / 2.0;
-    const bottom = -room_kit.WALL - room_kit.BELOW_DEPTH;
     return .{
-        .min = place(id, vec3(-half_width, bottom, -room_kit.DEPTH - room_kit.WALL)),
-        .max = place(id, vec3(half_width, inside.height() + room_kit.WALL, 0.0)),
+        .min = place(id, vec3(-half_width, -room_kit.WALL, -room_kit.DEPTH - room_kit.WALL)),
+        .max = place(id, vec3(half_width, inside.height(), 0.0)),
     };
+}
+
+/// What a room's parts cover: its space, and the deck below it (`Shell.floor`), which
+/// is the wall beside a room on the floor below (Room 01's, beside Room 03).
+fn drawnSpace(id: RoomId) AABB {
+    var space = roomSpace(id);
+    switch (room(id).shell.floor) {
+        .deck => space.min.y -= room_kit.BELOW_DEPTH,
+        .room_below => {},
+    }
+    return space;
 }
 
 fn hotspotCount() usize {
@@ -509,12 +536,8 @@ fn hotspotRooms() [hotspotCount()]RoomId {
     return placed;
 }
 
-fn placeLadderStops() [room_02.ladder_stops.len]LadderStop {
-    var placed: [room_02.ladder_stops.len]LadderStop = undefined;
-    for (room_02.ladder_stops, &placed) |stop, *moved| {
-        moved.* = .{ .position = place(.room_02, stop.position), .exit = place(.room_02, stop.exit) };
-    }
-    return placed;
+fn placeStop(id: RoomId, stop: LadderStop) LadderStop {
+    return .{ .position = place(id, stop.position), .exit = place(id, stop.exit) };
 }
 
 /// Each hotspot's mesh in its room's model, warning about a name the model doesn't have.
@@ -557,7 +580,7 @@ test "roomAt: the shared wall's middle divides the rooms; the ladder's bottom is
     try testing.expectEqual(RoomId.room_01, roomAt(vec3(4.2, 0.0, -2.0)));
     try testing.expectEqual(RoomId.room_01, roomAt(vec3(0.1, 0.0, -2.0)));
     try testing.expectEqual(RoomId.room_02, roomAt(vec3(-0.1, 0.0, -2.0)));
-    try testing.expectEqual(RoomId.room_02, roomAt(ladder.stops[ladder.stops.len - 1].position));
+    try testing.expectEqual(RoomId.room_04, roomAt(ladder.stops[ladder.stops.len - 1].position));
 }
 
 test "hotspots, doorways, and the ladder are placed by their room's origin" {
@@ -570,12 +593,26 @@ test "hotspots, doorways, and the ladder are placed by their room's origin" {
         }
     }
     try testing.expectEqual(@as(?usize, 0), ladderStopIn(.room_02));
+    try testing.expectEqual(@as(?usize, 1), ladderStopIn(.room_03));
+    try testing.expectEqual(@as(?usize, 2), ladderStopIn(.room_04));
     try testing.expectEqual(@as(?usize, null), ladderStopIn(.room_01));
 }
 
-test "areSideBySide: Rooms 01 and 02 share row 0" {
+test "areSideBySide: Rooms 01 and 02 share row 0; Rooms 02, 03, and 04 are floors apart" {
     try testing.expect(areSideBySide(.room_01, .room_02));
     try testing.expect(areSideBySide(.room_02, .room_02));
+    try testing.expect(!areSideBySide(.room_02, .room_03));
+    try testing.expect(!areSideBySide(.room_03, .room_04));
+}
+
+test "rooms on rows: Room 03 under Room 02, Room 04 under Room 03; the floors between" {
+    try expectPoint(vec3(-4.2, -3.4, 0.0), room(.room_03).origin());
+    try expectPoint(vec3(-4.2, -6.8, 0.0), room(.room_04).origin());
+    // Room 02's floor slab is Room 02's; just under it, Room 03's ceiling space
+    try testing.expectEqual(RoomId.room_02, roomAt(vec3(-4.2, -0.3, -2.0)));
+    try testing.expectEqual(RoomId.room_03, roomAt(vec3(-4.2, -0.5, -2.0)));
+    // In the deck under Room 01, beside Room 03: the nearest room
+    try testing.expectEqual(RoomId.room_03, roomAt(vec3(0.5, -2.0, -2.0)));
 }
 
 test "a doorway's gate: the door between Rooms 01 and 02 opens it" {
@@ -588,9 +625,16 @@ test "a doorway's gate: the door between Rooms 01 and 02 opens it" {
 }
 
 test "isVisible: a room's neighbor shows at the edge; a far view shows neither" {
-    const view = @import("room_camera.zig").RoomCamera.fitToAspect(framing(.room_01), 16.0 / 9.0);
+    const RoomCamera = @import("room_camera.zig").RoomCamera;
+    const view = RoomCamera.fitToAspect(framing(.room_01), 16.0 / 9.0);
     const eye = vec3(view.center_x, 1.9, 6.0);
     const back_scale = 6.0 / (6.0 + room_kit.DEPTH + room_kit.WALL);
+    try testing.expect(!isVisible(.room_04, view, eye, back_scale));
+
+    // From Room 04, the deck under Room 01 beside Room 03: Room 01 draws it
+    const below = RoomCamera.fitToAspect(framing(.room_04), 16.0 / 9.0);
+    const below_eye = vec3(below.center_x, below.floor_y + 1.9, 6.0);
+    try testing.expect(isVisible(.room_01, below, below_eye, back_scale));
     try testing.expect(isVisible(.room_01, view, eye, back_scale));
     try testing.expect(isVisible(.room_02, view, eye, back_scale));
 

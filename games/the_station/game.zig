@@ -469,22 +469,30 @@ test "doorway: shut, the robot looks at the door; open, it walks through" {
     try std.testing.expect(game.robot.position.sub(station.place(.room_02, room_02.DOOR_STAND_POINT)).length() < 1e-3);
 }
 
-test "ladder: on at Room 02's stop, down to the next, back up and off to a walk" {
+test "ladder: on at Room 02's stop, down to Room 03 with a fade, off to a walk there" {
     var game: Game = .{};
     game.robot.position = station.place(.room_02, room_02.DOOR_STAND_POINT);
+    game.room = .room_02;
     game.sendToHotspot(hotspotIndex(.ladder_hole));
     runFor(&game, 10.0);
     try std.testing.expectEqual(@as(?usize, 1), game.robot.nextStop(.down));
     try std.testing.expectEqual(Cursor.walk, game.ladderCursor(.up));
 
     game.useLadder(.down);
+    var frames: usize = 0;
+    while (game.mode == .explore and frames < 1000) : (frames += 1) {
+        game.update(null, false, 1.0 / 60.0);
+    }
+    try std.testing.expect(game.isCut());
     runFor(&game, 10.0);
+    try std.testing.expectEqual(station.RoomId.room_03, game.room);
     try std.testing.expectEqual(station.ladder.stops[1].position.y, game.robot.position.y);
     try std.testing.expectEqual(Cursor.climb_up, game.ladderCursor(.up));
+    try std.testing.expectEqual(Cursor.climb_down, game.ladderCursor(.down));
 
-    const target = station.place(.room_02, vec3(2.0, 0.0, -1.0));
+    const target = station.place(.room_03, vec3(2.0, 0.0, -1.0));
     game.walkTo(target, .stand);
-    runFor(&game, 20.0);
+    runFor(&game, 10.0);
     try std.testing.expect(game.robot.currentLadder() == null);
     try std.testing.expect(game.robot.position.sub(target).length() < 1e-3);
 }

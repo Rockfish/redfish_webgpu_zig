@@ -24,19 +24,21 @@ const vec3 = math.vec3;
 
 pub const View = enum(i32) { shifted, aimed, orthographic };
 
-/// The rectangle on the z = 0 plane to show, in world units.
+/// The rectangle on the z = 0 plane to show, in world units, and the floor the eye is
+/// above.
 pub const Framing = struct {
     center_x: f32,
     center_y: f32,
     half_width: f32,
     half_height: f32,
+    floor_y: f32,
 };
 
 pub const RoomCamera = struct {
     view: View = .shifted,
     /// From the opening (z = 0) to the eye, along +z.
     distance: f32 = 6.0,
-    /// The eye's height; the vanishing point is at this height.
+    /// The eye's height above the framing's floor; the vanishing point is at this height.
     eye_height: f32 = 1.9,
     /// The eye's x from the framing's center; the vanishing point is at this x.
     eye_x: f32 = 0.0,
@@ -66,9 +68,10 @@ pub const RoomCamera = struct {
         };
     }
 
-    /// The eye, in front of `framing`'s center (the camera pans with the framing).
+    /// The eye, in front of `framing`'s center (the camera pans with the framing), above
+    /// its floor.
     pub fn eyePosition(self: Self, framing: Framing) Vec3 {
-        return vec3(framing.center_x + self.eye_x, self.eye_height, self.distance);
+        return vec3(framing.center_x + self.eye_x, framing.floor_y + self.eye_height, self.distance);
     }
 
     /// `framing` grown to the screen's aspect, so all of it shows and it is centered.
@@ -101,10 +104,11 @@ pub const RoomCamera = struct {
     /// the near plane.
     fn shiftedProjection(self: Self, framing: Framing) Mat4 {
         const to_near = self.near / self.distance;
+        const eye_y = framing.floor_y + self.eye_height;
         const left = (-framing.half_width - self.eye_x) * to_near;
         const right = (framing.half_width - self.eye_x) * to_near;
-        const bottom = (framing.center_y - framing.half_height - self.eye_height) * to_near;
-        const top = (framing.center_y + framing.half_height - self.eye_height) * to_near;
+        const bottom = (framing.center_y - framing.half_height - eye_y) * to_near;
+        const top = (framing.center_y + framing.half_height - eye_y) * to_near;
         return Mat4.frustumRhZo(left, right, bottom, top, self.near, self.far);
     }
 
@@ -117,11 +121,12 @@ pub const RoomCamera = struct {
     }
 
     fn orthographicProjection(self: Self, framing: Framing) Mat4 {
+        const eye_y = framing.floor_y + self.eye_height;
         return Mat4.orthographicRhZo(
             -framing.half_width - self.eye_x,
             framing.half_width - self.eye_x,
-            framing.center_y - framing.half_height - self.eye_height,
-            framing.center_y + framing.half_height - self.eye_height,
+            framing.center_y - framing.half_height - eye_y,
+            framing.center_y + framing.half_height - eye_y,
             self.near,
             self.far,
         );

@@ -1,7 +1,7 @@
 //! What every room is built and drawn with (plan 022, phase B), as
 //! `the-station/blender/room_kit.py` is for the rooms' Blender scripts: the room grid,
 //! door sizes, parts (`Part`, `PartBuilder`, `box`, `grey`), and the shell of any room
-//! (`Shell`: floor, ceiling, walls, doorways, a hole in the floor, the deck below).
+//! (`Shell`: floor, ceiling, walls, doorways, a hole in the ceiling, the deck below).
 //!
 //! A room's own coordinates, 1 unit = 1 m: x runs left to right across the room from its
 //! middle, y up from the floor, z out of the room toward the camera. Its inside spans
@@ -41,7 +41,7 @@ pub const DOOR_CENTER_Z: f32 = -2.2;
 pub const DOOR_WIDTH: f32 = 1.2;
 pub const DOOR_HEIGHT: f32 = 2.2;
 
-/// The deck below, not explored yet: solid under the floor, drawn as a cut.
+/// The deck below a room with no room under it: solid under the floor, drawn as a cut.
 pub const BELOW_DEPTH: f32 = 3.0;
 pub const BELOW_COLOR_SRGB: f32 = 0.35;
 
@@ -96,8 +96,10 @@ pub const Shell = struct {
     height: f32,
     left: Side,
     right: Side,
-    /// A hole in the floor and a shaft below it through the deck below.
-    hole: ?Hole = null,
+    floor: Floor = .deck,
+    /// A hole in the ceiling, where a ladder comes down from the room above (whose floor
+    /// the ceiling is).
+    ceiling_hole: ?Hole = null,
 
     fn innerMinX(self: Shell) f32 {
         return -self.width / 2.0;
@@ -116,6 +118,10 @@ pub const Side = union(enum) {
     neighbor,
 };
 
+/// The floor: the room's own over the solid deck below, or the ceiling of the room below
+/// (which builds it, with any hole in it).
+pub const Floor = enum { deck, room_below };
+
 pub const Doorway = struct {
     /// The door in it: none built with the wall (a door drawn on its own, as Room 01's
     /// sliding door), or shut for good.
@@ -124,7 +130,7 @@ pub const Doorway = struct {
     is_framed_outside: bool,
 };
 
-/// A hole in the floor, on x and z.
+/// A hole in a ceiling (the floor above), on x and z.
 pub const Hole = struct {
     min_x: f32,
     max_x: f32,
@@ -137,39 +143,33 @@ pub const PartBuilder = struct {
     cube: *Shape,
     cylinder: *Shape,
 
-    /// Floor, ceiling, back wall, the side walls the room builds, and the deck below as a
-    /// solid cut. Floor, ceiling, and back wall run under, over, and behind the side walls,
-    /// so the cut reads as one frame. With a hole, the floor and the deck below are four
-    /// pieces around it and the shaft has a dark bottom.
+    /// Ceiling, back wall, the side walls the room builds, and the floor and the deck
+    /// below as a solid cut unless a room is below. Floor, ceiling, and back wall run
+    /// under, over, and behind the side walls, so the cut reads as one frame. With a hole,
+    /// the ceiling is four pieces around it.
     pub fn addShell(self: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part), shell: Shell) !void {
         const left = if (shell.left == .neighbor) shell.innerMinX() else shell.innerMinX() - WALL;
         const right = if (shell.right == .neighbor) shell.innerMaxX() else shell.innerMaxX() + WALL;
         const width = right - left;
         const middle = (left + right) / 2.0;
-        try parts.appendSlice(allocator, &.{
-            .{ .shape = self.cube, .model = box(vec3(middle, shell.height + WALL / 2.0, -DEPTH / 2.0), vec3(width, WALL, DEPTH)), .color = grey(0.55), .is_cut = true },
-            .{ .shape = self.cube, .model = box(vec3(middle, shell.height / 2.0, -DEPTH - WALL / 2.0), vec3(width, shell.height + 2.0 * WALL, WALL)), .color = grey(0.6) },
-        });
+        const ceiling_y = shell.height + WALL / 2.0;
+        const ceiling_color = grey(0.55);
+        if (shell.ceiling_hole) |hole| {
+            try self.addAroundHole(allocator, parts, left, right, -DEPTH, ceiling_y, WALL, ceiling_color, hole);
+        } else {
+            try parts.append(allocator, .{ .shape = self.cube, .model = box(vec3(middle, ceiling_y, -DEPTH / 2.0), vec3(width, WALL, DEPTH)), .color = ceiling_color, .is_cut = true });
+        }
+        try parts.append(allocator, .{ .shape = self.cube, .model = box(vec3(middle, shell.height / 2.0, -DEPTH - WALL / 2.0), vec3(width, shell.height + 2.0 * WALL, WALL)), .color = grey(0.6) });
         try self.addSide(allocator, parts, shell, shell.left, shell.innerMinX(), 1.0);
         try self.addSide(allocator, parts, shell, shell.right, shell.innerMaxX(), -1.0);
 
-        const floor_y = -WALL / 2.0;
-        const floor_color = grey(0.46);
-        const below_y = -WALL - BELOW_DEPTH / 2.0;
-        const below_color = grey(BELOW_COLOR_SRGB);
-        const hole = shell.hole orelse {
-            try parts.appendSlice(allocator, &.{
-                .{ .shape = self.cube, .model = box(vec3(middle, floor_y, -DEPTH / 2.0), vec3(width, WALL, DEPTH)), .color = floor_color, .is_cut = true },
-                .{ .shape = self.cube, .model = box(vec3(middle, below_y, -(DEPTH + WALL) / 2.0), vec3(width, BELOW_DEPTH, DEPTH + WALL)), .color = below_color, .is_cut = true },
-            });
-            return;
-        };
-        try self.addAroundHole(allocator, parts, left, right, -DEPTH, floor_y, WALL, floor_color, hole);
-        try self.addAroundHole(allocator, parts, left, right, -DEPTH - WALL, below_y, BELOW_DEPTH, below_color, hole);
-
-        const shaft_bottom_y = -WALL - BELOW_DEPTH - 0.05;
-        const hole_center = vec3((hole.min_x + hole.max_x) / 2.0, shaft_bottom_y, (hole.min_z + hole.max_z) / 2.0);
-        try parts.append(allocator, .{ .shape = self.cube, .model = box(hole_center, vec3(hole.max_x - hole.min_x, 0.1, hole.max_z - hole.min_z)), .color = grey(0.12) });
+        switch (shell.floor) {
+            .deck => try parts.appendSlice(allocator, &.{
+                .{ .shape = self.cube, .model = box(vec3(middle, -WALL / 2.0, -DEPTH / 2.0), vec3(width, WALL, DEPTH)), .color = grey(0.46), .is_cut = true },
+                .{ .shape = self.cube, .model = box(vec3(middle, -WALL - BELOW_DEPTH / 2.0, -(DEPTH + WALL) / 2.0), vec3(width, BELOW_DEPTH, DEPTH + WALL)), .color = grey(BELOW_COLOR_SRGB), .is_cut = true },
+            }),
+            .room_below => {},
+        }
     }
 
     /// Two ceiling tube fittings, running front to back: each a housing (into

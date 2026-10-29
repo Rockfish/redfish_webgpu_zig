@@ -3,17 +3,16 @@
 //! toward the back center (the robot walks around the hole's front), the deck's power
 //! cabinet and lockers on the back wall.
 //!
-//! As Room 01, the shell (floor around the hole, walls, the locked door, the deck below)
-//! is boxes (`shell`, built by `room_kit.zig`), and the equipment (ladder, rim, keypad,
-//! cabinet, lockers, signs, pipes) is the model `MODEL_PATH`, built by
-//! `the-station/blender/build_room_02.py`; without it, or with the panel's "greybox room",
-//! the greybox equipment draws instead. The hole's and the ladder's sizes here are the
-//! script's too.
+//! As Room 01, the shell (walls, the locked door) is boxes (`shell`, built by
+//! `room_kit.zig`), and the equipment (ladder, rim, keypad, cabinet, lockers, signs, pipes)
+//! is the model `MODEL_PATH`, built by `the-station/blender/build_room_02.py`; without it,
+//! or with the panel's "greybox room", the greybox equipment draws instead. The hole's and
+//! the ladder's sizes (`shaft.zig`) are the script's too.
 //!
 //! 3 x 1 cells at column -3, row 0 of the station (`station.zig`), in its own coordinates
 //! as Room 01 (`room_01.zig`); its right wall is Room 01's left wall, with the doorway.
-//! Below the hole a shaft through the deck below (solid, as Room 01's); the robot climbs
-//! down into it out of sight (the floor in front of the hole hides it).
+//! Its floor, with the hole, is Room 03's ceiling: the ladder goes on down to Rooms 03
+//! and 04 (`shaft.zig`).
 
 const std = @import("std");
 const core = @import("core");
@@ -22,7 +21,7 @@ const math = @import("math");
 const room_kit = @import("room_kit.zig");
 const station = @import("station.zig");
 const navigation = @import("navigation.zig");
-const LadderStop = @import("robot.zig").LadderStop;
+const shaft = @import("shaft.zig");
 const Station = @import("state.zig").Station;
 const Hotspot = station.Hotspot;
 const Part = room_kit.Part;
@@ -61,37 +60,17 @@ pub const room: station.Room = .{
     .addGreybox = addGreybox,
 };
 
-/// The hole in the floor, and the shaft below it.
-const HOLE_MIN_X = -0.6;
-const HOLE_MAX_X = 0.6;
-const HOLE_MIN_Z: f32 = -3.85;
-const HOLE_MAX_Z: f32 = -2.85;
-const SHAFT_DEPTH: f32 = WALL + room_kit.BELOW_DEPTH;
-/// The ladder stands against the hole's back edge and reaches above the floor, rungs to
-/// its top.
-const LADDER_Z = HOLE_MIN_Z + 0.06;
-const RAIL_TOP: f32 = 1.2;
-const RAIL_GAP: f32 = 0.5;
-
-/// The ladder's stops: on the top rung over the hole, stepped onto from the floor right
-/// of the hole; and out of sight below the floor (until Rooms 03 and 04, plan 022 phase
-/// E3; its exit is never used).
-pub const ladder_stops = [_]LadderStop{
-    .{ .position = vec3(0.0, -0.05, -3.5), .exit = LADDER_EXIT },
-    .{ .position = vec3(0.0, -1.95, -3.5), .exit = LADDER_EXIT },
-};
-const LADDER_EXIT = vec3(HOLE_MAX_X + 0.35, 0.0, -3.5);
-/// Facing the ladder, on it.
-pub const LADDER_FACING = room_kit.FACE_BACK_WALL;
+/// The ladder's stop on this floor (`shaft.zig`).
+pub const ladder_stop = shaft.RUNG_STOP;
 
 /// The shell: a locked door in the left wall; the right wall is Room 01's, with the
-/// doorway; the hole in the floor and its shaft.
+/// doorway; the floor, with the hole, is Room 03's ceiling.
 const shell: room_kit.Shell = .{
     .width = WIDTH,
     .height = HEIGHT,
     .left = .{ .doorway = .{ .door = .locked, .is_framed_outside = false } },
     .right = .neighbor,
-    .hole = .{ .min_x = HOLE_MIN_X, .max_x = HOLE_MAX_X, .min_z = HOLE_MIN_Z, .max_z = HOLE_MAX_Z },
+    .floor = .room_below,
 };
 
 /// The keypad by the locked door, on the wall in front of the door.
@@ -100,13 +79,8 @@ const KEYPAD_Z = DOOR_CENTER_Z + DOOR_WIDTH / 2.0 + 0.35;
 /// Where the robot stands by the door back to Room 01.
 pub const DOOR_STAND_POINT = vec3(INNER_MAX_X - 0.7, 0.0, DOOR_CENTER_Z);
 
-/// The floor the robot can walk on: in front of the hole, and either side of it. The
-/// robot's center keeps 0.35 m from the hole and 0.4 m from the walls.
-const walk_areas = [_]navigation.Area{
-    .{ .min_x = INNER_MIN_X + 0.4, .max_x = INNER_MAX_X - 0.4, .min_z = HOLE_MAX_Z + 0.35, .max_z = -0.4 },
-    .{ .min_x = INNER_MIN_X + 0.4, .max_x = HOLE_MIN_X - 0.35, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
-    .{ .min_x = HOLE_MAX_X + 0.35, .max_x = INNER_MAX_X - 0.4, .min_z = -3.5, .max_z = HOLE_MAX_Z + 0.35 },
-};
+/// The floor the robot can walk on: in front of the hole, and either side of it.
+const walk_areas = shaft.walkAreasAroundHole(WIDTH);
 
 /// The room's own hotspots (`use`); the doorway back to Room 01 and the ladder are the
 /// station's connections (`station.HotspotKind`).
@@ -152,16 +126,16 @@ const hotspots = [_]Hotspot{
     .{
         .kind = .ladder,
         .name = "Ladder",
-        .bounds = bounds(vec3(-0.32, 0.3, LADDER_Z - 0.06), vec3(0.32, RAIL_TOP + 0.05, LADDER_Z + 0.1)),
-        .stand_point = LADDER_EXIT,
+        .bounds = bounds(vec3(-0.32, 0.3, shaft.LADDER_Z - 0.06), vec3(0.32, shaft.RAIL_TOP + 0.05, shaft.LADDER_Z + 0.1)),
+        .stand_point = shaft.LADDER_EXIT,
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
     },
     .{
         .kind = .ladder_hole,
         .name = "Ladder",
-        .bounds = bounds(vec3(HOLE_MIN_X, -0.6, HOLE_MIN_Z), vec3(HOLE_MAX_X, 0.3, HOLE_MAX_Z)),
-        .stand_point = LADDER_EXIT,
+        .bounds = bounds(vec3(shaft.HOLE.min_x, -0.6, shaft.HOLE.min_z), vec3(shaft.HOLE.max_x, 0.3, shaft.HOLE.max_z)),
+        .stand_point = shaft.LADDER_EXIT,
         .facing = room_kit.FACE_BACK_WALL,
         .action = .look,
     },
@@ -186,17 +160,10 @@ fn addGreybox(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.Ar
     try addBackWall(builder, allocator, parts);
 }
 
-/// Two rails from the shaft's bottom to above the floor, rungs every 0.3 m from the top
-/// down. The robot stands on the one just below the floor (`ladder.top`).
+/// The ladder from the bottom of the floor (Room 03 carries it on down) to above the
+/// floor.
 fn addLadder(builder: PartBuilder, allocator: std.mem.Allocator, parts: *std.ArrayList(Part)) !void {
-    const color = grey(0.4);
-    for ([_]f32{ -RAIL_GAP / 2.0, RAIL_GAP / 2.0 }) |offset| {
-        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(offset, -SHAFT_DEPTH, LADDER_Z), .y, 0.05, SHAFT_DEPTH + RAIL_TOP), .color = color });
-    }
-    var y: f32 = RAIL_TOP - 0.1;
-    while (y > -SHAFT_DEPTH) : (y -= 0.3) {
-        try parts.append(allocator, .{ .shape = builder.cylinder, .model = cylinderModel(vec3(-RAIL_GAP / 2.0, y, LADDER_Z), .x, 0.035, RAIL_GAP), .color = color });
-    }
+    try shaft.addLadder(builder, allocator, parts, -WALL, shaft.RAIL_TOP);
 }
 
 /// The keypad beside the locked door, dead.

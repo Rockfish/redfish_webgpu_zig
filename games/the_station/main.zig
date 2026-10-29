@@ -180,7 +180,7 @@ fn run(allocator: std.mem.Allocator, context: core.Context, window: *zglfw.Windo
         try ink_pass.update(context.alloc, gpu);
 
         var uniforms = render_context.frameUniforms();
-        uniforms.lights = stationLights(settings, game.station, alarm_level, visible).uniforms();
+        uniforms.lights = stationLights(settings, game.station, alarm_level, game.room, visible).uniforms();
         gpu.writeFrameUniforms(uniforms);
 
         // The scene twice: its normals and depth for the outlines, then in color
@@ -287,6 +287,7 @@ fn panTo(view: Framing, target: Framing, dt: f32) Framing {
     var panned = target;
     panned.center_x = std.math.lerp(view.center_x, target.center_x, alpha);
     panned.center_y = std.math.lerp(view.center_y, target.center_y, alpha);
+    panned.floor_y = std.math.lerp(view.floor_y, target.floor_y, alpha);
     return panned;
 }
 
@@ -326,8 +327,9 @@ fn highlight(game: *const Game, time: f32, strength: f32) ?station.Highlight {
 
 /// Main power is out: no light from above, only a dim ambient, the alarm's red point
 /// light, and with the emergency lights on a yellowish light under each room's ceiling.
-/// Only the rooms the camera sees are lit (4 point lights at most).
-fn stationLights(settings: Settings, state: Station, alarm_level: f32, visible: std.EnumSet(station.RoomId)) SceneLights {
+/// Only the rooms the camera sees are lit, the room shown first, then the nearest (4
+/// point lights at most).
+fn stationLights(settings: Settings, state: Station, alarm_level: f32, shown: station.RoomId, visible: std.EnumSet(station.RoomId)) SceneLights {
     const is_emergency = state.lights() == .emergency;
 
     var lights = SceneLights.init();
@@ -344,9 +346,17 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, visible: 
         .quadratic = 0.15,
         .enabled = state.isAlarmSounding() and visible.contains(.room_01),
     });
-    var index: usize = 1;
-    var shown = visible.iterator();
-    while (shown.next()) |id| : (index += 1) {
+    var lit: [station.ROOM_COUNT]station.RoomId = undefined;
+    lit[0] = shown;
+    var count: usize = 1;
+    var others = visible;
+    others.remove(shown);
+    var iterator = others.iterator();
+    while (iterator.next()) |id| : (count += 1) {
+        lit[count] = id;
+    }
+    std.mem.sort(station.RoomId, lit[1..count], shown, isNearer);
+    for (lit[0..count], 1..) |id, index| {
         if (index == core.bindings.MAX_POINT_LIGHTS) {
             break;
         }
@@ -360,6 +370,12 @@ fn stationLights(settings: Settings, state: Station, alarm_level: f32, visible: 
         });
     }
     return lights;
+}
+
+/// Whether room `a` is nearer room `shown` than room `b` is, by their origins.
+fn isNearer(shown: station.RoomId, a: station.RoomId, b: station.RoomId) bool {
+    const origin = station.room(shown).origin();
+    return station.room(a).origin().sub(origin).length() < station.room(b).origin().sub(origin).length();
 }
 
 /// The room shown's floor grid and the bounds of the hotspot under the mouse, if on (for

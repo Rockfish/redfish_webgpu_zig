@@ -2,6 +2,10 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: Rooms 03 and 04; plan 022 phase E3
+- **games/the_station**: two greybox rooms below Room 02, down its ladder: the shaft through Room 03 to Room 04 (`shaft.zig`), the ladder stopping at each floor, a fade between floors. Stacked rooms share the slab between them (`Shell.floor`, `Shell.ceiling_hole`); each room draws the ladder in its own space. The camera's eye is above the shown room's floor (`Framing.floor_y`); the room shown is lit first
+- **the-station**: Room 02's ladder and shaft pipe end at the bottom of its floor (`build_room_02.py`), re-exported
+
 ### 2026-10-29 - The Station: transitions; plan 022 phase E2
 - **games/the_station**: the game explores the room shown or is in a transition to the next, which takes no input: the camera pans to a room beside, or the screen fades out and in to another floor (`Game.mode`; `Overlay.fill`). Going back to a room's entry restores the robot mid-task. Tests for both transitions
 
