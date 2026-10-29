@@ -49,10 +49,16 @@ the regression check. Since then:
   `core.SettingsFile` (panel settings saved per setting to ZON), the room's equipment
   from Blender, power out with emergency lights, Room 02 and its ladder, the camera
   panning between rooms
+- Plan 022 The Station structure (phases A-E): style fixes and game tests
+  (`games/the_station/tests.zig`), the room kit and rooms as data on a grid of cells,
+  hovered controls lit amber, the game's own cursors, the station's state
+  (`state.zig`), doorway and ladder connections, transitions (pan, fade), Rooms 03 and
+  04 and the generator room (greybox), a camera window in large rooms, point lights
+  bounded to a room (8 max), a scripted run of the route
 
-Active plan: 022 The Station structure (written 2026-10-29). Parked: plan 021 The Station
-Room 01 (phases A-H done), plan 019 tower attack (phases A-J done). See
-`docs/plans/active-plans.md`.
+Active plan: 022 The Station structure (written 2026-10-29; phases A-E done, next F, the
+inventory). Parked: plan 021 The Station Room 01 (phases A-H done), plan 019 tower attack
+(phases A-J done). See `docs/plans/active-plans.md`.
 
 ## Layout (target, mirrors redfish_gl_zig)
 

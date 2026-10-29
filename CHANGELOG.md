@@ -2,6 +2,9 @@
 
 ## Recent Changes
 
+### 2026-10-29 - The Station: a scripted run; plan 022 phase E5
+- **games/the_station**: a test plays the route through the game's own clicks: power and the door in Room 01, Room 02, down the ladder two floors to Room 04, through the doorway into the generator room, to its panel, and back up to Room 01. Phase E done
+
 ### 2026-10-29 - The Station: the generator room; plan 022 phase E4
 - **core**: a point light can be bounded to a box it reaches (`PointLight.bounds`, `pointLightReaches` in common.wgsl, honored by pbr.wgsl); 8 point lights (was 4)
 - **games/the_station**: the generator room (greybox, 6 x 2, under Room 01) through an open doorway from Room 04: a big generator set along the back wall under pipe runs and a cable tray, switchgear and a gauge board beside it, the generator panel standing right of it (`generator_room.zig`). In a large room the camera shows a window of Room 01's size following the robot (`station.cameraFraming`); the panel's "frame large rooms whole" shows all of it. Emergency lights at each ceiling tube, kept in their room (no light through walls, no lit disc on the ceiling); the generator room's three fittings hang on rods. A hole is declared by the room whose floor it is in (`Room.floor_hole`)

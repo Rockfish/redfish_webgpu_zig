@@ -526,3 +526,49 @@ test "transition: a fade is black halfway, where the room shown changes" {
     game.update(null, false, FADE_TIME);
     try std.testing.expect(game.mode == .explore);
 }
+
+/// The hotspot `kind` in room `id`, as a click on it there.
+fn hotspotInRoom(id: station.RoomId, kind: station.HotspotKind) usize {
+    for (station.hotspots, 0..) |hotspot, index| {
+        if (std.meta.eql(hotspot.kind, kind) and station.isHotspotIn(index, id)) {
+            return index;
+        }
+    }
+    unreachable;
+}
+
+/// Clicks `kind` in the room shown and plays `seconds`; then the robot is in room
+/// `expected`, shown, and the game explores.
+fn clickAndRun(game: *Game, kind: station.HotspotKind, seconds: f32, expected: station.RoomId) !void {
+    try std.testing.expect(game.mode == .explore);
+    game.sendToHotspot(hotspotInRoom(game.room, kind));
+    runFor(game, seconds);
+    try std.testing.expectEqual(expected, game.robotRoom());
+    try std.testing.expectEqual(expected, game.room);
+    try std.testing.expect(game.mode == .explore);
+}
+
+test "scripted run: down two floors into the generator room, and back up to Room 02" {
+    var game: Game = .{};
+    try clickAndRun(&game, .{ .room_01 = .lights_button }, 8.0, .room_01);
+    try clickAndRun(&game, .{ .room_01 = .door_button }, 8.0, .room_01);
+    try clickAndRun(&game, .{ .doorway = .room_01_02 }, 12.0, .room_02);
+
+    // Onto the ladder, down a floor, and down again
+    try clickAndRun(&game, .ladder_hole, 8.0, .room_02);
+    try clickAndRun(&game, .ladder_hole, 12.0, .room_03);
+    try clickAndRun(&game, .ladder_hole, 12.0, .room_04);
+
+    // Off the ladder and through the doorway; to the panel
+    try clickAndRun(&game, .{ .doorway = .room_04_generator }, 15.0, .generator_room);
+    try clickAndRun(&game, .{ .generator_room = .generator_panel }, 20.0, .generator_room);
+    try std.testing.expectEqualStrings("The generator's panel. Every lamp is dark.", game.message);
+
+    // Back: through the doorway, onto the ladder, up two floors, off to the door
+    try clickAndRun(&game, .{ .doorway = .room_04_generator }, 20.0, .room_04);
+    try clickAndRun(&game, .ladder, 8.0, .room_04);
+    try clickAndRun(&game, .ladder, 12.0, .room_03);
+    try clickAndRun(&game, .ladder, 12.0, .room_02);
+    try clickAndRun(&game, .{ .doorway = .room_01_02 }, 15.0, .room_01);
+    try std.testing.expect(game.robot.task == .idle);
+}

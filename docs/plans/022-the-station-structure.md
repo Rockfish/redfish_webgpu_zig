@@ -1,6 +1,15 @@
 # Plan 022 - The Station: Structure for the Whole Game
 
-## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E1-E4 done; next: phase E5)
+## Status: Active (written 2026-10-29; phases A-B done; B2 done but the outline option; B3, C, D, E done; next: phase F)
+
+**Where it stands (2026-10-29, end of session):** phases A-E done and checked by John;
+E5 (the scripted-run test in `game.zig`, 158 tests pass) is the last commit. Next step: phase F, the inventory (its tasks under "Phases"); split it into
+sub-phases as phase E was (John prefers sub-phases for big phases, each checked and
+committed). Open, for later: the generator room as a Blender model (John's reference
+photos in `the-station/images/generator_rooms/`: a big machine, piping, cables,
+panels, gauges, the panel beside it); shadows; whether the camera window grows in a
+2-high room (it shows the lower cell; "frame large rooms whole" is the option); the
+B2 ink-outline option; what Rooms 03 and 04 are.
 
 ## Context
 
@@ -361,7 +370,7 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
       (x and y); the whole-room framing kept as an option; compare on screen
 
 #### E5. Check
-- [ ] A scripted run (a test): down two floors, through the doorway into the generator
+- [x] A scripted run (a test): down two floors, through the doorway into the generator
       room, and back up to Room 02
 
 ### F. Inventory
@@ -710,3 +719,10 @@ In sub-phases, each checked and committed on its own (John, 2026-10-29):
   - John: the lighting looks much better; shadows later. Plan 017's `ShadowMapArray` has
     one 2D layer per light (a spot's view); the tubes shine down, so a downward view per
     light may do, else cube maps for point lights. The ink shader would read them.
+- 2026-10-29, phase E5, as built: `game.zig` test "scripted run": clicks through the
+  game's own handling (`sendToHotspot` by kind in the room shown, `clickAndRun`) and
+  plays time at 60 frames a second: the emergency power, the door, through to Room 02,
+  onto the ladder, down to Room 03 and Room 04 (fades), off and through the doorway into
+  the generator room (a pan), to the panel; back through the doorway, up the ladder two
+  floors, and through the door to Room 01. After each click the robot's room is the room
+  shown and the game explores. Passed on the first run; 158 pass. Phase E done.
